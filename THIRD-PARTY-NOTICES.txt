@@ -1,0 +1,24 @@
+RConnect uses the following third-party software.
+
+Qt 6 (Qt Core, Qt GUI, Qt Widgets, Active Qt)
+  Copyright (C) The Qt Company Ltd. and other contributors.
+  Used under the GNU Lesser General Public License v3 (LGPLv3):
+  https://www.gnu.org/licenses/lgpl-3.0.html
+  Qt source code: https://code.qt.io/  and  https://download.qt.io/
+  The Qt libraries are shipped as separate DLLs and can be replaced. Active Qt is linked
+  statically; the full RConnect source code is available, so the application can be relinked
+  against a modified Active Qt.
+
+Microsoft Visual C++ Runtime (msvcp140*.dll, vcruntime140*.dll)
+  Copyright (C) Microsoft Corporation.
+  Redistributed under the Microsoft Visual Studio redistribution terms.
+
+DB-IP Lite country database (src/assets/geoip.bin, converted)
+  IP Geolocation by DB-IP: https://db-ip.com
+  Licensed under Creative Commons Attribution 4.0: https://creativecommons.org/licenses/by/4.0/
+
+Country flags (src/assets/flags)
+  From https://flagcdn.com (Flagpedia). Flag images are in the public domain.
+
+Microsoft Remote Desktop ActiveX control (mstscax.dll)
+  Part of Windows; it is not shipped with RConnect.
