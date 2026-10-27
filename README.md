@@ -6,6 +6,8 @@ RConnect saves your Remote Desktop servers and connects to them in one click. Ea
 opens in a tab, and tabs can be dragged to another window or monitor. It uses the Remote Desktop
 client built into Windows (`mstscax.dll`).
 
+<p align="center"><img src="ss1.png" alt="RConnect server list"></p>
+
 Each server card shows the country of the server's IP address, looked up offline in an embedded
 copy of the DB-IP Lite database (`python tools/update_geodata.py` refreshes it).
 
