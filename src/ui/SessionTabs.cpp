@@ -128,9 +128,7 @@ void AnimatedTabBar::slideTo(int index)
 
 void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
-    QTabBar::paintEvent(e);
-    QPainter p(this);
-
+    // A rounded highlight slides behind the selected tab, under the tab text.
     const int idx = currentIndex();
     if (idx >= 0) {
         const QRectF target = tabRect(idx);
@@ -140,16 +138,22 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.y(),
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
-        p.fillRect(QRectF(m_current.x(), 0.0, m_current.width(), 2.0), QColor(0x3a, 0x96, 0xdd));
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0x2c, 0x2c, 0x2e));
+        p.drawRoundedRect(m_current.adjusted(3, 5, -3, -5), 9, 9);
     }
+
+    QTabBar::paintEvent(e);
 
     if (m_dropIndex >= 0) {
+        QPainter p(this);
         const int x = m_dropIndex < count() ? tabRect(m_dropIndex).left()
                                             : (count() > 0 ? tabRect(count() - 1).right() + 1 : 0);
-        p.fillRect(QRect(qMax(0, x - 1), 3, 2, height() - 6), QColor(0x3a, 0x96, 0xdd));
+        p.fillRect(QRect(qMax(0, x - 1), 6, 2, height() - 12), QColor(0x0a, 0x84, 0xff));
     }
 }
-
 
 void AnimatedTabBar::mousePressEvent(QMouseEvent *e)
 {

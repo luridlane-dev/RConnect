@@ -26,22 +26,26 @@ namespace {
 
 QIcon dotIcon(const QColor &c)
 {
-    QPixmap pm(16, 16);
+    QPixmap pm(32, 32);
+    pm.setDevicePixelRatio(2.0);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
-    p.fillRect(QRect(4, 4, 8, 8), c);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(c);
+    p.drawEllipse(QRectF(4, 5, 8, 8));
     return QIcon(pm);
 }
 
 QColor sessionColor(RdpSession::State s)
 {
     switch (s) {
-    case RdpSession::Connected:    return QColor(0x4c, 0xaf, 0x7d);
-    case RdpSession::Connecting:   return QColor(0x5b, 0x8f, 0xc7);
-    case RdpSession::Replaced:     return QColor(0xd4, 0x9b, 0x3c);
+    case RdpSession::Connected:    return QColor(0x30, 0xd1, 0x58);
+    case RdpSession::Connecting:   return QColor(0x0a, 0x84, 0xff);
+    case RdpSession::Replaced:     return QColor(0xff, 0x9f, 0x0a);
     case RdpSession::Failed:
-    case RdpSession::Disconnected: return QColor(0xb8, 0x55, 0x52);
-    default:                       return QColor(0x6f, 0x77, 0x83);
+    case RdpSession::Disconnected: return QColor(0xff, 0x45, 0x3a);
+    default:                       return QColor(0x8e, 0x8e, 0x93);
     }
 }
 
@@ -162,7 +166,7 @@ void SessionWindow::addSession(RdpSession *s, int index)
     close->setText(QStringLiteral("×"));
     close->setToolTip(tr("Close tab (Ctrl+W)"));
     close->setCursor(Qt::PointingHandCursor);
-    close->setFixedSize(18, 18);
+    close->setFixedSize(20, 20);
     connect(close, &QToolButton::clicked, this, [this, id] { emit closeTabRequested(id); });
     m_tabBar->setTabButton(idx, QTabBar::RightSide, close);
     m_tabBar->setCurrentIndex(idx);

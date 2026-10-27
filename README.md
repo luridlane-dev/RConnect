@@ -9,6 +9,16 @@ client built into Windows (`mstscax.dll`).
 Each server card shows the country of the server's IP address, looked up offline in an embedded
 copy of the DB-IP Lite database (`python tools/update_geodata.py` refreshes it).
 
+Each card also shows the connection quality: the time to open the RDP port (average of the last
+checks) as signal bars (under 60 ms excellent, 130 good, 250 fair, slower poor). The list can be
+filtered (All, Available, In use, Offline), searched, and is sorted by name; it stays responsive
+with a hundred servers because checks run at most eight at a time.
+
+If the server's WinRM port (5985) is open, the card also shows who is connected (computer name and
+idle time), and RConnect warns before you connect to a server someone else is using. It runs
+`quser` over WinRM with the saved user name and password, which must be an administrator on the
+server. Turn it off per server under Advanced settings.
+
 Windows 10 (1809) or later, 64-bit. English and Turkish UI.
 
 ## Shortcuts

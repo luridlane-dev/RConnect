@@ -1,6 +1,7 @@
 #pragma once
 #include <QWidget>
 
+class QHBoxLayout;
 class QLabel;
 class QToolButton;
 class ServerPanel;
@@ -23,6 +24,8 @@ private:
 
     ServerStore *m_store;
     ServerPanel *m_panel;
+    QLabel *m_title;
     QLabel *m_summary;
     QToolButton *m_settings;
+    QHBoxLayout *m_brandLayout = nullptr;
 };

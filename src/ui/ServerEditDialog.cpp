@@ -19,9 +19,9 @@
 
 namespace {
 
-const QStringList kPalette = {QStringLiteral("#3a96dd"), QStringLiteral("#3fa874"), QStringLiteral("#d19a2e"),
-                              QStringLiteral("#c4504c"), QStringLiteral("#8a6fc4"), QStringLiteral("#3aa6b0"),
-                              QStringLiteral("#8c8c8c"), QStringLiteral("#b07a4a")};
+const QStringList kPalette = {QStringLiteral("#0a84ff"), QStringLiteral("#30d158"), QStringLiteral("#ff9f0a"),
+                              QStringLiteral("#ff453a"), QStringLiteral("#bf5af2"), QStringLiteral("#40c8e0"),
+                              QStringLiteral("#8e8e93"), QStringLiteral("#ac8e68")};
 
 const char *const kResolutions[] = {"1920x1080", "2560x1440", "1600x900", "1366x768"};
 
@@ -73,11 +73,12 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     for (int i = 0; i < kPalette.size(); ++i) {
         auto *b = new QToolButton;
         b->setCheckable(true);
-        b->setFixedSize(22, 22);
+        b->setFixedSize(26, 26);
         b->setCursor(Qt::PointingHandCursor);
         b->setStyleSheet(QStringLiteral(
-            "QToolButton { background: %1; border: 2px solid #1c1c1c; border-radius: 2px; padding: 0; }"
-            "QToolButton:checked { border-color: #e8e8e8; }").arg(kPalette[i]));
+            "QToolButton { background: %1; border: 3px solid #000000; border-radius: 13px; padding: 0; }"
+            "QToolButton:hover { border-color: #3a3a3c; }"
+            "QToolButton:checked { border-color: #ffffff; }").arg(kPalette[i]));
         m_colors->addButton(b, i);
         colorRow->addWidget(b);
         if (!initial.color.isEmpty() && kPalette[i].compare(initial.color, Qt::CaseInsensitive) == 0)
@@ -130,6 +131,8 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     m_certs->setChecked(initial.ignoreCertWarnings);
     m_monitor = new QCheckBox(tr("Check online status (port check once a minute)"));
     m_monitor->setChecked(initial.monitor);
+    m_checkSessions = new QCheckBox(tr("Show who is connected (WinRM, uses the saved password)"));
+    m_checkSessions->setChecked(initial.checkSessions);
 
     m_advanced = new QWidget;
     auto *adv = makeForm();
@@ -142,6 +145,7 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     adv->addRow(QString(), m_audio);
     adv->addRow(QString(), m_certs);
     adv->addRow(QString(), m_monitor);
+    adv->addRow(QString(), m_checkSessions);
     m_advanced->setLayout(adv);
     m_advanced->setVisible(false);
 
@@ -228,6 +232,7 @@ ServerProfile ServerEditDialog::profile() const
     p.audio = m_audio->isChecked();
     p.ignoreCertWarnings = m_certs->isChecked();
     p.monitor = m_monitor->isChecked();
+    p.checkSessions = m_checkSessions->isChecked();
     return p;
 }
 

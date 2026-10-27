@@ -25,57 +25,52 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     inner->setMaximumWidth(1100);
     auto *innerLay = new QVBoxLayout(inner);
     innerLay->setContentsMargins(0, 0, 0, 0);
-    innerLay->setSpacing(14);
+    innerLay->setSpacing(18);
 
-    auto *logo = new QLabel(inner);
-    logo->setPixmap(QIcon(QStringLiteral(":/icon.png")).pixmap(40, 40));
-    auto *name = new QLabel(QStringLiteral("RConnect"), inner);
-    name->setObjectName(QStringLiteral("brandName"));
+    m_title = new QLabel(inner);
+    m_title->setObjectName(QStringLiteral("brandName"));
     m_summary = new QLabel(inner);
     m_summary->setObjectName(QStringLiteral("brandSummary"));
     auto *titles = new QVBoxLayout;
-    titles->setSpacing(1);
-    titles->addStretch();
-    titles->addWidget(name);
+    titles->setSpacing(0);
+    titles->addWidget(m_title);
     titles->addWidget(m_summary);
-    titles->addStretch();
 
     m_settings = new QToolButton(inner);
     m_settings->setObjectName(QStringLiteral("settingsButton"));
     m_settings->setText(QStringLiteral("")); // Settings glyph (Segoe MDL2 Assets)
-    m_settings->setFixedSize(34, 34);
+    m_settings->setFixedSize(36, 36);
     m_settings->setCursor(Qt::PointingHandCursor);
     connect(m_settings, &QToolButton::clicked, this, &HomePage::showSettingsMenu);
 
     auto *brand = new QHBoxLayout;
-    brand->setContentsMargins(16, 0, 16, 0);
-    brand->setSpacing(12);
-    brand->addWidget(logo);
+    brand->setContentsMargins(ServerPanel::kInset, 0, ServerPanel::kInset, 0);
     brand->addLayout(titles);
     brand->addStretch(1);
-    brand->addWidget(m_settings, 0, Qt::AlignVCenter);
+    brand->addWidget(m_settings, 0, Qt::AlignTop);
     innerLay->addLayout(brand);
+    m_brandLayout = brand;
 
     m_panel = new ServerPanel(store, inner);
-    m_panel->setFooterVisible(false);
     innerLay->addWidget(m_panel, 1);
 
     auto *lay = new QHBoxLayout(this);
     lay->addStretch(1);
     lay->addWidget(inner, 100);
     lay->addStretch(1);
-    lay->setContentsMargins(24, 28, 24, 20);
+    lay->setContentsMargins(24, 44, 24, 20);
 
-    connect(store, &ServerStore::statusChanged, this, &HomePage::updateSummary);
-    connect(store, &QAbstractItemModel::rowsInserted, this, &HomePage::updateSummary);
-    connect(store, &QAbstractItemModel::rowsRemoved, this, &HomePage::updateSummary);
-    connect(store, &QAbstractItemModel::modelReset, this, &HomePage::updateSummary);
+    connect(m_panel, &ServerPanel::rightInsetChanged, this, [this](int inset) {
+        m_brandLayout->setContentsMargins(ServerPanel::kInset, 0, inset, 0);
+    });
+    connect(store, &ServerStore::summaryChanged, this, &HomePage::updateSummary);
     m_settings->setToolTip(tr("Settings"));
     updateSummary();
 }
 
 void HomePage::updateSummary()
 {
+    m_title->setText(tr("Servers"));
     m_summary->setText(ServerPanel::summary(m_store));
 }
 

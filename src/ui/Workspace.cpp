@@ -12,6 +12,7 @@
 #include <QGuiApplication>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
@@ -23,12 +24,13 @@
 
 namespace {
 
-bool confirm(QWidget *parent, const QString &title, const QString &text)
+bool confirm(QWidget *parent, const QString &title, const QString &text, bool defaultYes = true)
 {
-    QMessageBox box(QMessageBox::Question, title, text, QMessageBox::NoButton, parent);
+    QMessageBox box(defaultYes ? QMessageBox::Question : QMessageBox::Warning, title, text, QMessageBox::NoButton,
+                    parent);
     QPushButton *yes = box.addButton(Workspace::tr("Yes"), QMessageBox::YesRole);
-    box.addButton(Workspace::tr("No"), QMessageBox::NoRole);
-    box.setDefaultButton(yes);
+    QPushButton *no = box.addButton(Workspace::tr("No"), QMessageBox::NoRole);
+    box.setDefaultButton(defaultYes ? yes : no);
     box.exec();
     return box.clickedButton() == yes;
 }
@@ -176,6 +178,49 @@ void Workspace::openServer(const QString &id, SessionWindow *target)
         p.password = pw;
     }
 
+    if (!StatusMonitor::canCheckSessions(p)) {
+        connectServer(p, target);
+        return;
+    }
+    // Ask the server who is connected right before connecting; a minute-old status is too old.
+    if (m_pendingOpens.contains(id))
+        return;
+    m_pendingOpens.insert(id);
+    QApplication::setOverrideCursor(Qt::BusyCursor);
+    QPointer<SessionWindow> window = target;
+    m_monitor->checkSessions(p, [this, p, window](const ServerStatus &status) {
+        QApplication::restoreOverrideCursor();
+        m_pendingOpens.remove(p.id);
+        if (m_quitting || windowOf(p.id) || !m_store->profileById(p.id).isValid())
+            return;
+        SessionWindow *target = window ? window.data() : m_main;
+        if (confirmBusy(p, status, target))
+            connectServer(p, target);
+    });
+}
+
+bool Workspace::confirmBusy(const ServerProfile &p, const ServerStatus &status, QWidget *parent) const
+{
+    if (status.occupancy != ServerStatus::Busy)
+        return true;
+    QStringList who;
+    bool sameUser = false;
+    const QString user = p.user.section(QLatin1Char('\\'), -1);
+    for (const RemoteSession &r : status.others) {
+        who << tr("%1 (user %2, %3)").arg(sessionOwner(r), r.user, idleText(r.idleMinutes));
+        sameUser |= r.user.compare(user, Qt::CaseInsensitive) == 0;
+    }
+    const QString text = tr("Someone is connected to “%1” right now:").arg(p.name) + QStringLiteral("\n\n")
+                         + who.join(QLatin1Char('\n')) + QStringLiteral("\n\n")
+                         + (sameUser ? tr("They use the same Windows account, so connecting will disconnect them.")
+                                     : tr("Connecting may disconnect them."))
+                         + QStringLiteral("\n\n") + tr("Connect anyway?");
+    return confirm(parent, tr("Server in use"), text, false);
+}
+
+void Workspace::connectServer(const ServerProfile &p, SessionWindow *target)
+{
+    const QString id = p.id;
     auto *session = new RdpSession(p, target);
     m_sessions.insert(id, session);
     connect(session, &RdpSession::stateChanged, this, &Workspace::onSessionState);
@@ -328,6 +373,7 @@ void Workspace::showServerPopup(SessionWindow *w)
         // Popup, so it shows above the native RDP window.
         popup = new QFrame(w, Qt::Popup | Qt::FramelessWindowHint);
         popup->setObjectName(QStringLiteral("popup"));
+        popup->setAttribute(Qt::WA_TranslucentBackground); // rounded corners
         auto *lay = new QVBoxLayout(popup);
         lay->setContentsMargins(1, 1, 1, 1);
         auto *panel = new ServerPanel(m_store, popup);

@@ -15,6 +15,10 @@
         <translation>Ayarlar</translation>
     </message>
     <message>
+        <source>Servers</source>
+        <translation>Sunucular</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>Dil</translation>
     </message>
@@ -128,6 +132,10 @@
         <source>OPEN</source>
         <translation>AÇIK</translation>
     </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
 </context>
 <context>
     <name>ServerEditDialog</name>
@@ -232,6 +240,10 @@
         <translation>Çevrimiçi durumunu denetle (dakikada bir port kontrolü)</translation>
     </message>
     <message>
+        <source>Show who is connected (WinRM, uses the saved password)</source>
+        <translation>Kimin bağlı olduğunu göster (WinRM, kayıtlı şifreyle)</translation>
+    </message>
+    <message>
         <source>Domain</source>
         <translation>Alan adı</translation>
     </message>
@@ -259,14 +271,6 @@
 <context>
     <name>ServerPanel</name>
     <message>
-        <source>No servers yet. Use “+ Add server” to get started.</source>
-        <translation>Henüz sunucu yok. “+ Sunucu ekle” ile başlayın.</translation>
-    </message>
-    <message>
-        <source>%1 · %2 online · %3 offline</source>
-        <translation>%1 · %2 çevrimiçi · %3 çevrimdışı</translation>
-    </message>
-    <message>
         <source>1 server</source>
         <translation>1 sunucu</translation>
     </message>
@@ -275,12 +279,46 @@
         <translation>%1 sunucu</translation>
     </message>
     <message>
-        <source>Search servers...</source>
-        <translation>Sunucu ara...</translation>
+        <source>No servers yet</source>
+        <translation>Henüz sunucu yok</translation>
+    </message>
+    <message>
+        <source>%1 · %2 available · %3 in use · %4 offline</source>
+        <translation>%1 · %2 müsait · %3 kullanımda · %4 çevrimdışı</translation>
+    </message>
+    <message>
+        <source>Search servers</source>
+        <translation>Sunucu ara</translation>
     </message>
     <message>
         <source>+ Add server</source>
         <translation>+ Sunucu ekle</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Tümü</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Müsait</translation>
+    </message>
+    <message>
+        <source>In use</source>
+        <translation>Kullanımda</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>Çevrimdışı</translation>
+    </message>
+    <message>
+        <source>No servers yet.
+Use “+ Add server” to get started.</source>
+        <translation>Henüz sunucu yok.
+“+ Sunucu ekle” ile başlayın.</translation>
+    </message>
+    <message>
+        <source>No matching servers</source>
+        <translation>Eşleşen sunucu yok</translation>
     </message>
     <message>
         <source>Connect</source>
@@ -298,17 +336,41 @@
         <source>Delete…</source>
         <translation>Sil…</translation>
     </message>
-    <message>
-        <source>1 result</source>
-        <translation>1 sonuç</translation>
-    </message>
-    <message>
-        <source>%1 results</source>
-        <translation>%1 sonuç</translation>
-    </message>
 </context>
 <context>
     <name>ServerStatus</name>
+    <message>
+        <source>Connection: %1 · %2 ms (average %3 ms)</source>
+        <translation>Bağlantı: %1 · %2 ms (ortalama %3 ms)</translation>
+    </message>
+    <message>
+        <source>Excellent</source>
+        <translation>Mükemmel</translation>
+    </message>
+    <message>
+        <source>Good</source>
+        <translation>İyi</translation>
+    </message>
+    <message>
+        <source>Fair</source>
+        <translation>Orta</translation>
+    </message>
+    <message>
+        <source>Poor</source>
+        <translation>Zayıf</translation>
+    </message>
+    <message>
+        <source>active now</source>
+        <translation>şu an aktif</translation>
+    </message>
+    <message>
+        <source>idle %1 min</source>
+        <translation>%1 dk boşta</translation>
+    </message>
+    <message>
+        <source>idle %1 h</source>
+        <translation>%1 sa boşta</translation>
+    </message>
     <message>
         <source>Checking…</source>
         <translation>Denetleniyor…</translation>
@@ -322,8 +384,32 @@
         <translation>Çevrimdışı</translation>
     </message>
     <message>
+        <source>Free</source>
+        <translation>Boş</translation>
+    </message>
+    <message>
         <source>Online</source>
         <translation>Çevrimiçi</translation>
+    </message>
+    <message>
+        <source>%1 min</source>
+        <translation>%1 dk</translation>
+    </message>
+    <message>
+        <source>%1 h</source>
+        <translation>%1 sa</translation>
+    </message>
+    <message>
+        <source>Could not check who is connected: %1</source>
+        <translation>Kimin bağlı olduğu kontrol edilemedi: %1</translation>
+    </message>
+    <message>
+        <source>%1 (user %2), %3</source>
+        <translation>%1 (kullanıcı %2), %3</translation>
+    </message>
+    <message>
+        <source>Connected now:</source>
+        <translation>Şu an bağlı:</translation>
     </message>
 </context>
 <context>
@@ -378,6 +464,53 @@
     </message>
 </context>
 <context>
+    <name>WinRm</name>
+    <message>
+        <source>WinRM (port 5985) is not reachable.</source>
+        <translation>WinRM&apos;ye (5985 portu) ulaşılamıyor.</translation>
+    </message>
+    <message>
+        <source>Could not set up NTLM.</source>
+        <translation>NTLM oturumu hazırlanamadı.</translation>
+    </message>
+    <message>
+        <source>The server did not open a shell.</source>
+        <translation>Sunucu komut kabuğu açmadı.</translation>
+    </message>
+    <message>
+        <source>The server did not answer in time.</source>
+        <translation>Sunucu zamanında yanıt vermedi.</translation>
+    </message>
+    <message>
+        <source>WinRM did not answer.</source>
+        <translation>WinRM yanıt vermedi.</translation>
+    </message>
+    <message>
+        <source>WinRM does not accept NTLM sign-in (HTTP %1).</source>
+        <translation>WinRM NTLM ile girişi kabul etmiyor (HTTP %1).</translation>
+    </message>
+    <message>
+        <source>Sign-in was refused. WinRM needs an administrator account on the server.</source>
+        <translation>Giriş reddedildi. WinRM için sunucuda yönetici hesabı gerekir.</translation>
+    </message>
+    <message>
+        <source>Could not encrypt the request.</source>
+        <translation>İstek şifrelenemedi.</translation>
+    </message>
+    <message>
+        <source>The WinRM connection was lost.</source>
+        <translation>WinRM bağlantısı koptu.</translation>
+    </message>
+    <message>
+        <source>Could not decrypt the reply.</source>
+        <translation>Yanıtın şifresi çözülemedi.</translation>
+    </message>
+    <message>
+        <source>WinRM error (HTTP %1).</source>
+        <translation>WinRM hatası (HTTP %1).</translation>
+    </message>
+</context>
+<context>
     <name>Workspace</name>
     <message>
         <source>Yes</source>
@@ -390,6 +523,30 @@
     <message>
         <source>Password for %1:</source>
         <translation>%1 için şifre:</translation>
+    </message>
+    <message>
+        <source>%1 (user %2, %3)</source>
+        <translation>%1 (kullanıcı %2, %3)</translation>
+    </message>
+    <message>
+        <source>Someone is connected to “%1” right now:</source>
+        <translation>“%1” sunucusuna şu an başka biri bağlı:</translation>
+    </message>
+    <message>
+        <source>They use the same Windows account, so connecting will disconnect them.</source>
+        <translation>Aynı Windows hesabını kullanıyorsunuz; bağlanırsan onun bağlantısı kopar.</translation>
+    </message>
+    <message>
+        <source>Connecting may disconnect them.</source>
+        <translation>Bağlanırsan onun bağlantısı kopabilir.</translation>
+    </message>
+    <message>
+        <source>Connect anyway?</source>
+        <translation>Yine de bağlanılsın mı?</translation>
+    </message>
+    <message>
+        <source>Server in use</source>
+        <translation>Sunucu kullanımda</translation>
     </message>
     <message>
         <source>Close connection</source>
@@ -413,7 +570,7 @@
     </message>
     <message>
         <source>There are open connections. Close all of them and quit RConnect?</source>
-        <translation>Açık bağlantılar var. Tümü kapatılıp RConnect'ten çıkılsın mı?</translation>
+        <translation>Açık bağlantılar var. Tümü kapatılıp RConnect&apos;ten çıkılsın mı?</translation>
     </message>
     <message>
         <source>Delete server</source>

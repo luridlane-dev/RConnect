@@ -43,4 +43,5 @@ private:
     QCheckBox *m_audio;
     QCheckBox *m_certs;
     QCheckBox *m_monitor;
+    QCheckBox *m_checkSessions;
 };

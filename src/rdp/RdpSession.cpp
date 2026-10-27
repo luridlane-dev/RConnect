@@ -19,6 +19,11 @@ struct __declspec(uuid("c1e6743a-41c1-4a74-832a-0dd06c1c7a0e")) IMsTscNonScripta
     virtual HRESULT STDMETHODCALLTYPE put_ClearTextPassword(BSTR pw) = 0;
 };
 
+struct __declspec(uuid("302d8188-0052-4807-806a-362b628f9ac5")) IMsRdpExtendedSettings : IDispatch {
+    virtual HRESULT STDMETHODCALLTYPE put_Property(BSTR name, VARIANT *value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Property(BSTR name, VARIANT *value) = 0;
+};
+
 namespace {
 
 // ExtendedDisconnectReasonCode values
@@ -158,15 +163,27 @@ void RdpSession::changeEvent(QEvent *e)
         showOverlay();
 }
 
+uint RdpSession::desktopScale() const
+{
+    return uint(qMax(100.0, devicePixelRatioF() * 100.0));
+}
+
+uint RdpSession::deviceScale() const
+{
+    const uint scale = desktopScale();
+    return scale >= 180 ? 180 : (scale >= 140 ? 140 : 100);
+}
+
 void RdpSession::syncDisplaySize()
 {
     if (m_state != Connected || m_ax->isNull() || m_profile.fixedResolution().isValid())
         return;
     const QSize s = remoteSize();
-    const uint scale = uint(qMax(100.0, devicePixelRatioF() * 100.0));
-    const uint deviceScale = scale >= 180 ? 180 : (scale >= 140 ? 140 : 100);
+    if (s == m_syncedSize)
+        return;
+    m_syncedSize = s;
     m_ax->dynamicCall("UpdateSessionDisplaySettings(uint,uint,uint,uint,uint,uint,uint)",
-                      uint(s.width()), uint(s.height()), 0u, 0u, 0u, scale, deviceScale);
+                      uint(s.width()), uint(s.height()), 0u, 0u, 0u, desktopScale(), deviceScale());
 }
 
 void RdpSession::poll()
@@ -243,9 +260,30 @@ void RdpSession::applySettings()
         adv->setProperty("Compress", 1);
         // No wallpaper, full-window drag, menu animations or cursor shadow.
         adv->setProperty("PerformanceFlags", 0x1 | 0x2 | 0x4 | 0x20 | 0x80);
-        adv->setProperty("NetworkConnectionType", 7); // auto-detect
-        adv->setProperty("BandwidthDetection", true);
+        // LAN: auto-detect lets the server pick lossy codecs on internet links, which blurs text.
+        adv->setProperty("NetworkConnectionType", 6);
+        adv->setProperty("BandwidthDetection", false);
     }
+
+    // Opens the session at the local DPI instead of 100% until the first resize.
+    IMsRdpExtendedSettings *ext = nullptr;
+    if (!fixed.isValid()
+        && m_ax->queryInterface(QUuid(QStringLiteral("{302d8188-0052-4807-806a-362b628f9ac5}")),
+                                reinterpret_cast<void **>(&ext)) == S_OK && ext) {
+        const auto put = [ext](const wchar_t *name, uint value) {
+            BSTR n = SysAllocString(name);
+            VARIANT v;
+            VariantInit(&v);
+            v.vt = VT_UI4;
+            v.ulVal = value;
+            ext->put_Property(n, &v);
+            SysFreeString(n);
+        };
+        put(L"DesktopScaleFactor", desktopScale());
+        put(L"DeviceScaleFactor", deviceScale());
+        ext->Release();
+    }
+    m_syncedSize = size;
 
     if (!m_profile.password.isEmpty()) {
         IMsTscNonScriptable *ns = nullptr;
@@ -340,7 +378,14 @@ void RdpSession::onLoginComplete()
     m_overlay->hide();
     m_ax->setFocus();
     setState(Connected);
+    const QSize before = m_syncedSize;
     syncDisplaySize();
+    // The display channel may not be open yet at login; the first resize can be lost.
+    if (m_syncedSize != before)
+        QTimer::singleShot(2000, this, [this] {
+            m_syncedSize = {};
+            syncDisplaySize();
+        });
 }
 
 void RdpSession::onDisconnected(int reason)

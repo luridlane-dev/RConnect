@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QList>
 #include <QObject>
+#include <QSet>
 
 #include <string>
 
@@ -15,6 +16,7 @@ class QWidget;
 class ServerStore;
 class SessionWindow;
 class StatusMonitor;
+struct ServerStatus;
 
 // Owns the server list, the windows and the sessions.
 class Workspace : public QObject {
@@ -33,7 +35,9 @@ private:
     SessionWindow *windowOf(const QString &serverId) const;
     QWidget *dialogParent() const;
 
-    void openServer(const QString &id, SessionWindow *target);
+    void openServer(const QString &id, SessionWindow *target); // warns if someone else is connected
+    void connectServer(const ServerProfile &p, SessionWindow *target);
+    bool confirmBusy(const ServerProfile &p, const ServerStatus &status, QWidget *parent) const;
     void closeSession(const QString &id); // asks while connected
     void endSession(const QString &id);
     void detachSession(const QString &id, const QPoint &globalPos);
@@ -58,5 +62,6 @@ private:
     QList<SessionWindow *> m_windows;
     QHash<SessionWindow *, QFrame *> m_popups;
     QHash<QString, RdpSession *> m_sessions;
+    QSet<QString> m_pendingOpens; // waiting for the session check
     bool m_quitting = false;
 };

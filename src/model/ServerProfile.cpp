@@ -43,6 +43,7 @@ QJsonObject ServerProfile::toJson() const
     o[QLatin1String("audio")] = audio;
     o[QLatin1String("ignoreCertWarnings")] = ignoreCertWarnings;
     o[QLatin1String("monitor")] = monitor;
+    o[QLatin1String("checkSessions")] = checkSessions;
     return o;
 }
 
@@ -71,6 +72,7 @@ ServerProfile ServerProfile::fromJson(const QJsonObject &o)
     p.audio = o.value(QLatin1String("audio")).toBool(true);
     p.ignoreCertWarnings = o.value(QLatin1String("ignoreCertWarnings")).toBool(true);
     p.monitor = o.value(QLatin1String("monitor")).toBool(true);
+    p.checkSessions = o.value(QLatin1String("checkSessions")).toBool(true);
     if (p.name.isEmpty())
         p.name = p.host;
     return p;

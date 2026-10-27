@@ -50,6 +50,8 @@ private:
     void poll();
     void handleDisconnected(int reason);
     QSize remoteSize() const;
+    uint desktopScale() const;
+    uint deviceScale() const;
     void syncDisplaySize();
     void setState(State s);
     void showOverlay();
@@ -67,6 +69,7 @@ private:
     bool m_controlMissing = false;
     int m_lastReason = 0;
     int m_lastExtReason = 0;
+    QSize m_syncedSize; // last size sent to the server
     QTimer m_poll;
     QTimer m_resizeTimer;
 };

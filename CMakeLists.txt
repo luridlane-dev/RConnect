@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(RConnect VERSION 1.0.0 DESCRIPTION "Remote Desktop connection manager" LANGUAGES CXX RC)
+project(RConnect VERSION 1.1.0 DESCRIPTION "Remote Desktop connection manager" LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,7 @@ add_executable(RConnect WIN32
     src/core/Language.h          src/core/Language.cpp
     src/core/Secrets.h           src/core/Secrets.cpp
     src/core/StatusMonitor.h     src/core/StatusMonitor.cpp
+    src/core/WinRm.h             src/core/WinRm.cpp
     src/model/ServerProfile.h    src/model/ServerProfile.cpp
     src/model/ServerStatus.h
     src/model/ServerStore.h      src/model/ServerStore.cpp
@@ -48,7 +49,7 @@ target_compile_definitions(RConnect PRIVATE
     RCONNECT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(RConnect PRIVATE
     Qt6::Widgets Qt6::AxContainer
-    crypt32 dwmapi ole32 oleaut32 ws2_32)
+    crypt32 dwmapi ole32 oleaut32 secur32 ws2_32)
 
 if(MSVC)
     target_compile_options(RConnect PRIVATE /utf-8 /W3 /MP)
