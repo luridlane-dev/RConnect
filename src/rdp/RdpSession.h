@@ -1,6 +1,7 @@
 #pragma once
 #include "model/ServerProfile.h"
 
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QWidget>
 
@@ -54,6 +55,7 @@ private:
     uint deviceScale() const;
     void syncDisplaySize();
     void setState(State s);
+    void log(const QString &text) const;
     void showOverlay();
     QString describe(int reason, int extReason) const;
 
@@ -70,6 +72,9 @@ private:
     int m_lastReason = 0;
     int m_lastExtReason = 0;
     QSize m_syncedSize; // last size sent to the server
+    QElapsedTimer m_connectClock;
+    qint64 m_lastHeartbeat = 0;
+    int m_lastPolled = -1;
     QTimer m_poll;
     QTimer m_resizeTimer;
 };

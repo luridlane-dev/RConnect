@@ -25,6 +25,7 @@ add_executable(RConnect WIN32
     ${CMAKE_CURRENT_BINARY_DIR}/app.rc
     src/core/GeoIp.h             src/core/GeoIp.cpp
     src/core/Language.h          src/core/Language.cpp
+    src/core/Log.h               src/core/Log.cpp
     src/core/Secrets.h           src/core/Secrets.cpp
     src/core/StatusMonitor.h     src/core/StatusMonitor.cpp
     src/core/WinRm.h             src/core/WinRm.cpp

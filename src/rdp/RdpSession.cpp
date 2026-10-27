@@ -1,4 +1,5 @@
 #include "RdpSession.h"
+#include "core/Log.h"
 
 #include <QAxObject>
 #include <QAxWidget>
@@ -19,7 +20,7 @@ struct __declspec(uuid("c1e6743a-41c1-4a74-832a-0dd06c1c7a0e")) IMsTscNonScripta
     virtual HRESULT STDMETHODCALLTYPE put_ClearTextPassword(BSTR pw) = 0;
 };
 
-struct __declspec(uuid("302d8188-0052-4807-806a-362b628f9ac5")) IMsRdpExtendedSettings : IDispatch {
+struct __declspec(uuid("302d8188-0052-4807-806a-362b628f9ac5")) IMsRdpExtendedSettings : IUnknown {
     virtual HRESULT STDMETHODCALLTYPE put_Property(BSTR name, VARIANT *value) = 0;
     virtual HRESULT STDMETHODCALLTYPE get_Property(BSTR name, VARIANT *value) = 0;
 };
@@ -193,6 +194,14 @@ void RdpSession::poll()
     const int c = m_ax->property("Connected").toInt();
     if (c != 0)
         m_sawActive = true;
+    const qint64 elapsed = m_connectClock.elapsed();
+    if (c != m_lastPolled || elapsed - m_lastHeartbeat >= 5000) {
+        m_lastHeartbeat = elapsed;
+        m_lastPolled = c;
+        log(QStringLiteral("poll +%1ms Connected=%2 state=%3 visible=%4 ext=%5")
+                .arg(elapsed).arg(c).arg(int(m_state)).arg(isVisible())
+                .arg(m_ax->property("ExtendedDisconnectReason").toInt()));
+    }
     if (m_refreshing) {
         if (c == 0) {
             m_refreshing = false;
@@ -214,16 +223,27 @@ bool RdpSession::createControl()
     if (!m_ax->isNull())
         return true;
     for (const char *clsid : kControlClsids) {
-        if (m_ax->setControl(QString::fromLatin1(clsid)))
+        const bool ok = m_ax->setControl(QString::fromLatin1(clsid));
+        log(QStringLiteral("setControl %1 -> %2").arg(QString::fromLatin1(clsid), ok ? "ok" : "failed"));
+        if (ok)
             break;
     }
-    if (m_ax->isNull())
+    if (m_ax->isNull()) {
+        log(QStringLiteral("no RDP ActiveX control could be created"));
         return false;
+    }
 
     connect(m_ax, SIGNAL(OnConnecting()), this, SLOT(onConnecting()));
     connect(m_ax, SIGNAL(OnConnected()), this, SLOT(onConnected()));
     connect(m_ax, SIGNAL(OnLoginComplete()), this, SLOT(onLoginComplete()));
     connect(m_ax, SIGNAL(OnDisconnected(int)), this, SLOT(onDisconnected(int)));
+    // Every COM event, including ones without a slot above.
+    connect(m_ax, &QAxWidget::signal, this, [this](const QString &name, int argc, void *) {
+        log(QStringLiteral("event %1 (%2 args)").arg(name).arg(argc));
+    });
+    connect(m_ax, &QAxWidget::exception, this, [this](int code, const QString &src, const QString &desc, const QString &help) {
+        log(QStringLiteral("COM exception %1 src=%2 desc=%3 help=%4").arg(code).arg(src, desc, help));
+    });
     return true;
 }
 
@@ -232,6 +252,10 @@ void RdpSession::applySettings()
     const QSize fixed = m_profile.fixedResolution();
     const QSize size = fixed.isValid() ? fixed : remoteSize();
 
+    log(QStringLiteral("applySettings host=%1 port=%2 user=%3 domain=%4 size=%5x%6 fixedRes=%7 passwordSet=%8 ignoreCert=%9")
+            .arg(m_profile.host).arg(m_profile.port).arg(m_profile.user, m_profile.domain)
+            .arg(size.width()).arg(size.height()).arg(fixed.isValid())
+            .arg(!m_profile.password.isEmpty()).arg(m_profile.ignoreCertWarnings));
     m_ax->setProperty("Server", m_profile.host);
     m_ax->setProperty("UserName", m_profile.user);
     m_ax->setProperty("Domain", m_profile.domain);
@@ -242,6 +266,7 @@ void RdpSession::applySettings()
     QAxObject *adv = m_ax->querySubObject("AdvancedSettings9");
     if (!adv)
         adv = m_ax->querySubObject("AdvancedSettings8");
+    log(QStringLiteral("AdvancedSettings object: %1").arg(adv ? "found" : "MISSING"));
     if (adv) {
         adv->setProperty("RDPPort", m_profile.port);
         adv->setProperty("SmartSizing", fixed.isValid());
@@ -290,11 +315,16 @@ void RdpSession::applySettings()
         if (m_ax->queryInterface(QUuid(QStringLiteral("{c1e6743a-41c1-4a74-832a-0dd06c1c7a0e}")),
                                  reinterpret_cast<void **>(&ns)) == S_OK && ns) {
             BSTR pw = SysAllocString(reinterpret_cast<const OLECHAR *>(m_profile.password.utf16()));
-            ns->put_ClearTextPassword(pw);
+            const HRESULT hr = ns->put_ClearTextPassword(pw);
             SecureZeroMemory(pw, SysStringByteLen(pw));
             SysFreeString(pw);
             ns->Release();
+            log(QStringLiteral("put_ClearTextPassword hr=0x%1").arg(quint32(hr), 8, 16, QLatin1Char('0')));
+        } else {
+            log(QStringLiteral("IMsTscNonScriptable not available; password NOT set"));
         }
+    } else {
+        log(QStringLiteral("no saved password; the control may wait for credentials"));
     }
 }
 
@@ -303,6 +333,10 @@ void RdpSession::start()
     m_closing = false;
     m_everConnected = false;
     m_lastReason = m_lastExtReason = 0;
+    m_lastPolled = -1;
+    m_lastHeartbeat = 0;
+    m_connectClock.start();
+    log(QStringLiteral("start (log: %1)").arg(Log::path()));
     if (!createControl()) {
         m_controlMissing = true;
         setState(Failed);
@@ -314,10 +348,14 @@ void RdpSession::start()
     m_sawActive = false;
     // Wait for the final tab size.
     QTimer::singleShot(0, this, [this] {
-        if (m_closing)
+        if (m_closing) {
+            log(QStringLiteral("start aborted: session closing"));
             return;
+        }
         applySettings();
+        log(QStringLiteral("calling Connect()"));
         m_ax->dynamicCall("Connect()");
+        log(QStringLiteral("Connect() returned"));
         m_poll.start();
     });
 }
@@ -362,18 +400,26 @@ void RdpSession::setState(State s)
     emit stateChanged(s);
 }
 
+void RdpSession::log(const QString &text) const
+{
+    Log::write(QStringLiteral("[%1] %2").arg(m_profile.name, text));
+}
+
 void RdpSession::onConnecting()
 {
+    log(QStringLiteral("OnConnecting"));
     setState(Connecting);
 }
 
 void RdpSession::onConnected()
 {
+    log(QStringLiteral("OnConnected (transport up)"));
     m_everConnected = true;
 }
 
 void RdpSession::onLoginComplete()
 {
+    log(QStringLiteral("login complete"));
     m_everConnected = true;
     m_overlay->hide();
     m_ax->setFocus();
@@ -390,6 +436,7 @@ void RdpSession::onLoginComplete()
 
 void RdpSession::onDisconnected(int reason)
 {
+    log(QStringLiteral("OnDisconnected reason=%1 closing=%2 refreshing=%3").arg(reason).arg(m_closing).arg(m_refreshing));
     if (m_closing) {
         deleteLater();
         return;
@@ -408,6 +455,8 @@ void RdpSession::handleDisconnected(int reason)
 
     m_lastReason = reason;
     m_lastExtReason = m_ax->property("ExtendedDisconnectReason").toInt();
+    log(QStringLiteral("disconnected reason=%1 extReason=%2 everConnected=%3")
+            .arg(m_lastReason).arg(m_lastExtReason).arg(m_everConnected));
     if (m_lastExtReason == kExtReplacedByOther)
         setState(Replaced);
     else
