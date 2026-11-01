@@ -76,9 +76,9 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
         b->setFixedSize(26, 26);
         b->setCursor(Qt::PointingHandCursor);
         b->setStyleSheet(QStringLiteral(
-            "QToolButton { background: %1; border: 3px solid #000000; border-radius: 13px; padding: 0; }"
-            "QToolButton:hover { border-color: #3a3a3c; }"
-            "QToolButton:checked { border-color: #ffffff; }").arg(kPalette[i]));
+            "QToolButton { background: %1; border: 3px solid transparent; border-radius: 13px; padding: 0; }"
+            "QToolButton:hover { border-color: rgba(128, 128, 128, 0.55); }"
+            "QToolButton:checked { border-color: %2; }").arg(kPalette[i], Theme::kLabel.name()));
         m_colors->addButton(b, i);
         colorRow->addWidget(b);
         if (!initial.color.isEmpty() && kPalette[i].compare(initial.color, Qt::CaseInsensitive) == 0)
@@ -131,7 +131,7 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     m_certs->setChecked(initial.ignoreCertWarnings);
     m_monitor = new QCheckBox(tr("Check online status (port check once a minute)"));
     m_monitor->setChecked(initial.monitor);
-    m_checkSessions = new QCheckBox(tr("Show who is connected (WinRM, uses the saved password)"));
+    m_checkSessions = new QCheckBox(tr("Show who is connected (uses the saved password)"));
     m_checkSessions->setChecked(initial.checkSessions);
 
     m_advanced = new QWidget;

@@ -11,10 +11,12 @@
 #include <QPixmapCache>
 #include <QToolTip>
 
+#include <cmath>
+
 namespace {
 
 constexpr int kPad = 14;
-constexpr int kRadius = 16;
+constexpr int kRadius = 12;
 constexpr int kIconSize = 48;
 constexpr int kIconRadius = 12;
 constexpr int kFlagWidth = 16;
@@ -28,7 +30,7 @@ constexpr int kBadgeHeight = 20;
 
 // Every rectangle of a card, so painting and tooltips agree.
 struct Geometry {
-    QRect card, icon, name, pill, status, flag, host, latency, bars;
+    QRect card, icon, name, pill, star, status, flag, host, latency, bars;
 };
 
 Geometry geometry(const QRect &card, bool hasFlag)
@@ -40,8 +42,9 @@ Geometry geometry(const QRect &card, bool hasFlag)
     const int right = card.right() + 1 - kPad;
     const int top = card.top() + 13;
 
-    g.name = QRect(left, top, right - left, 18);
-    g.pill = QRect(right - 42, top, 42, 18);
+    g.star = QRect(right - 16, top, 16, 18);
+    g.name = QRect(left, top, right - 22 - left, 18);
+    g.pill = QRect(g.star.left() - 6 - 42, top, 42, 18);
     g.status = QRect(left, top + 21, right - left, kBadgeHeight);
     const int hostLeft = left + (hasFlag ? kFlagWidth + 6 : 0);
     g.flag = QRect(left, top + 46 + (14 - kFlagHeight) / 2, kFlagWidth, kFlagHeight);
@@ -71,7 +74,7 @@ QPixmap flagPixmap(const QString &code, qreal dpr)
 
 QColor barColor(int bars)
 {
-    return bars >= 3 ? QColor(0x30, 0xd1, 0x58) : (bars == 2 ? QColor(0xff, 0x9f, 0x0a) : QColor(0xff, 0x45, 0x3a));
+    return bars >= 3 ? Theme::kGreen : (bars == 2 ? Theme::kOrange : Theme::kRed);
 }
 
 // A rounded badge tinted with `color`: optional dot, then text. Returns the width used.
@@ -107,6 +110,11 @@ int drawBadge(QPainter *p, const QRect &avail, const QColor &color, const QStrin
 
 } // namespace
 
+QRect ServerDelegate::starRect(const QRect &itemRect)
+{
+    return geometry(itemRect.adjusted(0, 0, -1, -1), false).star.adjusted(-6, -6, 6, 6);
+}
+
 bool ServerDelegate::helpEvent(QHelpEvent *event, QAbstractItemView *view, const QStyleOptionViewItem &option,
                                const QModelIndex &index)
 {
@@ -122,6 +130,8 @@ bool ServerDelegate::helpEvent(QHelpEvent *event, QAbstractItemView *view, const
         text = GeoIp::countryName(code);
     else if (g.status.united(g.latency).united(g.bars).adjusted(-3, -3, 3, 3).contains(pos))
         text = index.data(ServerStore::StatusToolTipRole).toString();
+    if (text.isEmpty() && g.star.adjusted(-6, -6, 6, 6).contains(pos))
+        text = QCoreApplication::translate("ServerDelegate", "Favourite");
     if (text.isEmpty()) {
         QToolTip::hideText();
         return true;
@@ -150,10 +160,8 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     QPainterPath card;
     card.addRoundedRect(QRectF(cardRect).adjusted(0.5, 0.5, -0.5, -0.5), kRadius, kRadius);
     p->fillPath(card, hover ? Theme::kCardHover : Theme::kCard);
-    if (open) {
-        p->setPen(QPen(Theme::kBlue, 1.5));
-        p->drawPath(card);
-    }
+    p->setPen(QPen(open ? Theme::kBlue : (hover ? Theme::kSeparatorStrong : Theme::kSeparator), open ? 1.5 : 1.0));
+    p->drawPath(card);
 
     // Icon: server colour with the first letter
     const QColor base(index.data(ServerStore::ColorRole).toString());
@@ -172,6 +180,26 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     p->drawLine(QPointF(c.x(), screen.bottom() + 1), QPointF(c.x(), screen.bottom() + 5));
     p->drawLine(QPointF(c.x() - 6, screen.bottom() + 6), QPointF(c.x() + 6, screen.bottom() + 6));
 
+    // Favourite star: always there when set, otherwise only while the pointer is on the card
+    const bool favorite = index.data(ServerStore::FavoriteRole).toBool();
+    if (favorite || hover) {
+        const QPointF c = QRectF(g.star).center();
+        QPainterPath star;
+        for (int k = 0; k < 10; ++k) {
+            const qreal r = k % 2 ? 3.4 : 7.6;
+            const qreal a = -M_PI / 2 + k * M_PI / 5;
+            const QPointF pt(c.x() + r * std::cos(a), c.y() + 0.6 + r * std::sin(a));
+            if (k == 0)
+                star.moveTo(pt);
+            else
+                star.lineTo(pt);
+        }
+        star.closeSubpath();
+        p->setBrush(favorite ? QBrush(Theme::kOrange) : Qt::NoBrush);
+        p->setPen(QPen(favorite ? Theme::kOrange : Theme::kLabelTertiary, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->drawPath(star);
+    }
+
     // Name, and a pill while the server is open in a tab
     const QFont nameFont = Theme::font(14, QFont::DemiBold);
     p->setFont(nameFont);
@@ -188,7 +216,7 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
         QFont f = Theme::font(10, QFont::DemiBold);
         f.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
         p->setFont(f);
-        p->setPen(QColor(0x64, 0xac, 0xff));
+        p->setPen(Theme::kBlueText);
         p->drawText(g.pill, Qt::AlignCenter, QCoreApplication::translate("ServerDelegate", "OPEN"));
     }
 
@@ -198,15 +226,14 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     const bool online = index.data(ServerStore::StatusRole).toInt() == ServerStatus::Online;
     int x = g.status.left();
     const int badgeLimit = g.status.right() + 1;
-    x += drawBadge(p, QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight), statusColor,
+    // Keep room for the second badge: the computer name gives way first.
+    const int firstWidth = busy ? qMax(60, badgeLimit - x - 126) : badgeLimit - x;
+    x += drawBadge(p, QRect(x, g.status.top(), firstWidth, kBadgeHeight), statusColor,
                    index.data(ServerStore::StatusBadgeRole).toString(), online || busy) + 6;
     if (busy && badgeLimit - x > 24) {
         const int idle = index.data(ServerStore::OwnerIdleRole).toInt();
-        if (idle < 1)
-            drawBadge(p, QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight), QColor(0x30, 0xd1, 0x58), QString(), true);
-        else
-            drawBadge(p, QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight), Theme::kLabelSecondary,
-                      idleShort(idle), false);
+        drawBadge(p, QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight),
+                  idle < 1 ? Theme::kGreen : Theme::kLabelSecondary, idleShort(idle), idle < 1);
     }
 
     // Address with the country flag
@@ -233,7 +260,7 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
         for (int i = 0; i < kBarCount; ++i) {
             const int h = 4 + i * 3;
             const QRect bar(g.bars.left() + i * (kBarWidth + kBarGap), g.bars.bottom() + 1 - h, kBarWidth, h);
-            p->setBrush(i < bars ? barColor(bars) : QColor(0x3a, 0x3a, 0x3c));
+            p->setBrush(i < bars ? barColor(bars) : Theme::kBarOff);
             p->drawRoundedRect(bar, 1.2, 1.2);
         }
     }

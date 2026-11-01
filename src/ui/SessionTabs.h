@@ -14,6 +14,7 @@ public:
     static const char *const kMimeType;
 
     QToolButton *addButton() const { return m_add; }
+    void setSelectionVisible(bool visible);
 
 signals:
     void addRequested();
@@ -50,4 +51,5 @@ private:
     QString m_pressId;
     QPoint m_pressPos;
     int m_dropIndex = -1;
+    bool m_selectionVisible = true;
 };

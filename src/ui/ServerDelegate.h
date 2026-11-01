@@ -12,6 +12,8 @@ public:
     static constexpr int kMinCardWidth = 270;
 
     void setOpenIds(const QSet<QString> &ids) { m_open = ids; }
+    // Where the favourite star is, for the item rectangle of the view.
+    static QRect starRect(const QRect &itemRect);
     void setCardWidth(int width) { m_cardWidth = width; }
     int cardWidth() const { return m_cardWidth; }
 

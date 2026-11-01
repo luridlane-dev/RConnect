@@ -24,6 +24,7 @@ public:
         LatencyRole,   // ms, -1 if unknown
         SignalRole,    // 0..4
         OwnerIdleRole, // minutes the connected user has been idle, -1 if nobody
+        FavoriteRole,  // bool
     };
 
     explicit ServerStore(QObject *parent = nullptr);
@@ -54,6 +55,8 @@ public:
     Counts counts() const;
     QStringList usedColors() const;
     void setCountry(const QString &id, const QString &host, const QString &country);
+    void setFavorite(const QString &id, bool favorite);
+    int favoriteCount() const;
 
 signals:
     void statusChanged(const QString &id);

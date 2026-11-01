@@ -1,17 +1,25 @@
 #include "RdpSession.h"
 #include "core/Log.h"
+#include "ui/Theme.h"
 
 #include <QAxObject>
 #include <QAxWidget>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QLabel>
+#include <QPainter>
+#include <QPainterPath>
+#include <QRadialGradient>
 #include <QPushButton>
 #include <QStackedLayout>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QUuid>
 
+#include <cmath>
+
+#include <windows.h>
 #include <objbase.h>
 #include <oleauto.h>
 
@@ -50,11 +58,12 @@ const char *const kControlClsids[] = {
 class SessionOverlay : public QWidget {
     Q_OBJECT
 public:
+    enum Tone { Busy, Warning, Error };
+
     explicit SessionOverlay(QWidget *parent)
         : QWidget(parent)
     {
         setObjectName(QStringLiteral("sessionOverlay"));
-        setAttribute(Qt::WA_StyledBackground, true);
 
         m_title = new QLabel(this);
         m_title->setObjectName(QStringLiteral("overlayTitle"));
@@ -84,14 +93,23 @@ public:
         auto *lay = new QVBoxLayout(this);
         lay->setSpacing(12);
         lay->addStretch();
+        lay->addSpacing(kArtHeight); // the animation is painted here
         lay->addWidget(m_title);
         lay->addWidget(m_message, 0, Qt::AlignHCenter);
         lay->addSpacing(8);
         lay->addLayout(buttons);
         lay->addStretch();
+
+        m_frame.setInterval(16);
+        connect(&m_frame, &QTimer::timeout, this, [this] {
+            update();
+            if (m_tone != Busy && m_clock.elapsed() > kAppearMs)
+                m_frame.stop();
+        });
     }
 
-    void setTexts(const QString &title, const QString &message, bool offerReconnect, const QString &closeText)
+    void setTexts(const QString &title, const QString &message, bool offerReconnect, const QString &closeText,
+                  Tone tone = Error)
     {
         m_title->setText(title);
         m_message->setText(message);
@@ -101,18 +119,127 @@ public:
         m_reconnect->setText(QCoreApplication::translate("RdpSession", "Reconnect"));
         m_reconnect->setVisible(offerReconnect);
         m_close->setText(closeText);
+        if (tone != m_tone || !m_clock.isValid()) {
+            m_tone = tone;
+            m_clock.restart();
+        }
+        if (isVisible())
+            m_frame.start();
     }
 
 signals:
     void reconnectClicked();
     void closeClicked();
 
+protected:
+    void showEvent(QShowEvent *e) override
+    {
+        QWidget::showEvent(e);
+        m_clock.restart();
+        m_frame.start();
+    }
+
+    void hideEvent(QHideEvent *e) override
+    {
+        QWidget::hideEvent(e);
+        m_frame.stop();
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.fillRect(rect(), Theme::kBackground);
+
+        const qreal ms = m_clock.isValid() ? qreal(m_clock.elapsed()) : 0.0;
+        const qreal t = ms / 1000.0;
+        const qreal in = qMin(1.0, ms / kAppearMs);
+        const qreal ease = 1.0 - std::pow(1.0 - in, 3.0);
+        const qreal pulse = 0.5 + 0.5 * std::sin(t * 2.6);
+
+        QColor tint(0x0a, 0x84, 0xff);
+        if (m_tone == Warning)
+            tint = QColor(0xff, 0x9f, 0x0a);
+        else if (m_tone == Error)
+            tint = QColor(0xff, 0x45, 0x3a);
+
+        const QPointF c(width() / 2.0, m_title->y() - 12 - kArtHeight / 2.0 + (1.0 - ease) * 14.0);
+        p.setOpacity(ease);
+
+        // Soft glow behind the icon
+        QColor glow = tint;
+        glow.setAlphaF(m_tone == Busy ? 0.14 + 0.06 * pulse : 0.14);
+        QRadialGradient g(c, 96);
+        g.setColorAt(0, glow);
+        g.setColorAt(1, Qt::transparent);
+        p.setPen(Qt::NoPen);
+        p.setBrush(g);
+        p.drawEllipse(c, 96, 96);
+
+        // App-style icon tile: a monitor on a gradient
+        const qreal scale = (0.9 + 0.1 * ease) * (m_tone == Busy ? 1.0 + 0.015 * pulse : 1.0);
+        p.save();
+        p.translate(c);
+        p.scale(scale, scale);
+        const QRectF tile(-34, -34, 68, 68);
+        QLinearGradient tg(tile.topLeft(), tile.bottomLeft());
+        tg.setColorAt(0, tint.lighter(125));
+        tg.setColorAt(1, tint.darker(120));
+        p.setBrush(tg);
+        p.drawRoundedRect(tile, 16, 16);
+        p.setBrush(QColor(255, 255, 255, 46));
+        p.setPen(QPen(Qt::white, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const QRectF screen(-17, -19, 34, 24);
+        p.drawRoundedRect(screen, 4.5, 4.5);
+        p.drawLine(QPointF(0, 6.5), QPointF(0, 12));
+        p.drawLine(QPointF(-8, 13), QPointF(8, 13));
+        p.restore();
+
+        // Busy: rings spread out from the tile like a signal looking for the server, and a light runs
+        // along a thin bar under it.
+        if (m_tone == Busy) {
+            p.setBrush(Qt::NoBrush);
+            for (int k = 0; k < 3; ++k) {
+                const qreal phase = std::fmod(t / 2.4 + k / 3.0, 1.0);
+                const qreal r = 40.0 + phase * 36.0;
+                QColor ring = tint;
+                ring.setAlphaF(0.55 * std::pow(1.0 - phase, 1.6));
+                p.setPen(QPen(ring, 1.6));
+                p.drawEllipse(c, r, r);
+            }
+            const QRectF track(c.x() - 60, c.y() + 66, 120, 3);
+            QColor trackColor = tint;
+            trackColor.setAlpha(40);
+            p.setPen(Qt::NoPen);
+            p.setBrush(trackColor);
+            p.drawRoundedRect(track, 1.5, 1.5);
+            QPainterPath clip;
+            clip.addRoundedRect(track, 1.5, 1.5);
+            p.setClipPath(clip);
+            const qreal run = std::fmod(t / 1.4, 1.0);
+            const qreal slide = run * run * (3.0 - 2.0 * run); // eased
+            const qreal x = track.left() - 44 + slide * (track.width() + 88);
+            QLinearGradient light(x, 0, x + 44, 0);
+            light.setColorAt(0, Qt::transparent);
+            light.setColorAt(0.5, tint.lighter(130));
+            light.setColorAt(1, Qt::transparent);
+            p.setBrush(light);
+            p.drawRect(QRectF(x, track.top(), 44, track.height()));
+            p.setClipping(false);
+        }
+    }
+
 private:
     static constexpr int kMessageWidth = 460;
+    static constexpr int kArtHeight = 150;
+    static constexpr qreal kAppearMs = 420.0;
     QLabel *m_title;
     QLabel *m_message;
     QPushButton *m_reconnect;
     QPushButton *m_close;
+    QTimer m_frame;
+    QElapsedTimer m_clock;
+    Tone m_tone = Busy;
 };
 
 RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
@@ -162,6 +289,34 @@ void RdpSession::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
     if (e->type() == QEvent::LanguageChange && m_overlay->isVisible())
         showOverlay();
+    // Returning to the window (Alt+Tab back, minimize/restore) leaves the focus on the frame, not the control.
+    else if (e->type() == QEvent::ActivationChange && isActiveWindow())
+        QTimer::singleShot(0, this, &RdpSession::focusRemote);
+}
+
+void RdpSession::showEvent(QShowEvent *e)
+{
+    QWidget::showEvent(e);
+    QTimer::singleShot(0, this, &RdpSession::focusRemote);
+}
+
+void RdpSession::focusRemote()
+{
+    if (m_closing || m_state != Connected || m_ax->isNull() || !isVisible())
+        return;
+    m_ax->setFocus(Qt::OtherFocusReason);
+    // The control installs its keyboard hook only while its own child window has the focus.
+    HWND inner = nullptr;
+    EnumChildWindows(reinterpret_cast<HWND>(m_ax->winId()), [](HWND h, LPARAM lp) -> BOOL {
+        wchar_t cls[64];
+        if (GetClassNameW(h, cls, 64) > 0 && wcscmp(cls, L"IHWindowClass") == 0) {
+            *reinterpret_cast<HWND *>(lp) = h;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&inner));
+    if (inner && GetFocus() != inner)
+        SetFocus(inner);
 }
 
 uint RdpSession::desktopScale() const
@@ -279,6 +434,8 @@ void RdpSession::applySettings()
         adv->setProperty("AudioCaptureRedirectionMode", false);
         adv->setProperty("EnableCredSspSupport", true);
         adv->setProperty("AuthenticationLevel", m_profile.ignoreCertWarnings ? 0 : 2);
+        // Windows key, Alt+Tab and the like go to the server while this tab has the keyboard, not to this PC.
+        adv->setProperty("KeyboardHookMode", 1);
         adv->setProperty("EnableAutoReconnect", true);
         adv->setProperty("MaxReconnectAttempts", 5);
         adv->setProperty("BitmapPeristence", 1);
@@ -415,6 +572,8 @@ void RdpSession::onConnected()
 {
     log(QStringLiteral("OnConnected (transport up)"));
     m_everConnected = true;
+    if (m_state == Connecting && m_overlay->isVisible())
+        showOverlay();
 }
 
 void RdpSession::onLoginComplete()
@@ -422,8 +581,8 @@ void RdpSession::onLoginComplete()
     log(QStringLiteral("login complete"));
     m_everConnected = true;
     m_overlay->hide();
-    m_ax->setFocus();
     setState(Connected);
+    focusRemote();
     const QSize before = m_syncedSize;
     syncDisplaySize();
     // The display channel may not be open yet at login; the first resize can be lost.
@@ -472,15 +631,19 @@ void RdpSession::showOverlay()
                             tr("The Microsoft Remote Desktop client control (mstscax.dll) could not be loaded on this PC."),
                             false, closeTab);
     } else if (m_state == Connecting || m_state == Idle) {
-        m_overlay->setTexts(tr("Connecting to “%1”…").arg(m_profile.name), QString(), false, tr("Cancel"));
+        // The server answered (transport is up): now it signs in.
+        m_overlay->setTexts(tr("Connecting to “%1”…").arg(m_profile.name),
+                            m_everConnected ? tr("Signing in…") : tr("Reaching the server…"), false, tr("Cancel"),
+                            SessionOverlay::Busy);
     } else if (m_state == Replaced) {
         m_overlay->setTexts(tr("Another computer connected"),
                             tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")
                                 .arg(m_profile.name),
-                            true, closeTab);
+                            true, closeTab, SessionOverlay::Warning);
     } else {
         m_overlay->setTexts(m_everConnected ? tr("Connection ended") : tr("Could not connect"),
-                            describe(m_lastReason, m_lastExtReason), true, closeTab);
+                            describe(m_lastReason, m_lastExtReason), true, closeTab,
+                            SessionOverlay::Error);
     }
     m_overlay->show();
     m_overlay->raise();

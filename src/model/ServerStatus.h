@@ -1,5 +1,6 @@
 #pragma once
 #include "core/WinRm.h"
+#include "ui/Theme.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -14,6 +15,8 @@ struct ServerStatus {
     State state = Unknown;
     Occupancy occupancy = OccupancyUnknown;
     QList<RemoteSession> others; // connected sessions from other computers
+    QList<RemoteSession> all;    // every session on the server, for the live session list
+    bool mine = false;           // this PC has a connected session (a tab here, or mstsc)
     QString occupancyError;
     qint64 checkedAt = 0;        // ms since epoch of the last session check
     int latencyMs = -1;          // last TCP connect time to the RDP port
@@ -26,9 +29,11 @@ inline QColor statusColor(const ServerStatus &s)
 {
     switch (s.state) {
     case ServerStatus::Online:
-        return s.occupancy == ServerStatus::Busy ? QColor(0xff, 0x9f, 0x0a) : QColor(0x30, 0xd1, 0x58);
-    case ServerStatus::Offline:  return QColor(0xff, 0x45, 0x3a);
-    default:                     return QColor(0x8e, 0x8e, 0x93);
+        if (s.occupancy == ServerStatus::Busy)
+            return Theme::kOrange;
+        return s.mine ? Theme::kBlue : Theme::kGreen;
+    case ServerStatus::Offline:  return Theme::kRed;
+    default:                     return Theme::kLabelSecondary;
     }
 }
 
@@ -54,10 +59,10 @@ inline QString qualityText(int bars)
 inline QString idleText(int minutes)
 {
     if (minutes < 1)
-        return QCoreApplication::translate("ServerStatus", "active now");
+        return QCoreApplication::translate("ServerStatus", "using it right now");
     if (minutes < 60)
-        return QCoreApplication::translate("ServerStatus", "idle %1 min").arg(minutes);
-    return QCoreApplication::translate("ServerStatus", "idle %1 h").arg(minutes / 60);
+        return QCoreApplication::translate("ServerStatus", "not used for %1 min").arg(minutes);
+    return QCoreApplication::translate("ServerStatus", "not used for %1 h").arg(minutes / 60);
 }
 
 // Computer name, or the user name when the computer is unknown.
@@ -80,17 +85,21 @@ inline QString statusBadge(const ServerStatus &s)
         QString who = sessionOwner(s.others.first());
         if (s.others.size() > 1)
             who += QStringLiteral(" +%1").arg(s.others.size() - 1);
-        return who;
+        return who; // the second badge on the card says whether they are at the computer
     }
+    if (s.mine)
+        return QCoreApplication::translate("ServerStatus", "You are connected");
     return s.occupancy == ServerStatus::Free ? QCoreApplication::translate("ServerStatus", "Free")
                                              : QCoreApplication::translate("ServerStatus", "Online");
 }
 
-// "8 min", "2 h": how long the connected user has been idle.
+// For the second badge of a busy card: whether the person is at the computer, in plain words.
 inline QString idleShort(int minutes)
 {
-    return minutes < 60 ? QCoreApplication::translate("ServerStatus", "%1 min").arg(minutes)
-                        : QCoreApplication::translate("ServerStatus", "%1 h").arg(minutes / 60);
+    if (minutes < 1)
+        return QCoreApplication::translate("ServerStatus", "Using it now");
+    return minutes < 60 ? QCoreApplication::translate("ServerStatus", "Not used for %1 min").arg(minutes)
+                        : QCoreApplication::translate("ServerStatus", "Not used for %1 h").arg(minutes / 60);
 }
 
 inline QString statusToolTip(const ServerStatus &s)

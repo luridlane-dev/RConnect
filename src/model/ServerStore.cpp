@@ -67,25 +67,26 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() >= m_profiles.size())
         return {};
     const ServerProfile &p = m_profiles.at(index.row());
+    static const ServerStatus none;
+    const auto found = m_status.constFind(p.id);
+    const ServerStatus &st = found == m_status.constEnd() ? none : *found; // no copy: this runs for every painted card
     switch (role) {
     case Qt::DisplayRole:  return p.name;
     case IdRole:           return p.id;
     case HostRole:         return p.port == 3389 ? p.host : QStringLiteral("%1:%2").arg(p.host).arg(p.port);
     case ColorRole:        return p.color;
-    case StatusRole:       return int(m_status.value(p.id).state);
-    case StatusBadgeRole:  return statusBadge(m_status.value(p.id));
+    case StatusRole:       return int(st.state);
+    case StatusBadgeRole:  return statusBadge(st);
     case UserRole_:        return p.displayUser();
     case SearchRole:       return p.name + QLatin1Char(' ') + p.host + QLatin1Char(' ') + p.displayUser();
     case CountryRole:      return p.countryHost == p.host ? p.country : QString();
-    case StatusColorRole:  return statusColor(m_status.value(p.id));
-    case StatusToolTipRole: return statusToolTip(m_status.value(p.id));
-    case OccupancyRole:    return int(m_status.value(p.id).occupancy);
-    case LatencyRole:      return m_status.value(p.id).latencyMs;
-    case SignalRole:       return signalBars(m_status.value(p.id));
-    case OwnerIdleRole: {
-        const ServerStatus st = m_status.value(p.id);
-        return st.others.isEmpty() ? -1 : st.others.first().idleMinutes;
-    }
+    case StatusColorRole:  return statusColor(st);
+    case StatusToolTipRole: return statusToolTip(st);
+    case OccupancyRole:    return int(st.occupancy);
+    case LatencyRole:      return st.latencyMs;
+    case SignalRole:       return signalBars(st);
+    case OwnerIdleRole:    return st.others.isEmpty() ? -1 : st.others.first().idleMinutes;
+    case FavoriteRole:     return p.favorite;
     default:               return {};
     }
 }
@@ -201,8 +202,10 @@ ServerStore::Counts ServerStore::counts() const
 {
     Counts c;
     c.total = int(m_profiles.size());
+    static const ServerStatus none;
     for (const ServerProfile &p : m_profiles) {
-        const ServerStatus st = m_status.value(p.id);
+        const auto found = m_status.constFind(p.id);
+        const ServerStatus &st = found == m_status.constEnd() ? none : *found;
         if (st.state == ServerStatus::Online) {
             ++c.online;
             if (st.occupancy == ServerStatus::Busy)
@@ -236,4 +239,23 @@ QStringList ServerStore::usedColors() const
     for (const ServerProfile &p : m_profiles)
         colors << p.color.toLower();
     return colors;
+}
+
+void ServerStore::setFavorite(const QString &id, bool favorite)
+{
+    const int i = indexOfId(id);
+    if (i < 0 || m_profiles[i].favorite == favorite)
+        return;
+    m_profiles[i].favorite = favorite;
+    emit dataChanged(index(i), index(i));
+    scheduleSave();
+    queueSummary();
+}
+
+int ServerStore::favoriteCount() const
+{
+    int n = 0;
+    for (const ServerProfile &p : m_profiles)
+        n += p.favorite;
+    return n;
 }

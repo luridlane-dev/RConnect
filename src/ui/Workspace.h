@@ -1,4 +1,5 @@
 #pragma once
+#include "core/AccessLog.h"
 #include "rdp/RdpSession.h"
 
 #include <QHash>
@@ -12,6 +13,7 @@ class HomePage;
 class QFrame;
 class QPoint;
 class QScreen;
+class QSystemTrayIcon;
 class QWidget;
 class ServerStore;
 class SessionWindow;
@@ -26,7 +28,8 @@ public:
     explicit Workspace(const wchar_t *windowMarker, QObject *parent = nullptr);
     ~Workspace() override;
 
-    void start();
+    // startMinimized: opened by Windows at sign-in; stays in the taskbar and keeps watching the servers.
+    void start(bool startMinimized = false);
 
     SessionWindow *activeSessionWindow() const;
 
@@ -49,10 +52,14 @@ private:
 
     void showServerPopup(SessionWindow *w);
     void addServer();
+    void importServers();
     void editServer(const QString &id);
     void removeServer(const QString &id);
     void onSessionState(RdpSession::State state);
     void refreshOpenMarkers();
+    void enableAuditing(const QString &id);
+    void showAlert(const AccessRecord &alert);
+    void sendMessage(const QString &serverId, int sessionId, const QString &user);
 
     std::wstring m_marker;
     ServerStore *m_store;
@@ -61,7 +68,9 @@ private:
     SessionWindow *m_main = nullptr;
     QList<SessionWindow *> m_windows;
     QHash<SessionWindow *, QFrame *> m_popups;
+    QSystemTrayIcon *m_tray = nullptr; // created with the first alert
     QHash<QString, RdpSession *> m_sessions;
     QSet<QString> m_pendingOpens; // waiting for the session check
     bool m_quitting = false;
+    bool m_keepWatching = false; // started minimized: keep checking until the user opens the window
 };

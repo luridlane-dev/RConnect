@@ -2,6 +2,337 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="tr_TR" sourcelanguage="en">
 <context>
+    <name>AccessLogPage</name>
+    <message>
+        <source>Signed in</source>
+        <translation>Oturum açıldı</translation>
+    </message>
+    <message>
+        <source>Signed out</source>
+        <translation>Oturum kapatıldı</translation>
+    </message>
+    <message>
+        <source>Disconnected</source>
+        <translation>Bağlantı koptu</translation>
+    </message>
+    <message>
+        <source>Reconnected</source>
+        <translation>Yeniden bağlandı</translation>
+    </message>
+    <message>
+        <source>Connection accepted</source>
+        <translation>Bağlantı kabul edildi</translation>
+    </message>
+    <message>
+        <source>Failed sign-in</source>
+        <translation>Başarısız giriş denemesi</translation>
+    </message>
+    <message>
+        <source>Connected with RConnect</source>
+        <translation>RConnect ile bağlanıldı</translation>
+    </message>
+    <message>
+        <source>Screen viewed in RConnect</source>
+        <translation>Ekran görüntülendi</translation>
+    </message>
+    <message>
+        <source>Sign-in tracking turned on</source>
+        <translation>Giriş takibi açıldı</translation>
+    </message>
+    <message>
+        <source>Activity history</source>
+        <translation>Etkinlik geçmişi</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Yenile</translation>
+    </message>
+    <message>
+        <source>Export…</source>
+        <translation>Dışa aktar…</translation>
+    </message>
+    <message>
+        <source>Open file</source>
+        <translation>Dosyayı aç</translation>
+    </message>
+    <message>
+        <source>Search by server, user, IP address or device</source>
+        <translation>Sunucu, kullanıcı, IP adresi veya cihaza göre ara</translation>
+    </message>
+    <message>
+        <source>All activity</source>
+        <translation>Tüm etkinlik</translation>
+    </message>
+    <message>
+        <source>Sign-ins</source>
+        <translation>Oturum açmalar</translation>
+    </message>
+    <message>
+        <source>Failed sign-ins</source>
+        <translation>Başarısız denemeler</translation>
+    </message>
+    <message>
+        <source>Sign-outs and disconnections</source>
+        <translation>Çıkışlar ve kopmalar</translation>
+    </message>
+    <message>
+        <source>Done in RConnect</source>
+        <translation>RConnect&apos;te yapılanlar</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Zaman</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>Sunucu</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Etkinlik</translation>
+    </message>
+    <message>
+        <source>User</source>
+        <translation>Kullanıcı</translation>
+    </message>
+    <message>
+        <source>IP address</source>
+        <translation>IP adresi</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Cihaz</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Ayrıntı</translation>
+    </message>
+    <message>
+        <source>By</source>
+        <translation>Yapan</translation>
+    </message>
+    <message>
+        <source>Showing %1 of %2</source>
+        <translation>%2 kayıttan %1 tanesi gösteriliyor</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Dışa aktar</translation>
+    </message>
+    <message>
+        <source>CSV files (*.csv)</source>
+        <translation>CSV dosyaları (*.csv)</translation>
+    </message>
+    <message>
+        <source>Could not write the file.</source>
+        <translation>Dosya yazılamadı.</translation>
+    </message>
+    <message>
+        <source>Unknown user name</source>
+        <translation>Bilinmeyen kullanıcı adı</translation>
+    </message>
+    <message>
+        <source>Wrong password</source>
+        <translation>Yanlış şifre</translation>
+    </message>
+    <message>
+        <source>Sign-in failed</source>
+        <translation>Giriş başarısız</translation>
+    </message>
+    <message>
+        <source>Account restriction</source>
+        <translation>Hesap kısıtlaması</translation>
+    </message>
+    <message>
+        <source>Outside allowed hours</source>
+        <translation>İzin verilen saatlerin dışında</translation>
+    </message>
+    <message>
+        <source>Not allowed from this device</source>
+        <translation>Bu cihazdan girişe izin yok</translation>
+    </message>
+    <message>
+        <source>Password expired</source>
+        <translation>Şifrenin süresi dolmuş</translation>
+    </message>
+    <message>
+        <source>Account disabled</source>
+        <translation>Hesap devre dışı</translation>
+    </message>
+    <message>
+        <source>Clocks out of sync</source>
+        <translation>Saatler uyumsuz</translation>
+    </message>
+    <message>
+        <source>Sign-in type not allowed</source>
+        <translation>Bu giriş türüne izin yok</translation>
+    </message>
+    <message>
+        <source>Account expired</source>
+        <translation>Hesabın süresi dolmuş</translation>
+    </message>
+    <message>
+        <source>Account locked</source>
+        <translation>Hesap kilitli</translation>
+    </message>
+    <message>
+        <source>Windows system log</source>
+        <translation>Windows sistem günlüğü</translation>
+    </message>
+    <message>
+        <source>Message sent in RConnect</source>
+        <translation>RConnect ile mesaj gönderildi</translation>
+    </message>
+    <message>
+        <source>User account created</source>
+        <translation>Kullanıcı hesabı oluşturuldu</translation>
+    </message>
+    <message>
+        <source>Added to a privileged group</source>
+        <translation>Yetkili bir gruba eklendi</translation>
+    </message>
+    <message>
+        <source>Scheduled task created</source>
+        <translation>Zamanlanmış görev oluşturuldu</translation>
+    </message>
+    <message>
+        <source>Service installed</source>
+        <translation>Servis kuruldu</translation>
+    </message>
+    <message>
+        <source>Event log cleared</source>
+        <translation>Olay günlüğü temizlendi</translation>
+    </message>
+    <message>
+        <source>Alert: password guessing</source>
+        <translation>Uyarı: şifre deneme saldırısı</translation>
+    </message>
+    <message>
+        <source>Alert: sign-in after failed attempts</source>
+        <translation>Uyarı: başarısız denemelerden sonra giriş</translation>
+    </message>
+    <message>
+        <source>Alert: sign-in from a new country</source>
+        <translation>Uyarı: yeni bir ülkeden giriş</translation>
+    </message>
+    <message>
+        <source>Alert: suspicious new program</source>
+        <translation>Uyarı: şüpheli yeni program</translation>
+    </message>
+    <message>
+        <source>%1 failed sign-ins from %2, %3 accounts tried</source>
+        <translation>%2 adresinden %1 başarısız giriş, %3 hesap denendi</translation>
+    </message>
+    <message>
+        <source>%1 signed in from %2 right after %3 failed attempts</source>
+        <translation>%1, %2 adresinden %3 başarısız denemenin hemen ardından giriş yaptı</translation>
+    </message>
+    <message>
+        <source>%1 signed in from %2 (%3) for the first time</source>
+        <translation>%1, %2 (%3) adresinden ilk kez giriş yaptı</translation>
+    </message>
+    <message>
+        <source>New scheduled task: %1</source>
+        <translation>Yeni zamanlanmış görev: %1</translation>
+    </message>
+    <message>
+        <source>New service: %1</source>
+        <translation>Yeni servis: %1</translation>
+    </message>
+    <message>
+        <source>User account %1 created by %2</source>
+        <translation>%1 kullanıcı hesabı %2 tarafından oluşturuldu</translation>
+    </message>
+    <message>
+        <source>%1 added to %2 by %3</source>
+        <translation>%1, %3 tarafından %2 grubuna eklendi</translation>
+    </message>
+    <message>
+        <source>%1 log cleared by %2</source>
+        <translation>%1 günlüğü %2 tarafından temizlendi</translation>
+    </message>
+    <message>
+        <source>New scheduled task %1 by %2</source>
+        <translation>%2 tarafından yeni zamanlanmış görev: %1</translation>
+    </message>
+    <message>
+        <source>New service %1</source>
+        <translation>Yeni servis: %1</translation>
+    </message>
+    <message>
+        <source>Sign-ins, failed attempts, disconnections, security alerts and what was done in RConnect.</source>
+        <translation>Girişler, başarısız denemeler, bağlantı kopmaları, güvenlik uyarıları ve RConnect ile yapılanlar.</translation>
+    </message>
+    <message>
+        <source>Security alerts</source>
+        <translation>Güvenlik uyarıları</translation>
+    </message>
+    <message>
+        <source>Changes on the server</source>
+        <translation>Sunucudaki değişiklikler</translation>
+    </message>
+    <message>
+        <source>Nothing recorded yet. Activity appears here after your servers have been checked.</source>
+        <translation>Henüz kayıt yok. Sunucularınız kontrol edildikten sonra etkinlik burada görünür.</translation>
+    </message>
+    <message>
+        <source>%1 attempts</source>
+        <translation>%1 deneme</translation>
+    </message>
+    <message>
+        <source>%1 accounts</source>
+        <translation>%1 hesap</translation>
+    </message>
+    <message>
+        <source>%1 to %2</source>
+        <translation>%1 – %2</translation>
+    </message>
+    <message>
+        <source>Accounts tried</source>
+        <translation>Denenen hesaplar</translation>
+    </message>
+    <message>
+        <source>Account</source>
+        <translation>Hesap</translation>
+    </message>
+    <message>
+        <source>Attempts</source>
+        <translation>Deneme sayısı</translation>
+    </message>
+    <message>
+        <source>How</source>
+        <translation>Yöntem</translation>
+    </message>
+    <message>
+        <source>Done by</source>
+        <translation>Yapan</translation>
+    </message>
+    <message>
+        <source>Seen in</source>
+        <translation>Kaynak</translation>
+    </message>
+    <message>
+        <source>Record no.</source>
+        <translation>Kayıt no.</translation>
+    </message>
+    <message>
+        <source>Remote Desktop session log</source>
+        <translation>Uzak Masaüstü oturum günlüğü</translation>
+    </message>
+    <message>
+        <source>Remote Desktop connection log</source>
+        <translation>Uzak Masaüstü bağlantı günlüğü</translation>
+    </message>
+    <message>
+        <source>Windows security log</source>
+        <translation>Windows güvenlik günlüğü</translation>
+    </message>
+    <message>
+        <source>Windows session no.</source>
+        <translation>Windows oturum numarası (teknik)</translation>
+    </message>
+</context>
+<context>
     <name>AnimatedTabBar</name>
     <message>
         <source>Servers</source>
@@ -11,12 +342,28 @@
 <context>
     <name>HomePage</name>
     <message>
+        <source>Remote desktop manager</source>
+        <translation>Uzak masaüstü yöneticisi</translation>
+    </message>
+    <message>
+        <source>Windows user</source>
+        <translation>Windows kullanıcısı</translation>
+    </message>
+    <message>
         <source>Settings</source>
         <translation>Ayarlar</translation>
     </message>
     <message>
         <source>Servers</source>
         <translation>Sunucular</translation>
+    </message>
+    <message>
+        <source>Who&apos;s connected</source>
+        <translation>Kimler bağlı</translation>
+    </message>
+    <message>
+        <source>Activity history</source>
+        <translation>Etkinlik geçmişi</translation>
     </message>
     <message>
         <source>Language</source>
@@ -29,6 +376,105 @@
     <message>
         <source>Saves your Remote Desktop servers and connects to them in one click.</source>
         <translation>Uzak Masaüstü sunucularınızı kaydeder ve tek tıkla bağlanır.</translation>
+    </message>
+    <message>
+        <source>Start with Windows</source>
+        <translation>Windows ile başlat</translation>
+    </message>
+    <message>
+        <source>Window buttons in full screen</source>
+        <translation>Tam ekranda pencere düğmeleri</translation>
+    </message>
+    <message>
+        <source>macOS style</source>
+        <translation>macOS stili</translation>
+    </message>
+    <message>
+        <source>Windows style</source>
+        <translation>Windows stili</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Müsait</translation>
+    </message>
+    <message>
+        <source>In use</source>
+        <translation>Kullanımda</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>Çevrimdışı</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Görünüm</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Koyu</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Açık</translation>
+    </message>
+    <message>
+        <source>Time on servers</source>
+        <translation>Sunucuda geçen süre</translation>
+    </message>
+</context>
+<context>
+    <name>LiveSessionsPage</name>
+    <message>
+        <source>Who&apos;s connected</source>
+        <translation>Kimler bağlı</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Yenile</translation>
+    </message>
+    <message>
+        <source>Send message…</source>
+        <translation>Mesaj gönder…</translation>
+    </message>
+    <message>
+        <source>Show a message on the screen of the selected person</source>
+        <translation>Seçili kişinin ekranında bir mesaj göster</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>Sunucu</translation>
+    </message>
+    <message>
+        <source>User</source>
+        <translation>Kullanıcı</translation>
+    </message>
+    <message>
+        <source>Connected from</source>
+        <translation>Bağlandığı bilgisayar</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Durum</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Etkin</translation>
+    </message>
+    <message>
+        <source>Disconnected</source>
+        <translation>Bağlantısı kesik</translation>
+    </message>
+    <message>
+        <source>No one is connected right now.</source>
+        <translation>Şu an kimse bağlı değil.</translation>
+    </message>
+    <message>
+        <source>%1 sessions on %2 servers</source>
+        <translation>%2 sunucuda %1 oturum</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Durum</translation>
     </message>
 </context>
 <context>
@@ -125,6 +571,14 @@
         <source>%1 (code %2/%3)</source>
         <translation>%1 (kod %2/%3)</translation>
     </message>
+    <message>
+        <source>Signing in…</source>
+        <translation>Oturum açılıyor…</translation>
+    </message>
+    <message>
+        <source>Reaching the server…</source>
+        <translation>Sunucuya ulaşılıyor…</translation>
+    </message>
 </context>
 <context>
     <name>ServerDelegate</name>
@@ -135,6 +589,10 @@
     <message>
         <source>%1 ms</source>
         <translation>%1 ms</translation>
+    </message>
+    <message>
+        <source>Favourite</source>
+        <translation>Favori</translation>
     </message>
 </context>
 <context>
@@ -240,8 +698,8 @@
         <translation>Çevrimiçi durumunu denetle (dakikada bir port kontrolü)</translation>
     </message>
     <message>
-        <source>Show who is connected (WinRM, uses the saved password)</source>
-        <translation>Kimin bağlı olduğunu göster (WinRM, kayıtlı şifreyle)</translation>
+        <source>Show who is connected (uses the saved password)</source>
+        <translation>Kimin bağlı olduğunu göster (kayıtlı şifreyi kullanır)</translation>
     </message>
     <message>
         <source>Domain</source>
@@ -329,12 +787,32 @@ Use “+ Add server” to get started.</source>
         <translation>Durumu şimdi denetle</translation>
     </message>
     <message>
+        <source>Track sign-in attempts…</source>
+        <translation>Giriş denemelerini kaydet…</translation>
+    </message>
+    <message>
         <source>Edit…</source>
         <translation>Düzenle…</translation>
     </message>
     <message>
         <source>Delete…</source>
         <translation>Sil…</translation>
+    </message>
+    <message>
+        <source>Favourites</source>
+        <translation>Favoriler</translation>
+    </message>
+    <message>
+        <source>Add to favourites</source>
+        <translation>Favorilere ekle</translation>
+    </message>
+    <message>
+        <source>Remove from favourites</source>
+        <translation>Favorilerden çıkar</translation>
+    </message>
+    <message>
+        <source>Import</source>
+        <translation>İçe aktar</translation>
     </message>
 </context>
 <context>
@@ -360,18 +838,6 @@ Use “+ Add server” to get started.</source>
         <translation>Zayıf</translation>
     </message>
     <message>
-        <source>active now</source>
-        <translation>şu an aktif</translation>
-    </message>
-    <message>
-        <source>idle %1 min</source>
-        <translation>%1 dk boşta</translation>
-    </message>
-    <message>
-        <source>idle %1 h</source>
-        <translation>%1 sa boşta</translation>
-    </message>
-    <message>
         <source>Checking…</source>
         <translation>Denetleniyor…</translation>
     </message>
@@ -392,14 +858,6 @@ Use “+ Add server” to get started.</source>
         <translation>Çevrimiçi</translation>
     </message>
     <message>
-        <source>%1 min</source>
-        <translation>%1 dk</translation>
-    </message>
-    <message>
-        <source>%1 h</source>
-        <translation>%1 sa</translation>
-    </message>
-    <message>
         <source>Could not check who is connected: %1</source>
         <translation>Kimin bağlı olduğu kontrol edilemedi: %1</translation>
     </message>
@@ -410,6 +868,34 @@ Use “+ Add server” to get started.</source>
     <message>
         <source>Connected now:</source>
         <translation>Şu an bağlı:</translation>
+    </message>
+    <message>
+        <source>using it right now</source>
+        <translation>şu an kullanıyor</translation>
+    </message>
+    <message>
+        <source>not used for %1 min</source>
+        <translation>%1 dakikadır kullanmıyor</translation>
+    </message>
+    <message>
+        <source>not used for %1 h</source>
+        <translation>%1 saattir kullanmıyor</translation>
+    </message>
+    <message>
+        <source>You are connected</source>
+        <translation>Siz bağlısınız</translation>
+    </message>
+    <message>
+        <source>Using it now</source>
+        <translation>Şu an kullanıyor</translation>
+    </message>
+    <message>
+        <source>Not used for %1 min</source>
+        <translation>%1 dk kullanmıyor</translation>
+    </message>
+    <message>
+        <source>Not used for %1 h</source>
+        <translation>%1 sa kullanmıyor</translation>
     </message>
 </context>
 <context>
@@ -462,12 +948,215 @@ Use “+ Add server” to get started.</source>
         <source>Close</source>
         <translation>Kapat</translation>
     </message>
+    <message>
+        <source>Home</source>
+        <translation>Ana sayfa</translation>
+    </message>
+</context>
+<context>
+    <name>UsagePage</name>
+    <message>
+        <source>%1 min</source>
+        <translation>%1 dk</translation>
+    </message>
+    <message>
+        <source>%1 h %2 min</source>
+        <translation>%1 sa %2 dk</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Bugün</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Dün</translation>
+    </message>
+    <message>
+        <source>Time on servers</source>
+        <translation>Sunucuda geçen süre</translation>
+    </message>
+    <message>
+        <source>%1 sec</source>
+        <translation>%1 sn</translation>
+    </message>
+    <message>
+        <source>Who came in from which computer, when they came in and left, and how long they really worked. Times come from the servers&apos; own logs and are shown in this PC&apos;s time zone (%1). Time away from the computer (no mouse or keyboard for %2 minutes or more) is counted as away, not as active.</source>
+        <translation>Kim hangi bilgisayardan girdi, ne zaman girdi ve çıktı, gerçekte ne kadar çalıştı. Saatler sunucuların kendi kayıtlarından alınır ve bu bilgisayarın saat dilimine (%1) göre gösterilir. Bilgisayar başında olmadığı süre (%2 dakika veya daha uzun süre fare ya da klavye kullanılmaması) aktif değil, uzakta (AFK) sayılır.</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Yenile</translation>
+    </message>
+    <message>
+        <source>Recalculate from log</source>
+        <translation>Kayıttan yeniden hesapla</translation>
+    </message>
+    <message>
+        <source>Reads the sign-in and sign-out events from the access log again and recalculates every day.</source>
+        <translation>Giriş ve çıkış olaylarını erişim kaydından yeniden okur ve bütün günleri yeniden hesaplar.</translation>
+    </message>
+    <message>
+        <source>How is this calculated?</source>
+        <translation>Nasıl hesaplanıyor?</translation>
+    </message>
+    <message>
+        <source>Last 7 days</source>
+        <translation>Son 7 gün</translation>
+    </message>
+    <message>
+        <source>Last 30 days</source>
+        <translation>Son 30 gün</translation>
+    </message>
+    <message>
+        <source>All time</source>
+        <translation>Tümü</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>Sunucu</translation>
+    </message>
+    <message>
+        <source>Away time (AFK)</source>
+        <translation>Uzakta (AFK)</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>Belirsiz</translation>
+    </message>
+    <message>
+        <source>Note</source>
+        <translation>Not</translation>
+    </message>
+    <message>
+        <source>Done. %1 sign-in, sign-out, disconnect and reconnect events were read from the access log and every day was recalculated.</source>
+        <translation>Tamam. Erişim kaydından %1 giriş, çıkış, kopma ve yeniden bağlanma olayı okundu ve bütün günler yeniden hesaplandı.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Where the times come from.&lt;/b&gt; From the server&apos;s own session log (Windows events: signed in, disconnected, reconnected, signed out). Those times are exact. All times are saved in UTC and shown in this PC&apos;s time zone; a day ends at this PC&apos;s midnight.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Visit.&lt;/b&gt; From connecting to disconnecting. Time while disconnected is never counted. If the same computer (same IP address) comes back within %1 minutes, it is one visit and the short break is not counted.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Away (AFK).&lt;/b&gt; RConnect asks every server about every 2 minutes how long the person has not touched the mouse or keyboard. If that is %2 minutes or more, the whole stretch is away, from the last touch on, and it is not active time.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Unknown.&lt;/b&gt; If RConnect was closed or could not reach the server, nobody measured. That time is shown as unknown and is never guessed.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Accuracy.&lt;/b&gt; Entering and leaving: exact to the second. Away time: the server reports whole minutes and RConnect asks about every 2 minutes, so each away stretch can be off by up to 2 minutes (usually too short rather than too long). Computer names come from the server at the time of the visit; if no measurement was made during a visit, only the IP address is known.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Saatler nereden geliyor?&lt;/b&gt; Sunucunun kendi oturum kaydından (Windows olayları: giriş yaptı, bağlantı koptu, yeniden bağlandı, çıkış yaptı). Bu saatler kesindir. Bütün saatler UTC olarak saklanır, bu bilgisayarın saat diliminde gösterilir; gün, bu bilgisayarın gece yarısında biter.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Giriş (ziyaret).&lt;/b&gt; Bağlanmadan kopmaya kadar geçen süre. Bağlantının kopuk olduğu süre hiçbir zaman sayılmaz. Aynı bilgisayar (aynı IP adresi) %1 dakika içinde geri gelirse tek giriş sayılır ve kısa ara süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Uzakta (AFK).&lt;/b&gt; RConnect her sunucuya yaklaşık 2 dakikada bir kişinin fareye veya klavyeye ne zamandır dokunmadığını sorar. Bu süre %2 dakika veya daha fazlaysa, son dokunuştan itibaren bütün süre uzakta sayılır ve aktif süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Belirsiz.&lt;/b&gt; RConnect kapalıysa veya sunucuya ulaşamadıysa kimse ölçüm yapmamıştır. O süre &quot;belirsiz&quot; olarak gösterilir, asla tahmin edilmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Doğruluk.&lt;/b&gt; Giriş ve çıkış saatleri saniyesine kadar kesindir. Uzakta süresi: sunucu yalnızca tam dakikayı bildirir ve RConnect yaklaşık 2 dakikada bir sorar; bu yüzden her uzakta süresi en fazla yaklaşık 2 dakika sapabilir (genellikle fazla değil, eksik görünür). Bilgisayar adları girişin sırasında sunucudan alınır; bir giriş sırasında hiç ölçüm yapılmadıysa yalnızca IP adresi bilinir.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>%1 (from the day before)</source>
+        <translation>%1 (önceki günden)</translation>
+    </message>
+    <message>
+        <source>Midnight (goes on)</source>
+        <translation>Gece yarısı (devam ediyor)</translation>
+    </message>
+    <message>
+        <source>Some times are not exact: open the row</source>
+        <translation>Bazı saatler kesin değil: satırı açın</translation>
+    </message>
+    <message>
+        <source>Accounts used: %1</source>
+        <translation>Kullanılan hesaplar: %1</translation>
+    </message>
+    <message>
+        <source>not known</source>
+        <translation>bilinmiyor</translation>
+    </message>
+    <message>
+        <source>Not in the event log: only the server&apos;s list of connected people shows it</source>
+        <translation>Olay kaydında yok: yalnızca sunucunun bağlı kişiler listesinde görünüyor</translation>
+    </message>
+    <message>
+        <source>No sign-in event in the log</source>
+        <translation>Kayıtta giriş olayı yok</translation>
+    </message>
+    <message>
+        <source>No sign-out event in the log</source>
+        <translation>Kayıtta çıkış olayı yok</translation>
+    </message>
+    <message>
+        <source>%1 short break(s) of up to %2 minutes counted as one visit</source>
+        <translation>%2 dakikaya kadar %1 kısa kopma tek giriş sayıldı</translation>
+    </message>
+    <message>
+        <source>Still going on</source>
+        <translation>Devam ediyor</translation>
+    </message>
+    <message>
+        <source>Part of it was not measured</source>
+        <translation>Bir kısmı ölçülmedi</translation>
+    </message>
+    <message>
+        <source>at least </source>
+        <translation>en az </translation>
+    </message>
+    <message>
+        <source>Visit %1</source>
+        <translation>Giriş %1</translation>
+    </message>
+    <message>
+        <source>Account: %1</source>
+        <translation>Hesap: %1</translation>
+    </message>
+    <message>
+        <source>Away (AFK)</source>
+        <translation>Uzakta (AFK)</translation>
+    </message>
+    <message>
+        <source>No mouse or keyboard for %1 minutes or more</source>
+        <translation>%1 dakika veya daha uzun süre fare/klavye kullanılmadı</translation>
+    </message>
+    <message>
+        <source>Nobody measured this time</source>
+        <translation>Bu süre ölçülmedi</translation>
+    </message>
+    <message>
+        <source>%1: the server says someone is connected, but its event log has no sign-in for that. This time is shown as not in the log.</source>
+        <translation>%1: sunucu birinin bağlı olduğunu söylüyor ama olay kaydında bunun için giriş yok. Bu süre &quot;kayıtta yok&quot; olarak gösterilir.</translation>
+    </message>
+    <message>
+        <source>%1: the server says nobody is connected, but its event log has no sign-out. The visit ends at the last check that saw it.</source>
+        <translation>%1: sunucu kimsenin bağlı olmadığını söylüyor ama olay kaydında çıkış yok. Giriş, onu gören son kontrolde biter.</translation>
+    </message>
+    <message>
+        <source>No visits in this period. Times are recorded while RConnect is open; sign-ins and sign-outs are read from the servers&apos; logs.</source>
+        <translation>Bu dönemde giriş yok. Süreler RConnect açıkken ölçülür; giriş ve çıkışlar sunucuların kayıtlarından okunur.</translation>
+    </message>
+    <message>
+        <source>Total: %1 on servers: %2 active, %3 away, %4 unknown.</source>
+        <translation>Toplam: sunucularda %1; %2 aktif, %3 uzakta, %4 belirsiz.</translation>
+    </message>
+    <message>
+        <source>Computer</source>
+        <translation>Bilgisayar</translation>
+    </message>
+    <message>
+        <source>Visits</source>
+        <translation>Giriş sayısı</translation>
+    </message>
+    <message>
+        <source>IP address</source>
+        <translation>IP adresi</translation>
+    </message>
+    <message>
+        <source>First in</source>
+        <translation>İlk giriş</translation>
+    </message>
+    <message>
+        <source>Last out</source>
+        <translation>Son çıkış</translation>
+    </message>
+    <message>
+        <source>Time on server</source>
+        <translation>Sunucuda kalma</translation>
+    </message>
+    <message>
+        <source>Active time</source>
+        <translation>Aktif süre</translation>
+    </message>
+    <message>
+        <source>Still inside</source>
+        <translation>Şu an içeride</translation>
+    </message>
 </context>
 <context>
     <name>WinRm</name>
     <message>
-        <source>WinRM (port 5985) is not reachable.</source>
-        <translation>WinRM&apos;ye (5985 portu) ulaşılamıyor.</translation>
+        <source>Could not reach the server&apos;s remote management service (port 5985).</source>
+        <translation>Sunucunun uzaktan yönetim hizmetine (5985 portu) ulaşılamadı.</translation>
     </message>
     <message>
         <source>Could not set up NTLM.</source>
@@ -482,32 +1171,32 @@ Use “+ Add server” to get started.</source>
         <translation>Sunucu zamanında yanıt vermedi.</translation>
     </message>
     <message>
-        <source>WinRM did not answer.</source>
-        <translation>WinRM yanıt vermedi.</translation>
+        <source>The server&apos;s remote management service did not answer.</source>
+        <translation>Sunucunun uzaktan yönetim hizmeti yanıt vermedi.</translation>
     </message>
     <message>
-        <source>WinRM does not accept NTLM sign-in (HTTP %1).</source>
-        <translation>WinRM NTLM ile girişi kabul etmiyor (HTTP %1).</translation>
+        <source>The server does not accept this kind of sign-in (code %1).</source>
+        <translation>Sunucu bu tür girişi kabul etmiyor (kod %1).</translation>
     </message>
     <message>
-        <source>Sign-in was refused. WinRM needs an administrator account on the server.</source>
-        <translation>Giriş reddedildi. WinRM için sunucuda yönetici hesabı gerekir.</translation>
+        <source>Sign-in was refused. Use one of the server&apos;s administrator accounts.</source>
+        <translation>Giriş reddedildi. Sunucunun yönetici hesaplarından birini kullanın.</translation>
     </message>
     <message>
         <source>Could not encrypt the request.</source>
         <translation>İstek şifrelenemedi.</translation>
     </message>
     <message>
-        <source>The WinRM connection was lost.</source>
-        <translation>WinRM bağlantısı koptu.</translation>
+        <source>The connection to the server&apos;s remote management service was lost.</source>
+        <translation>Sunucunun uzaktan yönetim hizmetiyle bağlantı koptu.</translation>
     </message>
     <message>
         <source>Could not decrypt the reply.</source>
         <translation>Yanıtın şifresi çözülemedi.</translation>
     </message>
     <message>
-        <source>WinRM error (HTTP %1).</source>
-        <translation>WinRM hatası (HTTP %1).</translation>
+        <source>The server returned an error (code %1).</source>
+        <translation>Sunucu hata döndürdü (kod %1).</translation>
     </message>
 </context>
 <context>
@@ -579,6 +1268,90 @@ Use “+ Add server” to get started.</source>
     <message>
         <source>Remove “%1” from the list?</source>
         <translation>“%1” listeden silinsin mi?</translation>
+    </message>
+    <message>
+        <source>Record sign-in attempts on “%1”?
+
+This changes a security setting on the server, so Windows keeps a record of every sign-in and every failed attempt, and of new accounts, changes to the administrators and new scheduled tasks. They show up in Activity history.</source>
+        <translation>“%1” sunucusunda giriş denemeleri kaydedilsin mi?
+
+Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi ve her başarısız denemeyi, ayrıca yeni hesapları, yöneticilerdeki değişiklikleri ve yeni zamanlanmış görevleri kaydeder. Bunlar Etkinlik geçmişinde görünür.</translation>
+    </message>
+    <message>
+        <source>Security alert: %1</source>
+        <translation>Güvenlik uyarısı: %1</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation>Mesaj gönder</translation>
+    </message>
+    <message>
+        <source>Message for %1 on “%2” (up to %3 characters):</source>
+        <translation>“%2” sunucusunda %1 için mesaj (en çok %3 karakter):</translation>
+    </message>
+    <message>
+        <source>Message from the administrator</source>
+        <translation>Yöneticiden mesaj</translation>
+    </message>
+    <message>
+        <source>The message was shown to %1.</source>
+        <translation>Mesaj %1 kullanıcısına gösterildi.</translation>
+    </message>
+    <message>
+        <source>Could not send the message on “%1”: %2</source>
+        <translation>“%1” sunucusunda mesaj gönderilemedi: %2</translation>
+    </message>
+    <message>
+        <source>Track sign-in attempts</source>
+        <translation>Giriş denemelerini kaydet</translation>
+    </message>
+    <message>
+        <source>To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.</source>
+        <translation>Bunun için “%1” sunucusunda kayıtlı yönetici şifresi olmalı ve ayarlarında “Kimin bağlı olduğunu göster” açık olmalı.</translation>
+    </message>
+    <message>
+        <source>Sign-in tracking is on for “%1”. New activity will appear in Activity history.</source>
+        <translation>“%1” için giriş takibi açık. Yeni etkinlik, Etkinlik geçmişinde görünür.</translation>
+    </message>
+    <message>
+        <source>Could not change the setting on “%1”: %2</source>
+        <translation>“%1” üzerindeki ayar değiştirilemedi: %2</translation>
+    </message>
+    <message>
+        <source>Import servers</source>
+        <translation>Sunucuları içe aktar</translation>
+    </message>
+    <message>
+        <source>Server list (*.json *.db)</source>
+        <translation>Sunucu listesi (*.json *.db)</translation>
+    </message>
+    <message>
+        <source>Wrong passphrase. Try again:</source>
+        <translation>Parola yanlış. Tekrar deneyin:</translation>
+    </message>
+    <message>
+        <source>This file is encrypted. Enter the passphrase used when exporting:</source>
+        <translation>Bu dosya şifreli. Dışa aktarırken belirlediğiniz parolayı girin:</translation>
+    </message>
+    <message>
+        <source>This file could not be read.</source>
+        <translation>Bu dosya okunamadı.</translation>
+    </message>
+    <message>
+        <source>%1 servers imported, %2 already in the list.</source>
+        <translation>%1 sunucu içe aktarıldı, %2 zaten listede.</translation>
+    </message>
+    <message>
+        <source>%1 servers imported.</source>
+        <translation>%1 sunucu içe aktarıldı.</translation>
+    </message>
+    <message>
+        <source>Servers</source>
+        <translation>Sunucular</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Yenile</translation>
     </message>
 </context>
 </TS>

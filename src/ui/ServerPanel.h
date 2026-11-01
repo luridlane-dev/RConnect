@@ -25,18 +25,23 @@ public:
 
     void setOpenIds(const QSet<QString> &ids);
     void focusSearch();
+    // The popup next to the session tabs has no import button.
+    void setImportVisible(bool visible);
     void clearSearch();
 
     // "3 servers · 2 available · 1 in use · 0 offline"
     static QString summary(const ServerStore *store);
 
 signals:
+    void favoriteToggled(const QString &id);
     void rightInsetChanged(int inset);
     void openRequested(const QString &id);
     void addRequested();
+    void importRequested();
     void editRequested(const QString &id);
     void removeRequested(const QString &id);
     void refreshRequested(const QString &id);
+    void auditRequested(const QString &id);
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -54,6 +59,7 @@ private:
     ServerProxy *m_proxy;
     QLineEdit *m_search;
     QPushButton *m_add;
+    QPushButton *m_import;
     QButtonGroup *m_filters;
     QListView *m_list;
     ServerDelegate *m_delegate;

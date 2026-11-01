@@ -29,6 +29,8 @@ public:
     void refresh();
     // Disconnects, then deletes itself.
     void shutdown();
+    // Gives the keyboard to the control's inner window; only then Win and Alt+Tab go to the server.
+    void focusRemote();
 
 signals:
     void stateChanged(RdpSession::State state);
@@ -37,6 +39,7 @@ signals:
 protected:
     void resizeEvent(QResizeEvent *e) override;
     void changeEvent(QEvent *e) override;
+    void showEvent(QShowEvent *e) override;
 
 private slots:
     void onConnecting();

@@ -1,5 +1,6 @@
 build/
 build-release/
+build-debug/
 dist/
 out/
 CMakeUserPresets.json
@@ -8,4 +9,3 @@ CMakeUserPresets.json
 *.user
 /src/assets/flags
 src/assets/geoip.bin
-/tools

@@ -24,6 +24,7 @@ struct ServerProfile {
     bool audio = true;
     bool ignoreCertWarnings = true;
     bool monitor = true;       // port check once a minute
+    bool favorite = false;     // listed first
     bool checkSessions = true; // who is connected, over WinRM with the saved password
 
     bool isValid() const { return !host.trimmed().isEmpty(); }

@@ -1,12 +1,18 @@
+#include "core/Autostart.h"
 #include "core/Language.h"
+#include "core/UsageDiag.h"
+#include "model/ServerStore.h"
 #include "ui/Theme.h"
 #include "ui/Workspace.h"
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QFile>
 #include <QIcon>
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <winsock2.h>
 #include <windows.h>
 
 namespace {
@@ -30,10 +36,33 @@ void activateRunningInstance(const wchar_t *marker)
     SetForegroundWindow(ctx.found);
 }
 
+// `RConnect --usage-diag <file>`: writes every server's session state to <file> and exits (read only).
+int usageDiagnostics(int argc, char *argv[], const QString &outFile)
+{
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("RConnect"));
+    QCoreApplication::setApplicationName(QStringLiteral("RConnect"));
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    ServerStore store;
+    store.load();
+    QFile out(outFile);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return 2;
+    for (const ServerProfile &p : store.all())
+        if (p.checkSessions && !p.user.isEmpty() && !p.password.isEmpty())
+            out.write(UsageDiag::report(p).toUtf8());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
+    for (int i = 1; i + 1 < argc; ++i)
+        if (qstrcmp(argv[i], "--usage-diag") == 0)
+            return usageDiagnostics(argc, argv, QString::fromLocal8Bit(argv[i + 1]));
+
     // Development runs get their own config and instance.
     const bool testMode = qEnvironmentVariableIsSet("RCONNECT_TEST");
     const wchar_t *mutexName = testMode ? L"Local\\RConnect.Test.Instance" : L"Local\\RConnect.Instance";
@@ -64,9 +93,11 @@ int main(int argc, char *argv[])
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/icon.png")));
     Theme::apply(app);
     Language::init();
+    Autostart::refresh();
 
+    const bool autostarted = QCoreApplication::arguments().contains(QStringLiteral("--autostart"));
     Workspace workspace(windowMarker);
-    workspace.start();
+    workspace.start(autostarted);
     const int rc = app.exec();
 
     if (instance)

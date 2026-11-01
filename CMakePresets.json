@@ -9,7 +9,19 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64"
       }
+    },
+    {
+      "name": "msvc-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64"
+      }
     }
   ],
-  "buildPresets": [ { "name": "msvc", "configurePreset": "msvc" } ]
+  "buildPresets": [
+    { "name": "msvc", "configurePreset": "msvc" },
+    { "name": "msvc-debug", "configurePreset": "msvc-debug" }
+  ]
 }

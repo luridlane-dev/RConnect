@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QListView>
 #include <QMenu>
 #include <QPainter>
@@ -20,11 +21,11 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
-// Filters by search text and availability, sorts by name with numbers in natural order
-// ("srv2" before "srv10").
+// Filters by search text and availability. Favourites come first, then by name with numbers in
+// natural order ("srv2" before "srv10").
 class ServerProxy : public QSortFilterProxyModel {
 public:
-    enum Mode { All, Available, InUse, Offline };
+    enum Mode { All, Favorites, Available, InUse, Offline };
 
     explicit ServerProxy(QObject *parent)
         : QSortFilterProxyModel(parent)
@@ -63,6 +64,7 @@ protected:
         const bool online = state == ServerStatus::Online;
         const bool busy = online && i.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy;
         switch (m_mode) {
+        case Favorites: return i.data(ServerStore::FavoriteRole).toBool();
         case Available: return online && !busy;
         case InUse:     return busy;
         case Offline:   return state == ServerStatus::Offline;
@@ -73,6 +75,9 @@ protected:
 
     bool lessThan(const QModelIndex &l, const QModelIndex &r) const override
     {
+        const bool lf = l.data(ServerStore::FavoriteRole).toBool(), rf = r.data(ServerStore::FavoriteRole).toBool();
+        if (lf != rf)
+            return lf; // favourites first
         return m_collator.compare(l.data(Qt::DisplayRole).toString(), r.data(Qt::DisplayRole).toString()) < 0;
     }
 
@@ -123,7 +128,8 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     m_search = new QLineEdit(this);
     m_search->setObjectName(QStringLiteral("searchField"));
     m_search->setClearButtonEnabled(true);
-    m_search->addAction(magnifierIcon(), QLineEdit::LeadingPosition);
+    QAction *magnifier = m_search->addAction(magnifierIcon(), QLineEdit::LeadingPosition);
+    connect(Theme::notifier(), &ThemeNotifier::changed, magnifier, [magnifier] { magnifier->setIcon(magnifierIcon()); });
     connect(m_search, &QLineEdit::textChanged, this, [this](const QString &t) {
         m_proxy->setText(t);
         updateEmptyState();
@@ -135,11 +141,17 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     m_add->setCursor(Qt::PointingHandCursor);
     connect(m_add, &QPushButton::clicked, this, &ServerPanel::addRequested);
 
+    m_import = new QPushButton(this);
+    m_import->setCursor(Qt::PointingHandCursor);
+    m_import->setMinimumHeight(36);
+    connect(m_import, &QPushButton::clicked, this, &ServerPanel::importRequested);
+
     auto *head = new QHBoxLayout;
     head->setContentsMargins(kInset, 0, m_rightInset, 0);
     m_headLayout = head;
     head->setSpacing(10);
     head->addWidget(m_search, 1);
+    head->addWidget(m_import);
     head->addWidget(m_add);
 
     // Segmented filter
@@ -150,7 +162,7 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     segLay->setSpacing(2);
     m_filters = new QButtonGroup(this);
     m_filters->setExclusive(true);
-    for (int mode : {ServerProxy::All, ServerProxy::Available, ServerProxy::InUse, ServerProxy::Offline}) {
+    for (int mode : {ServerProxy::All, ServerProxy::Favorites, ServerProxy::Available, ServerProxy::InUse, ServerProxy::Offline}) {
         auto *b = new QPushButton(segmented);
         b->setObjectName(QStringLiteral("segment"));
         b->setCheckable(true);
@@ -233,6 +245,7 @@ void ServerPanel::retranslate()
 {
     m_search->setPlaceholderText(tr("Search servers"));
     m_add->setText(tr("+ Add server"));
+    m_import->setText(tr("Import"));
     updateCounts();
     updateEmptyState();
     m_list->viewport()->update();
@@ -243,6 +256,7 @@ void ServerPanel::updateCounts()
     const ServerStore::Counts c = m_store->counts();
     const struct { int id; QString name; int count; } items[] = {
         {ServerProxy::All, tr("All"), c.total},
+        {ServerProxy::Favorites, tr("Favourites"), m_store->favoriteCount()},
         {ServerProxy::Available, tr("Available"), c.online - c.busy},
         {ServerProxy::InUse, tr("In use"), c.busy},
         {ServerProxy::Offline, tr("Offline"), c.offline},
@@ -292,6 +306,16 @@ void ServerPanel::fitCards()
 
 bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
 {
+    if (watched == m_list->viewport() && e->type() == QEvent::MouseButtonRelease) {
+        // The star toggles the favourite; the click does not open the server.
+        const auto *me = static_cast<QMouseEvent *>(e);
+        const QModelIndex i = m_list->indexAt(me->pos());
+        if (me->button() == Qt::LeftButton && i.isValid()
+            && ServerDelegate::starRect(m_list->visualRect(i)).contains(me->pos())) {
+            m_store->setFavorite(i.data(ServerStore::IdRole).toString(), !i.data(ServerStore::FavoriteRole).toBool());
+            return true;
+        }
+    }
     if (watched == m_list->viewport() && e->type() == QEvent::Resize) {
         fitCards();
         if (m_empty->isVisible())
@@ -311,6 +335,11 @@ void ServerPanel::setOpenIds(const QSet<QString> &ids)
 {
     m_delegate->setOpenIds(ids);
     m_list->viewport()->update();
+}
+
+void ServerPanel::setImportVisible(bool visible)
+{
+    m_import->setVisible(visible);
 }
 
 void ServerPanel::focusSearch()
@@ -339,7 +368,11 @@ void ServerPanel::showContextMenu(const QPoint &pos)
 
     QMenu menu(this);
     menu.addAction(tr("Connect"), this, [this, id] { emit openRequested(id); });
+    const bool favorite = i.data(ServerStore::FavoriteRole).toBool();
+    menu.addAction(favorite ? tr("Remove from favourites") : tr("Add to favourites"), this,
+                   [this, id, favorite] { m_store->setFavorite(id, !favorite); });
     menu.addAction(tr("Check status now"), this, [this, id] { emit refreshRequested(id); });
+    menu.addAction(tr("Track sign-in attempts…"), this, [this, id] { emit auditRequested(id); });
     menu.addSeparator();
     menu.addAction(tr("Edit…"), this, [this, id] { emit editRequested(id); });
     menu.addAction(tr("Delete…"), this, [this, id] { emit removeRequested(id); });

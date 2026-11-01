@@ -1,21 +1,38 @@
 #include "Workspace.h"
 
+#include "AccessLogPage.h"
 #include "HomePage.h"
+#include "LiveSessionsPage.h"
 #include "ServerEditDialog.h"
 #include "ServerPanel.h"
 #include "SessionWindow.h"
+#include "Theme.h"
+#include "core/AccessLog.h"
+#include "core/ServerImport.h"
 #include "core/StatusMonitor.h"
+#include "core/Threats.h"
+#include "core/WinRm.h"
 #include "model/ServerStore.h"
 
 #include <QApplication>
+#include <QRegularExpression>
+#include <QSystemTrayIcon>
+#include <QFileDialog>
+#include <QLineEdit>
+#include <QSet>
 #include <QFrame>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPainter>
 #include <QGuiApplication>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
+#include <QThreadPool>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -34,6 +51,23 @@ bool confirm(QWidget *parent, const QString &title, const QString &text, bool de
     box.exec();
     return box.clickedButton() == yes;
 }
+
+// Rounded, opaque background for the server popup. Painted by hand because the window is
+// translucent (rounded corners) and a style sheet does not fill it reliably.
+class PopupFrame : public QFrame {
+public:
+    using QFrame::QFrame;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(Theme::kPopupBorder, 1));
+        p.setBrush(Theme::kPopupFill);
+        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 12, 12);
+    }
+};
 
 // The RDP control takes the keyboard, so app hotkeys are caught with a thread hook.
 Workspace *g_workspace = nullptr;
@@ -70,9 +104,14 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     , m_monitor(new StatusMonitor(m_store, this))
 {
     m_home = new HomePage(m_store);
+    connect(m_home->liveSessions(), &LiveSessionsPage::refreshRequested, m_monitor, &StatusMonitor::refreshAllNow);
+    connect(m_home->liveSessions(), &LiveSessionsPage::messageRequested, this, &Workspace::sendMessage);
+    connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
     ServerPanel *panel = m_home->panel();
+    connect(panel, &ServerPanel::auditRequested, this, &Workspace::enableAuditing);
     connect(panel, &ServerPanel::openRequested, this, [this](const QString &id) { openServer(id, m_main); });
     connect(panel, &ServerPanel::addRequested, this, &Workspace::addServer);
+    connect(panel, &ServerPanel::importRequested, this, &Workspace::importServers);
     connect(panel, &ServerPanel::editRequested, this, &Workspace::editServer);
     connect(panel, &ServerPanel::removeRequested, this, &Workspace::removeServer);
     connect(panel, &ServerPanel::refreshRequested, this, [this](const QString &id) { m_monitor->refresh(id, true); });
@@ -80,6 +119,9 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     m_main = createWindow();
     SetPropW(reinterpret_cast<HWND>(m_main->winId()), m_marker.c_str(), HANDLE(1));
     connect(m_main, &SessionWindow::minimizedChanged, this, [this](bool minimized) {
+        if (minimized && m_keepWatching)
+            return;
+        m_keepWatching = false;
         m_monitor->setActive(!minimized);
     });
 
@@ -105,11 +147,17 @@ Workspace::~Workspace()
     delete m_main;
 }
 
-void Workspace::start()
+void Workspace::start(bool startMinimized)
 {
     m_store->load();
     m_main->restoreGeometry(QSettings().value(QStringLiteral("geometry")).toByteArray());
-    m_main->showFullScreen();
+    m_keepWatching = startMinimized;
+    if (startMinimized)
+        m_main->showMinimized();
+    else
+        m_main->showFullScreen();
+    // The "new country" check compares with the history; read it before the first events arrive.
+    QThreadPool::globalInstance()->start([] { Threats::warmUp(); });
     m_monitor->setActive(true);
     m_monitor->resolveCountries();
 }
@@ -221,6 +269,7 @@ bool Workspace::confirmBusy(const ServerProfile &p, const ServerStatus &status, 
 void Workspace::connectServer(const ServerProfile &p, SessionWindow *target)
 {
     const QString id = p.id;
+    AccessLog::note(p, QStringLiteral("Connect"), p.displayUser());
     auto *session = new RdpSession(p, target);
     m_sessions.insert(id, session);
     connect(session, &RdpSession::stateChanged, this, &Workspace::onSessionState);
@@ -371,21 +420,41 @@ void Workspace::showServerPopup(SessionWindow *w)
     QFrame *popup = m_popups.value(w);
     if (!popup) {
         // Popup, so it shows above the native RDP window.
-        popup = new QFrame(w, Qt::Popup | Qt::FramelessWindowHint);
-        popup->setObjectName(QStringLiteral("popup"));
+        popup = new PopupFrame(w, Qt::Popup | Qt::FramelessWindowHint);
+        popup->setObjectName(QStringLiteral("popupFrame"));
         popup->setAttribute(Qt::WA_TranslucentBackground); // rounded corners
         auto *lay = new QVBoxLayout(popup);
-        lay->setContentsMargins(1, 1, 1, 1);
+        lay->setContentsMargins(16, 14, 16, 14);
+        lay->setSpacing(12);
+
+        auto *title = new QLabel(tr("Servers"), popup);
+        title->setObjectName(QStringLiteral("popupTitle"));
+        auto *summary = new QLabel(ServerPanel::summary(m_store), popup);
+        summary->setObjectName(QStringLiteral("pageSubtitle"));
+        connect(m_store, &ServerStore::summaryChanged, summary, [this, summary] { summary->setText(ServerPanel::summary(m_store)); });
+        auto *refresh = new QPushButton(tr("Refresh"), popup);
+        refresh->setCursor(Qt::PointingHandCursor);
+        connect(refresh, &QPushButton::clicked, this, [this] { m_monitor->refreshAllNow(); });
+        auto *header = new QHBoxLayout;
+        header->setSpacing(10);
+        header->addWidget(title);
+        header->addWidget(summary, 1);
+        header->addWidget(refresh);
+        lay->addLayout(header);
+
         auto *panel = new ServerPanel(m_store, popup);
+        panel->setImportVisible(false);
         lay->addWidget(panel);
         connect(panel, &ServerPanel::openRequested, this, [this, w, popup](const QString &id) {
             popup->hide();
             openServer(id, w);
         });
         connect(panel, &ServerPanel::addRequested, this, [this, popup] { popup->hide(); addServer(); });
+        connect(panel, &ServerPanel::importRequested, this, [this, popup] { popup->hide(); importServers(); });
         connect(panel, &ServerPanel::editRequested, this, [this, popup](const QString &id) { popup->hide(); editServer(id); });
         connect(panel, &ServerPanel::removeRequested, this, [this, popup](const QString &id) { popup->hide(); removeServer(id); });
         connect(panel, &ServerPanel::refreshRequested, this, [this](const QString &id) { m_monitor->refresh(id, true); });
+        connect(panel, &ServerPanel::auditRequested, this, [this, popup](const QString &id) { popup->hide(); enableAuditing(id); });
         m_popups.insert(w, popup);
         refreshOpenMarkers();
     }
@@ -394,6 +463,7 @@ void Workspace::showServerPopup(SessionWindow *w)
     popup->resize(qMin(790, w->width() - 40), qMin(560, w->height() - 60));
     popup->move(anchor->mapToGlobal(QPoint(0, anchor->height() + 2)));
     panel->clearSearch();
+    m_monitor->refreshAllNow(); // what the cards show may be a minute old
     popup->show();
     panel->focusSearch();
 }
@@ -406,6 +476,64 @@ void Workspace::addServer()
     m_store->add(dlg.profile());
     m_monitor->refreshAll();
     m_monitor->resolveCountries();
+}
+
+void Workspace::importServers()
+{
+    const QString path = QFileDialog::getOpenFileName(dialogParent(), tr("Import servers"), QString(),
+                                                      tr("Server list (*.json *.db)"));
+    if (path.isEmpty())
+        return;
+
+    ServerImport::Result res = ServerImport::load(path);
+    QString passphrase;
+    while (res.status == ServerImport::Status::NeedPassphrase || res.status == ServerImport::Status::WrongPassphrase) {
+        const bool wrong = res.status == ServerImport::Status::WrongPassphrase;
+        bool ok = false;
+        passphrase = QInputDialog::getText(dialogParent(), tr("Import servers"),
+                                           wrong ? tr("Wrong passphrase. Try again:")
+                                                 : tr("This file is encrypted. Enter the passphrase used when exporting:"),
+                                           QLineEdit::Password, QString(), &ok);
+        if (!ok)
+            return;
+        res = ServerImport::load(path, passphrase);
+    }
+    if (res.status != ServerImport::Status::Ok) {
+        QMessageBox::warning(dialogParent(), tr("Import servers"), tr("This file could not be read."));
+        return;
+    }
+
+    // Keys of what is already in the list, so importing twice does not duplicate servers.
+    QSet<QString> known;
+    const auto keyOf = [](const ServerProfile &p) {
+        return QStringLiteral("%1:%2|%3").arg(p.host.toLower()).arg(p.port).arg(p.user.toLower());
+    };
+    for (const ServerProfile &p : m_store->all())
+        known.insert(keyOf(p));
+
+    static const QStringList palette = {QStringLiteral("#0a84ff"), QStringLiteral("#30d158"), QStringLiteral("#ff9f0a"),
+                                        QStringLiteral("#ff453a"), QStringLiteral("#bf5af2"), QStringLiteral("#40c8e0"),
+                                        QStringLiteral("#8e8e93"), QStringLiteral("#ac8e68")};
+    int added = 0, skipped = 0;
+    for (ServerProfile p : res.servers) {
+        const QString key = keyOf(p);
+        if (known.contains(key)) {
+            ++skipped;
+            continue;
+        }
+        known.insert(key);
+        if (p.color.isEmpty())
+            p.color = palette.at(added % palette.size());
+        m_store->add(p);
+        ++added;
+    }
+    if (added > 0) {
+        m_monitor->refreshAll();
+        m_monitor->resolveCountries();
+    }
+    QMessageBox::information(dialogParent(), tr("Import servers"),
+                             skipped > 0 ? tr("%1 servers imported, %2 already in the list.").arg(added).arg(skipped)
+                                         : tr("%1 servers imported.").arg(added));
 }
 
 void Workspace::editServer(const QString &id)
@@ -463,4 +591,155 @@ void Workspace::refreshOpenMarkers()
     m_home->panel()->setOpenIds(ids);
     for (QFrame *popup : std::as_const(m_popups))
         popup->findChild<ServerPanel *>()->setOpenIds(ids);
+}
+
+// The Security log only has failed logons and disconnects if the server audits them.
+void Workspace::enableAuditing(const QString &id)
+{
+    const ServerProfile p = m_store->profileById(id);
+    if (!p.isValid())
+        return;
+    if (!StatusMonitor::canCheckSessions(p)) {
+        QMessageBox::information(dialogParent(), tr("Track sign-in attempts"),
+                                 tr("To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.")
+                                     .arg(p.name));
+        return;
+    }
+    if (!confirm(dialogParent(), tr("Track sign-in attempts"),
+                 tr("Record sign-in attempts on “%1”?\n\nThis changes a security setting on the server, so Windows keeps "
+                    "a record of every sign-in and every failed attempt, and of new accounts, changes to the "
+                    "administrators and new scheduled tasks. They show up in Activity history.")
+                     .arg(p.name),
+                 false))
+        return;
+
+    QApplication::setOverrideCursor(Qt::BusyCursor);
+    QPointer<Workspace> self(this);
+    QThreadPool::globalInstance()->start([self, p] {
+        // Logon, Other Logon/Logoff Events, User Account Management, Security Group Management,
+        // Other Object Access Events (scheduled tasks).
+        QStringList steps;
+        for (const char *guid : {"0CCE9215", "0CCE921C", "0CCE9235", "0CCE9237", "0CCE9227"})
+            steps << QStringLiteral("auditpol /set /subcategory:\"{%1-69AE-11D9-BED3-505054503030}\" /success:enable "
+                                    "/failure:enable").arg(QLatin1String(guid));
+        const QString command = steps.join(QStringLiteral(" && ")) + QStringLiteral(" && echo ##OK## || echo ##FAILED##");
+        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 15000, command);
+        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
+        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
+        QMetaObject::invokeMethod(qApp, [self, p, ok, error] {
+            QApplication::restoreOverrideCursor();
+            if (!self)
+                return;
+            if (ok) {
+                AccessLog::note(p, QStringLiteral("AuditEnable"), p.displayUser());
+                QMessageBox::information(self->dialogParent(), tr("Track sign-in attempts"),
+                                         tr("Sign-in tracking is on for “%1”. New activity will appear in Activity history.").arg(p.name));
+            } else {
+                QMessageBox::warning(self->dialogParent(), tr("Track sign-in attempts"),
+                                     tr("Could not change the setting on “%1”: %2").arg(p.name, error));
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+// A warning from Threats, or a tampering event, as a Windows notification.
+void Workspace::showAlert(const AccessRecord &alert)
+{
+    if (!m_tray) {
+        m_tray = new QSystemTrayIcon(QApplication::windowIcon(), this);
+        m_tray->setToolTip(QStringLiteral("RConnect"));
+        connect(m_tray, &QSystemTrayIcon::messageClicked, this, [this] {
+            if (m_main->isMinimized())
+                m_main->showNormal();
+            m_main->raise();
+            m_main->activateWindow();
+        });
+    }
+    m_tray->show();
+    m_tray->showMessage(tr("Security alert: %1").arg(alert.server), AccessLogPage::alertSummary(alert),
+                        QSystemTrayIcon::Warning, 20000);
+}
+
+// A pop-up on the user's screen in their session (msg.exe on the server).
+void Workspace::sendMessage(const QString &serverId, int sessionId, const QString &user)
+{
+    const ServerProfile p = m_store->profileById(serverId);
+    if (!p.isValid() || sessionId <= 0)
+        return;
+    constexpr int kMaxLength = 255;
+    bool accepted = false;
+    QString text = QInputDialog::getMultiLineText(
+        dialogParent(), tr("Send message"), tr("Message for %1 on “%2” (up to %3 characters):").arg(user, p.name).arg(kMaxLength),
+        {}, &accepted);
+    text = text.trimmed();
+    if (!accepted || text.isEmpty())
+        return;
+    text = text.left(kMaxLength);
+
+    QApplication::setOverrideCursor(Qt::BusyCursor);
+    QPointer<Workspace> self(this);
+    const QString heading = tr("Message from the administrator");
+    QThreadPool::globalInstance()->start([self, p, sessionId, user, text, heading] {
+        // Text and title go through PowerShell as base64, so nothing in them is read as a command.
+        const QString message = QString::fromLatin1(text.toUtf8().toBase64());
+        const QString title = QString::fromLatin1(heading.toUtf8().toBase64());
+        // A real warning box (yellow triangle, system sound, on top of everything) in the person's
+        // session: WTSSendMessage with MB_ICONWARNING. msg.exe only shows plain text, so it stays as the
+        // fallback if the call cannot be set up.
+        // The message goes first. The box itself is silent when shown this way, so a short task then plays the system sound inside
+        // the person's own session (the sound travels with their Remote Desktop audio, if they have it on).
+        // The task runs as the signed-in user, interactively, and is removed again. A failure of the
+        // sound never stops the message.
+        const QString script = QStringLiteral(R"PS(
+$m=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%1'))
+$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%2'))
+$sid=%3
+$ex=0
+try {
+Add-Type -Namespace RC -Name W -MemberDefinition '[DllImport("wtsapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern bool WTSSendMessage(IntPtr h,int s,string t,int tl,string m,int ml,int st,int to,out int r,bool w);'
+$r=0
+if (-not [RC.W]::WTSSendMessage([IntPtr]::Zero,$sid,$t,$t.Length*2,$m,$m.Length*2,0x51030,300,[ref]$r,$false)) { $ex=[Runtime.InteropServices.Marshal]::GetLastWin32Error() }
+} catch { msg.exe $sid /time:300 $m; $ex=$LASTEXITCODE }
+try {
+$o=Get-CimInstance Win32_Process -Filter "SessionId=$sid AND Name='explorer.exe'" | Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwner
+if ($ex -eq 0 -and $o -and $o.User) {
+$dir=Join-Path $env:ProgramData 'RConnect'
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$f=Join-Path $dir ('beep-'+[guid]::NewGuid().ToString('N')+'.ps1')
+$snd='$w=@("Windows Notify Messaging.wav","Windows Notify System Generic.wav","Windows Exclamation.wav","Windows Ding.wav") | % { Join-Path $env:windir ("Media\"+$_) } | ? { Test-Path $_ } | Select-Object -First 1; if ($w) { (New-Object Media.SoundPlayer $w).PlaySync() }'
+Set-Content -LiteralPath $f -Value $snd -Encoding ASCII
+$n='RConnectBeep-'+[guid]::NewGuid().ToString('N')
+$ps='-NoProfile -ExecutionPolicy Bypass -File "'+$f+'"'
+if ([Environment]::OSVersion.Version.Build -ge 17763) { $a=New-ScheduledTaskAction -Execute 'conhost.exe' -Argument ('--headless powershell.exe '+$ps) }
+else { $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-WindowStyle Hidden '+$ps) }
+$pr=New-ScheduledTaskPrincipal -UserId ("$($o.Domain)\$($o.User)") -LogonType Interactive
+Register-ScheduledTask -TaskName $n -Action $a -Principal $pr -Force | Out-Null
+Start-ScheduledTask -TaskName $n
+for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 250; if ((Get-ScheduledTask -TaskName $n).State -ne 'Running') { break } }
+Unregister-ScheduledTask -TaskName $n -Confirm:$false
+Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+}
+} catch { }
+exit $ex
+)PS").arg(message, title).arg(sessionId);
+        const QByteArray encoded = QByteArray(reinterpret_cast<const char *>(script.utf16()), script.size() * 2).toBase64();
+        const QString command = QStringLiteral("powershell -NoProfile -NonInteractive -EncodedCommand %1 "
+                                               "&& echo ##OK## || echo ##FAILED##").arg(QString::fromLatin1(encoded));
+        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 30000, command);
+        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
+        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
+        QMetaObject::invokeMethod(qApp, [self, p, user, text, ok, error] {
+            QApplication::restoreOverrideCursor();
+            if (!self)
+                return;
+            if (ok) {
+                AccessLog::note(p, QStringLiteral("Message"), user, text.left(120));
+                QMessageBox::information(self->dialogParent(), tr("Send message"),
+                                         tr("The message was shown to %1.").arg(user));
+            } else {
+                QMessageBox::warning(self->dialogParent(), tr("Send message"),
+                                     tr("Could not send the message on “%1”: %2").arg(p.name, error));
+            }
+        }, Qt::QueuedConnection);
+    });
 }

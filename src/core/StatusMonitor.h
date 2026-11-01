@@ -1,4 +1,5 @@
 #pragma once
+#include "AccessLog.h"
 #include "WinRm.h"
 #include "model/ServerProfile.h"
 #include "model/ServerStatus.h"
@@ -28,9 +29,15 @@ public:
 
 public slots:
     void refreshAll();
+    // Asks every server with a session check now, however recent the last answer.
+    void refreshAllNow();
     void refresh(const QString &id, bool force = false);
     // Looks up the country of servers whose host changed (offline table, no traffic to the server).
     void resolveCountries();
+
+signals:
+    // Something in the servers' logs deserves attention (see Threats). The record's event is the kind.
+    void alertRaised(const AccessRecord &alert);
 
 private:
     struct Channel; // outlives this object for running probes

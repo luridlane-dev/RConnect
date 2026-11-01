@@ -1,5 +1,7 @@
 #include "SessionTabs.h"
 
+#include "Theme.h"
+
 #include <QCursor>
 #include <QDrag>
 #include <QDragEnterEvent>
@@ -117,6 +119,14 @@ void AnimatedTabBar::changeEvent(QEvent *e)
         m_add->setToolTip(tr("Servers"));
 }
 
+void AnimatedTabBar::setSelectionVisible(bool visible)
+{
+    if (m_selectionVisible == visible)
+        return;
+    m_selectionVisible = visible;
+    update();
+}
+
 void AnimatedTabBar::slideTo(int index)
 {
     if (index < 0)
@@ -130,7 +140,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
     // A rounded highlight slides behind the selected tab, under the tab text.
     const int idx = currentIndex();
-    if (idx >= 0) {
+    if (idx >= 0 && m_selectionVisible) {
         const QRectF target = tabRect(idx);
         const qreal t = m_anim.state() == QAbstractAnimation::Running ? m_anim.currentValue().toReal() : 1.0;
         const QRectF from = m_from.isEmpty() ? target : m_from;
@@ -141,7 +151,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0x2c, 0x2c, 0x2e));
+        p.setBrush(Theme::kTabPill);
         p.drawRoundedRect(m_current.adjusted(3, 5, -3, -5), 9, 9);
     }
 
@@ -151,7 +161,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
         QPainter p(this);
         const int x = m_dropIndex < count() ? tabRect(m_dropIndex).left()
                                             : (count() > 0 ? tabRect(count() - 1).right() + 1 : 0);
-        p.fillRect(QRect(qMax(0, x - 1), 6, 2, height() - 12), QColor(0x0a, 0x84, 0xff));
+        p.fillRect(QRect(qMax(0, x - 1), 6, 2, height() - 12), Theme::kBlue);
     }
 }
 

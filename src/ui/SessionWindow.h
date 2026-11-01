@@ -3,6 +3,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QTimer>
 #include <QWidget>
 
 #include <functional>
@@ -10,12 +11,14 @@
 class AnimatedTabBar;
 class QStackedWidget;
 class QToolButton;
+class QHBoxLayout;
 
 // Window with tabs and sessions. The main window also has the start page.
 class SessionWindow : public QWidget {
     Q_OBJECT
 public:
     explicit SessionWindow(QWidget *home, QWidget *parent = nullptr);
+    ~SessionWindow() override;
 
     bool isMain() const { return m_home != nullptr; }
 
@@ -39,6 +42,10 @@ public:
 
     QToolButton *serversButton() const;
 
+    // Close, minimise and full screen buttons in full screen: Windows style, or as macOS draws them.
+    static void setMacButtons(bool mac);
+    static bool macButtons();
+
 signals:
     void serversRequested(SessionWindow *window);
     void closeTabRequested(const QString &serverId);
@@ -58,8 +65,11 @@ private:
     int tabIndexOf(const QString &serverId) const;
     void onTabChanged(int index);
     void showTabMenu(const QPoint &pos);
+    void pulseTabs();
     void showNotes();
     void updatePage();
+    void showHome();
+    void applyChrome();
     void updateTitle();
     void retranslate();
 
@@ -67,10 +77,17 @@ private:
     QWidget *m_topBar = nullptr;
     AnimatedTabBar *m_tabBar = nullptr;
     QToolButton *m_notesButton = nullptr;
+    QToolButton *m_homeTab = nullptr;
+    QWidget *m_lights = nullptr; // macOS style buttons, left
+    QWidget *m_winBox = nullptr; // Windows style buttons, right
     QList<QToolButton *> m_winButtons;
+    QList<QToolButton *> m_lightButtons;
+    bool m_homeActive = true;
     QStackedWidget *m_pages = nullptr;
     QStackedWidget *m_sessionStack = nullptr;
     QHash<QString, RdpSession *> m_sessions;
     std::function<QString(const QString &)> m_notes;
     bool m_allowClose = false;
+    QTimer m_pulse;
+    static inline QList<SessionWindow *> s_all;
 };

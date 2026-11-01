@@ -1,5 +1,9 @@
 #include "StatusMonitor.h"
+#include "AccessLog.h"
 #include "GeoIp.h"
+#include "Log.h"
+#include "Threats.h"
+#include "UsageLog.h"
 #include "model/ServerStore.h"
 
 #include <QDateTime>
@@ -20,6 +24,8 @@ constexpr int kConnectTimeoutMs = 2000;
 // Checks are spread over this window instead of firing at once.
 constexpr int kSpreadMs = 20000;
 constexpr int kSessionTimeoutMs = 8000;
+// The periodic check also reads the access events, which can be a few hundred kB after a long pause.
+constexpr int kPollSessionTimeoutMs = 20000;
 // At most this many checks run at once, so a long list never opens hundreds of sockets.
 constexpr int kMaxParallelChecks = 8;
 // WinRM costs a whole sign-in, so it is asked less often than the port.
@@ -68,16 +74,27 @@ int probe(const std::wstring &host, quint16 port)
     return latency;
 }
 
-QString localComputerName()
+const QString &localComputerName()
 {
-    wchar_t name[MAX_COMPUTERNAME_LENGTH + 1];
-    DWORD size = MAX_COMPUTERNAME_LENGTH + 1;
-    return GetComputerNameW(name, &size) ? QString::fromWCharArray(name, int(size)) : QString();
+    static const QString name = [] {
+        wchar_t buf[MAX_COMPUTERNAME_LENGTH + 1];
+        DWORD size = MAX_COMPUTERNAME_LENGTH + 1;
+        return GetComputerNameW(buf, &size) ? QString::fromWCharArray(buf, int(size)) : QString();
+    }();
+    return name;
 }
 
+// Interactive check right before connecting: no events, so it stays quick.
 SessionQuery querySessions(const ServerProfile &p)
 {
     return WinRm::querySessions(p.host, p.user, p.domain, p.password, kSessionTimeoutMs);
+}
+
+// Periodic check: also the new events of the server's logs (see AccessLog).
+SessionQuery pollSessions(const ServerProfile &p)
+{
+    const QHash<QString, EventCursor> cursors = AccessLog::cursors(p.id);
+    return WinRm::querySessions(p.host, p.user, p.domain, p.password, kPollSessionTimeoutMs, &cursors);
 }
 
 } // namespace
@@ -137,6 +154,13 @@ void StatusMonitor::refreshAll()
     }
 }
 
+void StatusMonitor::refreshAllNow()
+{
+    for (const ServerProfile &p : m_store->all())
+        if (p.monitor && canCheckSessions(p))
+            refresh(p.id, true);
+}
+
 void StatusMonitor::refresh(const QString &id, bool force)
 {
     if (m_inFlight.contains(id))
@@ -162,7 +186,7 @@ void StatusMonitor::refresh(const QString &id, bool force)
         && (force || QDateTime::currentMSecsSinceEpoch() - current.checkedAt >= kSessionMaxAgeMs);
     m_pool.start([channel = m_channel, p, check] {
         const int latency = probe(p.host.toStdWString(), quint16(p.port));
-        const SessionQuery q = latency >= 0 && check ? querySessions(p) : SessionQuery{};
+        const SessionQuery q = latency >= 0 && check ? pollSessions(p) : SessionQuery{};
         std::lock_guard lock(channel->mutex);
         if (StatusMonitor *target = channel->target)
             QMetaObject::invokeMethod(target, [target, id = p.id, latency, check, q] {
@@ -197,17 +221,25 @@ void StatusMonitor::applySessions(ServerStatus &s, const SessionQuery &q)
 {
     s.checkedAt = QDateTime::currentMSecsSinceEpoch();
     s.others.clear();
+    s.all.clear();
+    s.mine = false;
     s.occupancyError.clear();
     if (q.result != SessionQuery::Ok) {
         s.occupancy = ServerStatus::OccupancyError;
         s.occupancyError = q.error;
         return;
     }
+    s.all = q.sessions;
     // Sessions from this PC are ours (a tab here, or mstsc).
-    const QString self = localComputerName();
-    for (const RemoteSession &r : q.sessions)
-        if (r.connected && r.client.compare(self, Qt::CaseInsensitive) != 0)
+    const QString &self = localComputerName();
+    for (const RemoteSession &r : q.sessions) {
+        if (!r.connected)
+            continue;
+        if (r.client.compare(self, Qt::CaseInsensitive) != 0)
             s.others << r;
+        else
+            s.mine = true;
+    }
     s.occupancy = s.others.isEmpty() ? ServerStatus::Free : ServerStatus::Busy;
 }
 
@@ -259,10 +291,30 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, const
     if (!online || !canCheckSessions(m_store->profileById(id))) {
         s.occupancy = ServerStatus::OccupancyUnknown;
         s.others.clear();
+        s.all.clear();
         s.occupancyError.clear();
         s.checkedAt = 0;
     } else if (checked) {
         applySessions(s, q);
+        if (q.result == SessionQuery::Ok)
+            m_pool.start([channel = m_channel, p = m_store->profileById(id), events = q.events, live = q.sessions,
+                          serverNow = q.serverNowUtcMs, skipped = q.eventsSkipped] {
+                if (skipped > 0)
+                    Log::write(QStringLiteral("[events] %1: %2 event(s) of its logs could not be read and were skipped")
+                                   .arg(p.name).arg(skipped));
+                QList<AccessRecord> written;
+                AccessLog::polled(p, events, live, &written);
+                UsageLog::sampled(p, live, serverNow, written);
+                const QList<AccessRecord> alerts = Threats::evaluate(p, written);
+                if (alerts.isEmpty())
+                    return;
+                std::lock_guard lock(channel->mutex);
+                if (StatusMonitor *target = channel->target)
+                    QMetaObject::invokeMethod(target, [target, alerts] {
+                        for (const AccessRecord &a : alerts)
+                            emit target->alertRaised(a);
+                    }, Qt::QueuedConnection);
+            });
     } // otherwise the last answer is still fresh
     m_store->setStatus(id, s);
 }
