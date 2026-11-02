@@ -1,0 +1,85 @@
+<resources>
+    <string name="app_name">RConnect</string>
+    <string name="refresh">Yenile</string>
+    <string name="refresh_all">Tüm sunucuları şimdi kontrol et</string>
+    <string name="more">Daha fazla</string>
+    <string name="clear">Temizle</string>
+    <string name="add_server">Sunucu ekle</string>
+    <string name="edit">Düzenle</string>
+    <string name="delete">Sil</string>
+    <string name="back">Geri</string>
+    <string name="save">Kaydet</string>
+    <string name="done">Tamam</string>
+    <string name="cancel">Vazgeç</string>
+    <string name="show">Göster</string>
+    <string name="hide">Gizle</string>
+    <string name="delete_title">%1$s silinsin mi?</string>
+    <string name="empty_hint">Kimin bağlı olduğunu görmek için IP adresi, kullanıcı adı ve şifreyle bir sunucu ekleyin. Çok sayıda sunucuyu birden eklemek için ⋮ → Liste içe aktar.</string>
+    <string name="ip_address">IP adresi</string>
+    <string name="user_name">Kullanıcı adı (yönetici)</string>
+    <string name="password">Şifre</string>
+    <string name="name_optional">Ad (isteğe bağlı)</string>
+    <string name="group_optional">Grup, örneğin bir lokasyon (isteğe bağlı)</string>
+    <string name="no_group">Grupsuz</string>
+
+    <string name="tab_servers">Sunucular</string>
+    <string name="tab_people">Kişiler</string>
+    <string name="tile_all">Tümü</string>
+    <string name="tile_in_use">Kullanımda</string>
+    <string name="tile_free">Boş</string>
+    <string name="tile_problem">Sorunlu</string>
+    <string name="search_servers">Sunucu, grup veya kişi ara</string>
+    <string name="search_people">Kişi, bilgisayar veya sunucu ara</string>
+    <string name="no_match">Eşleşen sunucu yok.</string>
+    <string name="group_in_use">%1$d kullanımda</string>
+    <string name="group_problems">%1$d sorunlu</string>
+
+    <string name="status_pending">Kontrol ediliyor…</string>
+    <string name="status_free">Boş</string>
+    <string name="status_in_use">Kullanımda · %1$d</string>
+    <string name="status_unreachable">Ulaşılamıyor</string>
+    <string name="status_auth">Giriş reddedildi</string>
+    <string name="status_error">Hata</string>
+
+    <string name="people_title">Kim bağlı</string>
+    <string name="people_summary">%1$d kişi bağlı · %3$d sunucunun %2$d tanesi yanıt verdi</string>
+    <string name="nobody_anywhere">Hiçbir sunucuda bağlı kimse yok.</string>
+
+    <string name="nobody">Oturum açmış kimse yok</string>
+    <string name="checking">Kontrol ediliyor…</string>
+    <string name="connected_at">bağlandı: %1$s</string>
+    <string name="since">giriş: %1$s</string>
+    <string name="active">Şu an kullanıyor</string>
+    <string name="idle_min">%1$d dk boşta</string>
+    <string name="idle_hours">%1$d sa boşta</string>
+    <string name="not_connected">Bağlantı kopuk</string>
+    <string name="just_now">az önce</string>
+    <string name="min_ago">%1$d dk önce</string>
+    <string name="hours_ago">%1$d sa önce</string>
+    <string name="checked_ago">Kontrol: %1$s</string>
+
+    <string name="tab_now">Şu an (%1$d)</string>
+    <string name="tab_history">Geçmiş</string>
+    <string name="tab_failed">Başarısız (%1$d)</string>
+    <string name="no_history">Son 2 günde giriş kaydı yok</string>
+    <string name="no_failed">Son 2 günde başarısız giriş denemesi yok</string>
+    <string name="failed_note">Yanlış parola ve bilinmeyen kullanıcılar, en yeni üstte. Farklı adreslerden çok sayıda deneme genelde sunucunun internetten saldırı altında olduğu anlamına gelir.</string>
+    <string name="ev_signin">Giriş yaptı</string>
+    <string name="ev_signout">Çıkış yaptı</string>
+    <string name="ev_disconnect">Bağlantı koptu</string>
+    <string name="ev_reconnect">Yeniden bağlandı</string>
+    <string name="ev_failed">Başarısız giriş</string>
+
+    <string name="import_title">Liste içe aktar</string>
+    <string name="import_action">İçe aktar</string>
+    <string name="import_help">Her satırda bir sunucu: IP;kullanıcı;şifre;ad;grup. Ad ve grup isteğe bağlıdır. Tablodan kopyalanan satırlar da yapıştırılabilir.</string>
+    <string name="import_result">%1$d eklendi, %2$d atlandı (eksik ya da listede zaten var).</string>
+
+    <string name="err_unreachable">Sunucuya ulaşılamıyor (port 5985). Adresi, WinRM\'in açık olduğunu ve telefonun aynı ağda ya da VPN\'de olduğunu kontrol edin.</string>
+    <string name="err_auth">Giriş reddedildi. Sunucunun yönetici hesaplarından birini kullanın.</string>
+    <string name="err_other">Sunucu yanıt vermedi.</string>
+    <plurals name="group_count">
+        <item quantity="one">%1$d sunucu</item>
+        <item quantity="other">%1$d sunucu</item>
+    </plurals>
+</resources>

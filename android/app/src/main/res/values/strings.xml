@@ -1,0 +1,85 @@
+<resources>
+    <string name="app_name">RConnect</string>
+    <string name="refresh">Refresh</string>
+    <string name="refresh_all">Check all servers now</string>
+    <string name="more">More</string>
+    <string name="clear">Clear</string>
+    <string name="add_server">Add server</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="back">Back</string>
+    <string name="save">Save</string>
+    <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
+    <string name="delete_title">Delete %1$s?</string>
+    <string name="empty_hint">Add a server with its IP address, user name and password to see who is connected. To add many at once, use ⋮ → Import list.</string>
+    <string name="ip_address">IP address</string>
+    <string name="user_name">User name (administrator)</string>
+    <string name="password">Password</string>
+    <string name="name_optional">Name (optional)</string>
+    <string name="group_optional">Group, for example a site (optional)</string>
+    <string name="no_group">No group</string>
+
+    <string name="tab_servers">Servers</string>
+    <string name="tab_people">People</string>
+    <string name="tile_all">All</string>
+    <string name="tile_in_use">In use</string>
+    <string name="tile_free">Free</string>
+    <string name="tile_problem">Problem</string>
+    <string name="search_servers">Search server, group or person</string>
+    <string name="search_people">Search person, computer or server</string>
+    <string name="no_match">No server matches.</string>
+    <string name="group_in_use">%1$d in use</string>
+    <string name="group_problems">%1$d problem</string>
+
+    <string name="status_pending">Checking…</string>
+    <string name="status_free">Free</string>
+    <string name="status_in_use">In use · %1$d</string>
+    <string name="status_unreachable">Unreachable</string>
+    <string name="status_auth">Sign-in refused</string>
+    <string name="status_error">Error</string>
+
+    <string name="people_title">Who is connected</string>
+    <string name="people_summary">%1$d connected · %2$d of %3$d servers answered</string>
+    <string name="nobody_anywhere">Nobody is connected to any server.</string>
+
+    <string name="nobody">Nobody is signed in</string>
+    <string name="checking">Checking…</string>
+    <string name="connected_at">connected %1$s</string>
+    <string name="since">since %1$s</string>
+    <string name="active">Using it now</string>
+    <string name="idle_min">Idle %1$d min</string>
+    <string name="idle_hours">Idle %1$d h</string>
+    <string name="not_connected">Disconnected</string>
+    <string name="just_now">just now</string>
+    <string name="min_ago">%1$d min ago</string>
+    <string name="hours_ago">%1$d h ago</string>
+    <string name="checked_ago">Checked %1$s</string>
+
+    <string name="tab_now">Now (%1$d)</string>
+    <string name="tab_history">History</string>
+    <string name="tab_failed">Failed (%1$d)</string>
+    <string name="no_history">No sign-ins in the last 2 days</string>
+    <string name="no_failed">No failed sign-in attempts in the last 2 days</string>
+    <string name="failed_note">Wrong passwords and unknown users, newest first. Many attempts from different addresses usually mean the server is being attacked from the internet.</string>
+    <string name="ev_signin">Signed in</string>
+    <string name="ev_signout">Signed out</string>
+    <string name="ev_disconnect">Disconnected</string>
+    <string name="ev_reconnect">Reconnected</string>
+    <string name="ev_failed">Failed sign-in</string>
+
+    <string name="import_title">Import list</string>
+    <string name="import_action">Import</string>
+    <string name="import_help">One server per line: IP;user;password;name;group. Name and group are optional. You can paste rows from a spreadsheet.</string>
+    <string name="import_result">%1$d added, %2$d skipped (incomplete or already in the list).</string>
+
+    <string name="err_unreachable">Cannot reach the server (port 5985). Check the address, that WinRM is on, and that this phone is on the same network or VPN.</string>
+    <string name="err_auth">Sign-in refused. Use one of the server\'s administrator accounts.</string>
+    <string name="err_other">The server did not answer.</string>
+    <plurals name="group_count">
+        <item quantity="one">%1$d server</item>
+        <item quantity="other">%1$d servers</item>
+    </plurals>
+</resources>
