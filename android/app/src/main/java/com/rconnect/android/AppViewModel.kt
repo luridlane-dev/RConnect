@@ -4,16 +4,27 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rconnect.android.data.ClientNames
+import com.rconnect.android.data.Contact
+import com.rconnect.android.data.ContactBook
+import com.rconnect.android.data.ContactJson
+import com.rconnect.android.data.ContactStore
 import com.rconnect.android.data.ServerEntry
+import com.rconnect.android.data.ServerFile
 import com.rconnect.android.data.ServerImport
 import com.rconnect.android.data.ServerStore
+import com.rconnect.android.notify.Change
+import com.rconnect.android.notify.ChangeDetector
+import com.rconnect.android.notify.CheckWorker
+import com.rconnect.android.notify.NotificationPrefs
 import com.rconnect.android.winrm.AccessEvent
 import com.rconnect.android.winrm.RemoteSession
 import com.rconnect.android.winrm.ServerSnapshot
 import com.rconnect.android.winrm.WinRmClient
 import com.rconnect.android.winrm.WinRmException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -45,15 +56,25 @@ data class ServerState(
     val connected: List<RemoteSession> get() = sessions.orEmpty().filter { it.connected }
 }
 
-enum class Tab { Servers, People }
+enum class Tab { Servers, People, Contacts }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val store = ServerStore(app)
     private val names = ClientNames(app)
+    private val contactStore = ContactStore(app)
+    private val detector = ChangeDetector(app)
+    val notificationPrefs = NotificationPrefs(app)
+
+    /** Changes found while the app is on screen (someone connected or left, a server stopped answering). */
+    private val _changes = MutableSharedFlow<Change>(extraBufferCapacity = 16)
+    val changes: SharedFlow<Change> = _changes
     private val parallel = Semaphore(MAX_PARALLEL)
 
     private val _servers = MutableStateFlow(store.load())
     val servers: StateFlow<List<ServerEntry>> = _servers
+
+    private val _contacts = MutableStateFlow(contactStore.load())
+    val contacts: StateFlow<List<Contact>> = _contacts
 
     private val _states = MutableStateFlow<Map<String, ServerState>>(emptyMap())
     val states: StateFlow<Map<String, ServerState>> = _states
@@ -81,6 +102,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(id: String) {
         _servers.update { list -> list.filter { it.id != id } }
         _states.update { it - id }
+        detector.forget(id)
         store.save(_servers.value)
         if (_selected.value == id) _selected.value = null
     }
@@ -94,6 +116,59 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             for (s in result.servers) refresh(s.id)
         }
         return result.servers.size to result.skipped
+    }
+
+    fun saveContact(contact: Contact) {
+        if (!contact.valid) return
+        _contacts.update { list -> if (list.any { it.id == contact.id }) list.map { if (it.id == contact.id) contact else it } else list + contact }
+        contactStore.save(_contacts.value)
+    }
+
+    fun deleteContact(id: String) {
+        _contacts.update { list -> list.filter { it.id != id } }
+        contactStore.save(_contacts.value)
+    }
+
+    /** Adds the entries of an address book file; returns how many were added or changed, or null if the text is not an address book. */
+    fun importContacts(text: String): Int? {
+        val incoming = ContactJson.read(text) ?: return null
+        var changed = 0
+        _contacts.update { current ->
+            val list = current.toMutableList()
+            for (c in incoming) {
+                val same = list.indexOfFirst { ContactBook.sameMatch(it, c) }
+                when {
+                    same < 0 -> { list += c; changed++ }
+                    list[same].name != c.name -> { list[same] = c.copy(id = list[same].id); changed++ }
+                }
+            }
+            list
+        }
+        contactStore.save(_contacts.value)
+        return changed
+    }
+
+    fun exportContacts(): String = ContactJson.write(_contacts.value)
+
+    /** Adds servers read from a file; returns how many were added and how many were already in the list. */
+    fun addServers(list: List<ServerEntry>): Pair<Int, Int> {
+        fun key(s: ServerEntry) = s.host.lowercase() + "|" + s.user.lowercase()
+        val known = _servers.value.map(::key).toMutableSet()
+        val fresh = list.filter { known.add(key(it)) }
+        if (fresh.isNotEmpty()) {
+            _servers.update { it + fresh }
+            store.save(_servers.value)
+            for (s in fresh) refresh(s.id)
+        }
+        return fresh.size to (list.size - fresh.size)
+    }
+
+    fun exportServers(passphrase: String): String = ServerFile.write(_servers.value, passphrase)
+
+    /** Turns the background check on or off together with the notifications. */
+    fun setNotificationsEnabled(on: Boolean) {
+        notificationPrefs.enabled = on
+        if (on) CheckWorker.schedule(getApplication()) else CheckWorker.cancel(getApplication())
     }
 
     fun groups(): List<String> = _servers.value.map { it.group }.filter { it.isNotBlank() }.distinct().sorted()
@@ -124,6 +199,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             val snapshot = result.getOrNull()?.let { withNames(id, it) }
+            viewModelScope.launch(Dispatchers.Default) {
+                for (c in detector.detect(id, server.title, snapshot != null, snapshot?.sessions, _contacts.value))
+                    if (notificationPrefs.wants(c)) _changes.tryEmit(c)
+            }
             if (snapshot != null) {
                 setState(id) {
                     // Without the event log the connect time is not known: keep the one learned earlier for the same session.

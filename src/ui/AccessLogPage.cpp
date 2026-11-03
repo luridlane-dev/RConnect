@@ -1,8 +1,10 @@
 #include "AccessLogPage.h"
 
+#include "ContactsDialog.h"
 #include "Theme.h"
 
 #include "core/AccessLog.h"
+#include "core/Contacts.h"
 #include "core/GeoIp.h"
 #include "core/Threats.h"
 
@@ -21,7 +23,9 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QLineEdit>
+#include <QMap>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -38,6 +42,11 @@ enum Column { Time, Server, Event, User, Address, Computer, Details, By, ColumnC
 enum Category { All, Logons, Failed, Leaves, Mine, Alerts, Changes };
 
 constexpr int kEventRole = Qt::UserRole + 1;
+constexpr int kServerRole = Qt::UserRole + 3; // server id of the row
+constexpr int kLineRole = Qt::UserRole + 2;
+
+// How far back the period filter reaches, by position in the combo box (0 = everything).
+constexpr int kPeriodHours[] = {0, 1, 24, 24 * 7, 24 * 30};
 constexpr int kRefreshMs = 15000;
 constexpr int kMaxRows = 20000; // the newest are shown; the file has all
 
@@ -55,7 +64,10 @@ bool inCategory(const QString &event, int category)
             || event == QLatin1String("SecurityDisconnect");
     case Mine:
         return event == QLatin1String("Connect") || event == QLatin1String("Monitor")
-            || event == QLatin1String("AuditEnable") || event == QLatin1String("Message");
+            || event == QLatin1String("AuditEnable") || event == QLatin1String("Message")
+            || event == QLatin1String("Closed") || event == QLatin1String("ServerAdded")
+            || event == QLatin1String("ServerEdited") || event == QLatin1String("ServerRemoved")
+            || event == QLatin1String("Import") || event == QLatin1String("Update");
     case Alerts:
         return event.startsWith(QLatin1String("Alert")) || Threats::isTampering(event);
     case Changes:
@@ -115,7 +127,7 @@ QString csvField(QString text)
 
 } // namespace
 
-// Filters by category and by text in any column.
+// Filters by category, server, period and by text in any column.
 class AccessProxy : public QSortFilterProxyModel {
 public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
@@ -124,6 +136,21 @@ public:
     {
         beginFilterChange();
         m_category = category;
+        endFilterChange();
+    }
+
+    void setServer(const QString &serverId)
+    {
+        beginFilterChange();
+        m_server = serverId;
+        endFilterChange();
+    }
+
+    // Only rows at or after this UTC time ("2026-10-31T08:15:30"); empty = all.
+    void setSince(const QString &sinceUtc)
+    {
+        beginFilterChange();
+        m_since = sinceUtc;
         endFilterChange();
     }
 
@@ -140,6 +167,10 @@ protected:
         const QAbstractItemModel *m = sourceModel();
         if (!inCategory(m->index(row, Event, parent).data(kEventRole).toString(), m_category))
             return false;
+        if (!m_server.isEmpty() && m->index(row, Server, parent).data(kServerRole).toString() != m_server)
+            return false;
+        if (!m_since.isEmpty() && m->index(row, Time, parent).data(Qt::UserRole).toString() < m_since)
+            return false;
         if (m_text.isEmpty())
             return true;
         for (int c = 0; c < ColumnCount; ++c)
@@ -150,6 +181,8 @@ protected:
 
 private:
     int m_category = All;
+    QString m_server;
+    QString m_since;
     QString m_text;
 };
 
@@ -189,6 +222,16 @@ AccessLogPage::AccessLogPage(QWidget *parent)
         m_proxy->setCategory(i);
         updateCount();
     });
+    m_server = new QComboBox(this);
+    m_server->setMinimumWidth(170);
+    m_server->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    connect(m_server, &QComboBox::currentIndexChanged, this, [this] {
+        m_proxy->setServer(m_server->currentData().toString());
+        updateCount();
+    });
+    m_period = new QComboBox(this);
+    m_period->setMinimumWidth(150);
+    connect(m_period, &QComboBox::currentIndexChanged, this, [this] { applyPeriod(); });
     m_filter = new QLineEdit(this);
     m_filter->setClearButtonEnabled(true);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString &text) {
@@ -198,6 +241,8 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     auto *filters = new QHBoxLayout;
     filters->setSpacing(10);
     filters->addWidget(m_category);
+    filters->addWidget(m_server);
+    filters->addWidget(m_period);
     filters->addWidget(m_filter, 1);
 
     auto *view = m_view = new QTableView(this);
@@ -236,6 +281,28 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     m_detailText->setTextInteractionFlags(Qt::TextSelectableByMouse);
     detailLay->addWidget(m_detailText);
     connect(view->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this] { showDetail(); });
+    view->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(view, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        const QModelIndex index = m_view->indexAt(pos);
+        const int row = index.isValid() ? index.sibling(index.row(), Time).data(kLineRole).toInt() : -1;
+        if (row < 0 || row >= m_lines.size())
+            return;
+        const AccessRecord &r = m_lines.at(row).r;
+        if (r.source == QLatin1String("RCONNECT"))
+            return;
+        const bool known = Contacts::instance().match(r.client, r.user) != nullptr;
+        if (!known && r.client.isEmpty())
+            return; // nothing to tell this person by
+        QMenu menu(this);
+        menu.addAction(known ? tr("Edit contact…") : tr("Add to contacts…"), this,
+                       [this, r] { ContactsDialog::editFor(r.client, r.user, this); });
+        menu.exec(m_view->viewport()->mapToGlobal(pos));
+    });
+    // A new nickname shows on the lines already listed.
+    connect(&Contacts::instance(), &Contacts::changed, this, [this] {
+        if (m_loaded && !m_busy)
+            apply(m_lines);
+    });
 
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(6, 0, 6, 0);
@@ -280,6 +347,12 @@ QString AccessLogPage::eventText(const QString &event)
     if (is("Monitor"))            return tr("Screen viewed in RConnect");
     if (is("AuditEnable"))        return tr("Sign-in tracking turned on");
     if (is("Message"))            return tr("Message sent in RConnect");
+    if (is("Closed"))             return tr("Connection closed in RConnect");
+    if (is("ServerAdded"))        return tr("Server added in RConnect");
+    if (is("ServerEdited"))       return tr("Server changed in RConnect");
+    if (is("ServerRemoved"))      return tr("Server removed in RConnect");
+    if (is("Import"))             return tr("Servers imported in RConnect");
+    if (is("Update"))             return tr("RConnect updated");
     if (is("UserCreated"))        return tr("User account created");
     if (is("GroupMemberAdded"))   return tr("Added to a privileged group");
     if (is("TaskCreated"))        return tr("Scheduled task created");
@@ -335,6 +408,14 @@ void AccessLogPage::retranslate()
                           tr("Done in RConnect"), tr("Security alerts"), tr("Changes on the server")});
     m_category->setCurrentIndex(qMax(0, current));
     m_category->blockSignals(false);
+    const int period = m_period->currentIndex();
+    m_period->blockSignals(true);
+    m_period->clear();
+    m_period->addItems({tr("Any time"), tr("Last hour"), tr("Last 24 hours"), tr("Last 7 days"), tr("Last 30 days")});
+    m_period->setCurrentIndex(qMax(0, period));
+    m_period->blockSignals(false);
+    applyPeriod();
+    fillServers();
     m_model->setHorizontalHeaderLabels({tr("Time"), tr("Server"), tr("Activity"), tr("User"), tr("IP address"),
                                         tr("Device"), tr("Details"), tr("By")});
     if (isVisible())
@@ -346,6 +427,7 @@ void AccessLogPage::showEvent(QShowEvent *e)
     QWidget::showEvent(e);
     reload();
     m_timer->start();
+    applyPeriod(); // the window moves with the clock
 }
 
 void AccessLogPage::hideEvent(QHideEvent *e)
@@ -363,7 +445,7 @@ void AccessLogPage::changeEvent(QEvent *e)
 
 namespace {
 
-constexpr qint64 kTailBytes = 24 * 1024 * 1024; // how much of the end of the file is read
+constexpr qint64 kTailBytes = 8 * 1024 * 1024; // how much of the end of the file is read
 constexpr int kMaxRaw = 60000;                   // entries kept before grouping
 constexpr int kRunSeconds = 600;                  // failed attempts this close together are one run
 
@@ -394,9 +476,15 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
 
     QList<AccessLine> lines;
     QHash<QString, int> growing; // server and address -> the line still taking attempts
-    for (const AccessRecord &r : std::as_const(records)) {
+    for (AccessRecord &r : records) {
         if (r.event == QLatin1String("Authenticated"))
             continue;
+        // A summary line of the log stands for the attempts that were left out ("|more=N").
+        int standsFor = 1;
+        if (const qsizetype marker = r.detail.indexOf(QLatin1String("|more=")); marker >= 0) {
+            standsFor += r.detail.mid(marker + 6).toInt();
+            r.detail.truncate(marker);
+        }
         if (r.event == QLatin1String("FailedLogon") && !r.address.isEmpty()) {
             const QString key = r.serverId + QLatin1Char('|') + r.address;
             const auto it = growing.constFind(key);
@@ -404,7 +492,7 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
                 AccessLine &line = lines[it.value()];
                 const QDateTime last = parseUtc(line.r.timeUtc), now = parseUtc(r.timeUtc);
                 if (last.isValid() && now.isValid() && qAbs(last.secsTo(now)) <= kRunSeconds) {
-                    ++line.attempts;
+                    line.attempts += standsFor;
                     if (r.timeUtc > line.r.timeUtc)
                         line.r.timeUtc = r.timeUtc;
                     if (r.timeUtc < line.firstUtc)
@@ -416,12 +504,10 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
             }
             growing.insert(key, int(lines.size()));
         }
-        lines.append({r, r.timeUtc, 1, {shortName(r.user)}});
+        lines.append({r, r.timeUtc, standsFor, {shortName(r.user)}});
     }
     return lines;
 }
-
-constexpr int kLineRole = Qt::UserRole + 2;
 
 } // namespace
 
@@ -480,13 +566,16 @@ void AccessLogPage::apply(QList<AccessLine> lines)
             details << detailText(r.detail);
         // Without the computer name in front: the full account is in the details below.
         const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
-        const QString texts[ColumnCount] = {time, r.server, eventText(r.event), user, r.address, r.client,
+        const QString device = r.source == QLatin1String("RCONNECT") ? r.client
+                                                                       : Contacts::instance().label(r.client, r.user);
+        const QString texts[ColumnCount] = {time, r.server, eventText(r.event), user, r.address, device,
                                             details.join(QStringLiteral(", ")), r.operatorName};
         for (int c = 0; c < ColumnCount; ++c) {
             auto *item = new QStandardItem(texts[c]);
             item->setData(c == Time ? r.timeUtc : texts[c], Qt::UserRole); // the time sorts as text
             item->setData(r.event, kEventRole);
             item->setData(row, kLineRole);
+            item->setData(r.serverId, kServerRole);
             if (c == Event && (r.event == QLatin1String("FailedLogon") || r.event.startsWith(QLatin1String("Alert"))
                                || Threats::isTampering(r.event)))
                 item->setForeground(Theme::kRed);
@@ -494,9 +583,10 @@ void AccessLogPage::apply(QList<AccessLine> lines)
         }
     }
     m_proxy->setSourceModel(m_model);
+    fillServers();
     header->restoreState(headerState);
     m_view->setUpdatesEnabled(true);
-    updateCount();
+    applyPeriod();
     showDetail();
     if (m_again) {
         m_again = false;
@@ -538,6 +628,8 @@ void AccessLogPage::showDetail()
             where += QStringLiteral(" · ") + GeoIp::countryName(code);
     }
     add(tr("IP address"), where);
+    if (r.source != QLatin1String("RCONNECT"))
+        add(tr("Nickname"), Contacts::instance().nameFor(r.client, r.user));
     add(tr("Device"), r.client);
     add(tr("Windows session no."), r.sessionId > 0 ? QString::number(r.sessionId) : QString());
     add(tr("Attempts"), line.attempts > 1 ? QString::number(line.attempts) : QString());
@@ -552,6 +644,34 @@ void AccessLogPage::showDetail()
         html += QStringLiteral("<tr>") + cells.at(k) + (k + 1 < cells.size() ? cells.at(k + 1) : QString()) + QStringLiteral("</tr>");
     m_detailText->setText(html + QStringLiteral("</table>"));
     m_detail->show();
+}
+
+// The servers that appear in the history, keeping the choice made.
+void AccessLogPage::fillServers()
+{
+    const QString chosen = m_server->currentData().toString();
+    QMap<QString, QString> servers; // name (sorted) -> id
+    for (const AccessLine &line : std::as_const(m_lines))
+        if (!line.r.serverId.isEmpty())
+            servers.insert(line.r.server.isEmpty() ? line.r.serverId : line.r.server, line.r.serverId);
+    m_server->blockSignals(true);
+    m_server->clear();
+    m_server->addItem(tr("All servers"), QString());
+    for (auto it = servers.cbegin(); it != servers.cend(); ++it)
+        m_server->addItem(it.key(), it.value());
+    const int index = m_server->findData(chosen);
+    m_server->setCurrentIndex(index < 0 ? 0 : index);
+    m_server->blockSignals(false);
+    m_proxy->setServer(m_server->currentData().toString());
+}
+
+void AccessLogPage::applyPeriod()
+{
+    const int hours = kPeriodHours[qBound(0, m_period->currentIndex(), 4)];
+    m_proxy->setSince(hours == 0 ? QString()
+                                 : QDateTime::currentDateTimeUtc().addSecs(-qint64(hours) * 3600)
+                                       .toString(QStringLiteral("yyyy-MM-ddTHH:mm:ss")));
+    updateCount();
 }
 
 void AccessLogPage::updateCount()

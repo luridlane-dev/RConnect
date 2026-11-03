@@ -1,39 +1,53 @@
 package com.rconnect.android
 
-import android.os.Build
+import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.platform.LocalContext
+import com.rconnect.android.notify.AppVisibility
+import com.rconnect.android.notify.Notifier
 import com.rconnect.android.ui.RConnectApp
+import com.rconnect.android.ui.RConnectTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         // Server addresses and who is signed in are sensitive: no screenshots or task-switcher previews in release builds.
         if (!BuildConfig.DEBUG) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
-            val dark = isSystemInDarkTheme()
-            val context = LocalContext.current
-            val colors = when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-                    if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-                dark -> darkColorScheme()
-                else -> lightColorScheme()
-            }
-            MaterialTheme(colorScheme = colors) { RConnectApp(viewModel) }
+            RConnectTheme { RConnectApp(viewModel) }
         }
+        openServerFrom(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppVisibility.inFront = true
+    }
+
+    override fun onStop() {
+        AppVisibility.inFront = false
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openServerFrom(intent)
+    }
+
+    // Tapping a notification opens the server it is about.
+    private fun openServerFrom(intent: Intent?) {
+        intent?.getStringExtra(Notifier.EXTRA_SERVER)?.let { viewModel.select(it) }
     }
 }

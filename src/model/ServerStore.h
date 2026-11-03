@@ -57,6 +57,8 @@ public:
     void setCountry(const QString &id, const QString &host, const QString &country);
     void setFavorite(const QString &id, bool favorite);
     int favoriteCount() const;
+    // The nicknames in the contacts changed: the cards show other text.
+    void refreshDisplay();
 
 signals:
     void statusChanged(const QString &id);

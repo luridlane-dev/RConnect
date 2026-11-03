@@ -1,7 +1,9 @@
 #include "ServerPanel.h"
 
+#include "ContactsDialog.h"
 #include "ServerDelegate.h"
 #include "Theme.h"
+#include "core/Contacts.h"
 #include "model/ServerStore.h"
 
 #include <QButtonGroup>
@@ -17,6 +19,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -372,6 +375,25 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     menu.addAction(favorite ? tr("Remove from favourites") : tr("Add to favourites"), this,
                    [this, id, favorite] { m_store->setFavorite(id, !favorite); });
     menu.addAction(tr("Check status now"), this, [this, id] { emit refreshRequested(id); });
+
+    // Whoever is connected: name them with one click. Own sessions (this PC) are left out.
+    const QString thisPc = qEnvironmentVariable("COMPUTERNAME");
+    QSet<QString> offered;
+    int shown = 0;
+    for (const RemoteSession &s : m_store->status(id).all) {
+        const QString key = s.client;
+        if (key.isEmpty() || key.compare(thisPc, Qt::CaseInsensitive) == 0 || offered.contains(key.toLower()) || shown >= 4)
+            continue;
+        offered.insert(key.toLower());
+        if (shown++ == 0)
+            menu.addSeparator();
+        const QString nickname = Contacts::instance().nameFor(s.client, s.user);
+        menu.addAction(nickname.isEmpty() ? tr("Add “%1” to contacts…").arg(key)
+                                          : tr("Edit contact “%1”…").arg(Contacts::instance().label(s.client, s.user)),
+                       this, [this, s] { ContactsDialog::editFor(s.client, s.user, this); });
+    }
+    if (shown > 0)
+        menu.addSeparator();
     menu.addAction(tr("Track sign-in attempts…"), this, [this, id] { emit auditRequested(id); });
     menu.addSeparator();
     menu.addAction(tr("Edit…"), this, [this, id] { emit editRequested(id); });

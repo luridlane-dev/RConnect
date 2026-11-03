@@ -8,9 +8,13 @@
 #include <QMultiHash>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QAtomicInt>
 #include <QSaveFile>
+#include <QSettings>
 #include <QSet>
 #include <QStandardPaths>
+
+#include <functional>
 
 namespace {
 
@@ -24,6 +28,18 @@ bool g_loaded = false;
 // A source with nothing written yet is read this far back from the previous check, so it does not
 // ask for 7 days every minute. Covers the time a check takes.
 constexpr qint64 kLookbackMarginMs = 120000;
+
+// Computer names remembered by address; a flood of addresses from the internet must not grow it forever.
+constexpr qsizetype kMaxKnownClients = 20000;
+// Failed sign-ins from one address in one check: this many lines are written, the rest become one summary line.
+constexpr int kMaxFailedLinesPerAddress = 3;
+// Failed sign-ins this close together from one address are one run.
+constexpr qint64 kRunGapSecs = 600;
+constexpr int kKeepFailedDays = 30;
+constexpr int kKeepOtherDays = 400;
+
+// The summary line of a folded run has "|more=N" after its detail: N attempts besides the line itself.
+const char *const kMoreMarker = "|more=";
 
 const char *const kHeader =
     "time_utc,time_local,server_id,server,host,source,event,user,address,client,detail,operator,session_id,record_id\r\n";
@@ -108,13 +124,16 @@ QStringList splitLine(const QString &line)
     return fields;
 }
 
-// `legacy` is set when the file has the first version's ten columns (all from the LocalSessionManager log).
-QList<AccessRecord> readFile(bool *legacy = nullptr, qint64 maxBytes = 0, bool sessionEventsOnly = false)
+enum class Scan { All, SessionEvents, WithoutFailed };
+
+// Passes every line of the file to `each`, one at a time. `legacy` is set when the file has the first version's
+// ten columns (all from the LocalSessionManager log).
+void scanFile(const std::function<void(AccessRecord &&)> &each, bool *legacy = nullptr, qint64 maxBytes = 0,
+              Scan mode = Scan::All)
 {
-    QList<AccessRecord> records;
     QFile f(AccessLog::path());
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-        return records;
+        return;
     bool header = true;
     bool oldFormat = false;
     if (maxBytes > 0 && f.size() > maxBytes) {
@@ -125,7 +144,9 @@ QList<AccessRecord> readFile(bool *legacy = nullptr, qint64 maxBytes = 0, bool s
     while (!f.atEnd()) {
         const QByteArray raw = f.readLine();
         // Cheap test on the bytes first: the other sources are not session events.
-        if (sessionEventsOnly && !header && !oldFormat && !raw.contains("\"LSM\""))
+        if (mode == Scan::SessionEvents && !header && !oldFormat && !raw.contains("\"LSM\""))
+            continue;
+        if (mode == Scan::WithoutFailed && !header && !oldFormat && raw.contains("\"FailedLogon\""))
             continue;
         const QString line = QString::fromUtf8(raw).trimmed();
         if (header) {
@@ -153,7 +174,7 @@ QList<AccessRecord> readFile(bool *legacy = nullptr, qint64 maxBytes = 0, bool s
             r.address = c.at(7);
             r.sessionId = c.at(8).toInt();
             r.recordId = c.at(9).toLongLong();
-            records << r;
+            each(std::move(r));
             continue;
         }
         if (c.size() < 14)
@@ -172,9 +193,25 @@ QList<AccessRecord> readFile(bool *legacy = nullptr, qint64 maxBytes = 0, bool s
         r.operatorName = c.at(11);
         r.sessionId = c.at(12).toInt();
         r.recordId = c.at(13).toLongLong();
-        records << r;
+        each(std::move(r));
     }
+}
+
+QList<AccessRecord> readFile(bool *legacy = nullptr, qint64 maxBytes = 0, bool sessionEventsOnly = false)
+{
+    QList<AccessRecord> records;
+    scanFile([&records](AccessRecord &&r) { records << std::move(r); }, legacy, maxBytes,
+             sessionEventsOnly ? Scan::SessionEvents : Scan::All);
     return records;
+}
+
+// The first line of the file says whether it is from the first version.
+bool fileIsLegacy()
+{
+    QFile f(AccessLog::path());
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    return QString::fromUtf8(f.readLine()).startsWith(QLatin1String("time_utc,time_local,server_id,server,host,event,"));
 }
 
 QByteArray line(const ServerProfile &server, const QString &timeUtc, const QString &source, const QString &event,
@@ -205,9 +242,10 @@ void loadLastEvents()
     if (g_loaded)
         return;
     g_loaded = true;
-    bool legacy = false;
-    QList<AccessRecord> records = readFile(&legacy);
+    const bool legacy = fileIsLegacy();
+    QList<AccessRecord> records;
     if (legacy) {
+        records = readFile();
         // The first version could read the same events again once the format changed.
         QSet<QString> seen;
         QList<AccessRecord> unique;
@@ -222,10 +260,11 @@ void loadLastEvents()
         records = unique;
         migrateLegacyFile(records);
     }
-    for (const AccessRecord &r : records) {
+    // Streamed: the file can be far larger than is sensible to hold in memory.
+    const auto learn = [](const AccessRecord &r) {
         if (r.source == QLatin1String("RCONNECT"))
-            continue;
-        if (!r.client.isEmpty() && !r.address.isEmpty())
+            return;
+        if (!r.client.isEmpty() && !r.address.isEmpty() && g_clientByAddress.size() < kMaxKnownClients)
             g_clientByAddress.insert(r.address, r.client);
         const QString k = key(r.serverId, r.source);
         QString &last = g_lastEvent[k];
@@ -235,6 +274,12 @@ void loadLastEvents()
         }
         if (r.timeUtc == last)
             g_atLastEvent[k].insert(r.recordId);
+    };
+    if (legacy) {
+        for (const AccessRecord &r : std::as_const(records))
+            learn(r);
+    } else {
+        scanFile([&learn](AccessRecord &&r) { learn(r); });
     }
 }
 
@@ -265,6 +310,23 @@ bool write(const QByteArray &lines)
 
 } // namespace
 
+namespace {
+QAtomicInt g_serverEvents(-1);
+}
+
+bool AccessLog::serverEventsEnabled()
+{
+    if (g_serverEvents.loadRelaxed() < 0)
+        g_serverEvents.storeRelaxed(QSettings().value(QStringLiteral("log/serverEvents"), false).toBool() ? 1 : 0);
+    return g_serverEvents.loadRelaxed() == 1;
+}
+
+void AccessLog::setServerEventsEnabled(bool on)
+{
+    g_serverEvents.storeRelaxed(on ? 1 : 0);
+    QSettings().setValue(QStringLiteral("log/serverEvents"), on);
+}
+
 QString AccessLog::path()
 {
     return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/access-log.csv");
@@ -280,6 +342,8 @@ const QStringList &AccessLog::events()
         QStringLiteral("LogCleared"),    QStringLiteral("ServiceInstalled"),
         QStringLiteral("Connect"),       QStringLiteral("Monitor"),         QStringLiteral("AuditEnable"),
         QStringLiteral("Message"),
+        QStringLiteral("Closed"),        QStringLiteral("ServerAdded"),     QStringLiteral("ServerEdited"),
+        QStringLiteral("ServerRemoved"), QStringLiteral("Import"),          QStringLiteral("Update"),
         QStringLiteral("AlertBruteForce"), QStringLiteral("AlertBreakIn"),  QStringLiteral("AlertNewCountry"),
         QStringLiteral("AlertSuspicious"),
     };
@@ -312,6 +376,9 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
     QHash<QString, QMultiHash<QString, qint64>> writtenIds; // by key: time -> record ids
     QList<AccessRecord> records;
     QByteArray lines;
+    struct Folded { qint64 more = 0; QString timeUtc, user, detail, client; qint64 recordId = 0; };
+    QHash<QString, int> failedKept;      // address -> failed sign-in lines written in this check
+    QHash<QString, Folded> folded;       // address -> the ones left out
     int added = 0;
     for (const AccessEvent &e : events) {
         const QString k = key(server.id, e.source);
@@ -333,10 +400,24 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
         // The same address is the same computer: what one event learned fills the others.
         if (client.isEmpty() && !e.address.isEmpty())
             client = g_clientByAddress.value(e.address);
-        if (!client.isEmpty() && !e.address.isEmpty())
+        if (!client.isEmpty() && !e.address.isEmpty() && g_clientByAddress.size() < kMaxKnownClients)
             g_clientByAddress.insert(e.address, client);
-        lines += line(server, e.timeUtc, e.source, eventName(e.kind), e.user, e.address, client, e.detail, {},
-                      e.sessionId, e.recordId);
+        // Password guessing from the internet is thousands of failed sign-ins a day: only the first few of each
+        // address are written, the rest are counted in one summary line (the alerts below still see them all).
+        if (e.kind == AccessEvent::FailedLogon && failedKept[e.address]++ >= kMaxFailedLinesPerAddress) {
+            Folded &f = folded[e.address];
+            ++f.more;
+            if (e.timeUtc >= f.timeUtc) {
+                f.timeUtc = e.timeUtc;
+                f.user = e.user;
+                f.detail = e.detail;
+                f.client = client;
+                f.recordId = e.recordId;
+            }
+        } else {
+            lines += line(server, e.timeUtc, e.source, eventName(e.kind), e.user, e.address, client, e.detail, {},
+                          e.sessionId, e.recordId);
+        }
         if (e.timeUtc > newest.value(k))
             newest.insert(k, e.timeUtc);
         writtenIds[k].insert(e.timeUtc, e.recordId);
@@ -357,6 +438,12 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
             records << r;
         }
         ++added;
+    }
+    for (auto it = folded.cbegin(); it != folded.cend(); ++it) {
+        // The line stands for itself and the others: N events in all, so N - 1 besides it.
+        const Folded &f = it.value();
+        lines += line(server, f.timeUtc, QStringLiteral("SEC"), QStringLiteral("FailedLogon"), f.user, it.key(), f.client,
+                      f.detail + QLatin1String(kMoreMarker) + QString::number(f.more - 1), {}, 0, f.recordId);
     }
     if (added > 0 && !write(lines))
         return 0;
@@ -391,6 +478,109 @@ void AccessLog::alert(const ServerProfile &server, const QString &timeUtc, const
 {
     QMutexLocker lock(&g_mutex);
     write(line(server, timeUtc, QStringLiteral("RCONNECT"), event, user, address, {}, detail, {}, 0, 0));
+}
+
+void AccessLog::forEach(const std::function<void(const AccessRecord &)> &each, bool withoutFailedSignIns)
+{
+    QMutexLocker lock(&g_mutex);
+    scanFile([&each](AccessRecord &&r) { each(r); }, nullptr, 0, withoutFailedSignIns ? Scan::WithoutFailed : Scan::All);
+}
+
+void AccessLog::maintain()
+{
+    QMutexLocker lock(&g_mutex);
+    QFile in(path());
+    constexpr qint64 kLookAtLeast = 2 * 1024 * 1024; // a small file needs nothing
+    if (in.size() < kLookAtLeast || !in.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+    QSaveFile out(path());
+    if (!out.open(QIODevice::WriteOnly))
+        return;
+
+    struct Run {
+        QDateTime last;
+        int kept = 0;
+        qint64 more = 0;
+        QStringList newest; // the fields of the newest folded line
+    };
+    QHash<QString, Run> runs; // server id | address
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    qint64 dropped = 0;
+
+    const auto flush = [&](Run &run, const QString &address) {
+        if (run.more <= 0)
+            return;
+        QStringList c = run.newest;
+        c[8] = address;
+        c[10] = c.at(10) + QLatin1String(kMoreMarker) + QString::number(run.more - 1);
+        QStringList quotedFields;
+        for (int i = 0; i < c.size(); ++i)
+            quotedFields << (i >= 12 ? c.at(i) : quoted(c.at(i)));
+        out.write(quotedFields.join(QLatin1Char(',')).toUtf8() + "\r\n");
+        run.more = 0;
+    };
+
+    bool header = true;
+    while (!in.atEnd()) {
+        const QByteArray raw = in.readLine();
+        if (header) {
+            header = false;
+            out.write(raw);
+            continue;
+        }
+        const bool failed = raw.contains("\"FailedLogon\"");
+        const QStringList c = splitLine(QString::fromUtf8(raw).trimmed());
+        if (c.size() < 14) {
+            out.write(raw);
+            continue;
+        }
+        const QDateTime time = QDateTime::fromString(c.at(0).left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
+        const qint64 ageDays = time.isValid() ? time.daysTo(now) : 0;
+        if (ageDays > (failed ? kKeepFailedDays : kKeepOtherDays)) {
+            ++dropped;
+            continue;
+        }
+        if (!failed || c.at(5) != QLatin1String("SEC") || c.at(10).contains(QLatin1String(kMoreMarker)) || !time.isValid()) {
+            out.write(raw);
+            continue;
+        }
+        const QString key = c.at(2) + QLatin1Char('|') + c.at(8);
+        Run &run = runs[key];
+        if (!run.last.isValid() || qAbs(run.last.secsTo(time)) > kRunGapSecs) {
+            flush(run, c.at(8));
+            run.kept = 0;
+        }
+        run.last = time;
+        if (run.kept < kMaxFailedLinesPerAddress) {
+            ++run.kept;
+            out.write(raw);
+        } else {
+            ++run.more;
+            ++dropped;
+            if (run.newest.isEmpty() || c.at(0) >= run.newest.at(0))
+                run.newest = c;
+        }
+        // Runs that ended long ago are written out so the table stays small.
+        if (runs.size() > 50000) {
+            for (auto it = runs.begin(); it != runs.end();) {
+                if (qAbs(it->last.secsTo(time)) > kRunGapSecs) {
+                    flush(it.value(), it.key().section(QLatin1Char('|'), 1));
+                    it = runs.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+    }
+    for (auto it = runs.begin(); it != runs.end(); ++it)
+        flush(it.value(), it.key().section(QLatin1Char('|'), 1));
+
+    in.close();
+    if (dropped == 0) {
+        out.cancelWriting();
+        return;
+    }
+    out.commit();
 }
 
 QList<AccessRecord> AccessLog::readAll()

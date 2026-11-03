@@ -62,7 +62,7 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
     m_add->setFixedSize(kHeight + 6, kHeight);
     connect(m_add, &QToolButton::clicked, this, &AnimatedTabBar::addRequested);
 
-    m_anim.setDuration(180);
+    m_anim.setDuration(110);
     m_anim.setEasingCurve(QEasingCurve::OutCubic);
     m_anim.setStartValue(0.0);
     m_anim.setEndValue(1.0);
@@ -138,7 +138,7 @@ void AnimatedTabBar::slideTo(int index)
 
 void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
-    // A rounded highlight slides behind the selected tab, under the tab text.
+    // A flat highlight slides behind the selected tab, under the tab text.
     const int idx = currentIndex();
     if (idx >= 0 && m_selectionVisible) {
         const QRectF target = tabRect(idx);
@@ -152,7 +152,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(Qt::NoPen);
         p.setBrush(Theme::kTabPill);
-        p.drawRoundedRect(m_current.adjusted(3, 5, -3, -5), 9, 9);
+        p.drawRect(m_current.adjusted(2, 4, -2, -4));
     }
 
     QTabBar::paintEvent(e);

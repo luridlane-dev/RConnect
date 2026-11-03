@@ -4,7 +4,14 @@
 
 #include <QAxObject>
 #include <QAxWidget>
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QCursor>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QGuiApplication>
+#include <QMimeData>
+#include <QToolTip>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QLabel>
@@ -100,7 +107,7 @@ public:
         lay->addLayout(buttons);
         lay->addStretch();
 
-        m_frame.setInterval(16);
+        m_frame.setInterval(33);
         connect(&m_frame, &QTimer::timeout, this, [this] {
             update();
             if (m_tone != Busy && m_clock.elapsed() > kAppearMs)
@@ -186,27 +193,18 @@ protected:
         tg.setColorAt(0, tint.lighter(125));
         tg.setColorAt(1, tint.darker(120));
         p.setBrush(tg);
-        p.drawRoundedRect(tile, 16, 16);
+        p.drawRect(tile);
         p.setBrush(QColor(255, 255, 255, 46));
         p.setPen(QPen(Qt::white, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         const QRectF screen(-17, -19, 34, 24);
-        p.drawRoundedRect(screen, 4.5, 4.5);
+        p.drawRect(screen);
         p.drawLine(QPointF(0, 6.5), QPointF(0, 12));
         p.drawLine(QPointF(-8, 13), QPointF(8, 13));
         p.restore();
 
-        // Busy: rings spread out from the tile like a signal looking for the server, and a light runs
-        // along a thin bar under it.
+        // Busy: a light runs along a thin bar under the tile.
         if (m_tone == Busy) {
             p.setBrush(Qt::NoBrush);
-            for (int k = 0; k < 3; ++k) {
-                const qreal phase = std::fmod(t / 2.4 + k / 3.0, 1.0);
-                const qreal r = 40.0 + phase * 36.0;
-                QColor ring = tint;
-                ring.setAlphaF(0.55 * std::pow(1.0 - phase, 1.6));
-                p.setPen(QPen(ring, 1.6));
-                p.drawEllipse(c, r, r);
-            }
             const QRectF track(c.x() - 60, c.y() + 66, 120, 3);
             QColor trackColor = tint;
             trackColor.setAlpha(40);
@@ -246,6 +244,7 @@ RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
     : QWidget(parent)
     , m_profile(profile)
 {
+    setAcceptDrops(true);
     m_stack = new QStackedLayout(this);
     m_stack->setContentsMargins(0, 0, 0, 0);
 
@@ -298,6 +297,60 @@ void RdpSession::showEvent(QShowEvent *e)
 {
     QWidget::showEvent(e);
     QTimer::singleShot(0, this, &RdpSession::focusRemote);
+}
+
+void RdpSession::dragEnterEvent(QDragEnterEvent *e)
+{
+    if (m_state == Connected && e->mimeData()->hasUrls())
+        e->acceptProposedAction();
+}
+
+void RdpSession::dragMoveEvent(QDragMoveEvent *e)
+{
+    if (m_state == Connected && e->mimeData()->hasUrls())
+        e->acceptProposedAction();
+}
+
+void RdpSession::dropEvent(QDropEvent *e)
+{
+    QList<QUrl> files;
+    for (const QUrl &url : e->mimeData()->urls())
+        if (url.isLocalFile())
+            files << url;
+    if (files.isEmpty())
+        return;
+    e->acceptProposedAction();
+    sendFiles(files);
+}
+
+// The files go on this PC's clipboard, which the control shares with the server, and Ctrl+V is pressed in the
+// session: Explorer on the server then pastes them into the folder that has the focus (or the desktop).
+void RdpSession::sendFiles(const QList<QUrl> &files)
+{
+    if (!m_profile.clipboard) {
+        QToolTip::showText(QCursor::pos(), tr("Sending files needs “Share clipboard” (edit the server to turn it on)."), this);
+        return;
+    }
+    auto *mime = new QMimeData;
+    mime->setUrls(files);
+    QGuiApplication::clipboard()->setMimeData(mime);
+    log(QStringLiteral("drop: %1 file(s) put on the clipboard").arg(files.size()));
+    QToolTip::showText(QCursor::pos(), tr("Sending %1 file(s) to the server…").arg(files.size()), this);
+    // Gives the control a moment to tell the server about the new clipboard.
+    QTimer::singleShot(400, this, [this] {
+        if (m_closing || m_state != Connected)
+            return;
+        focusRemote();
+        INPUT keys[4] = {};
+        const WORD sequence[4] = {VK_CONTROL, 'V', 'V', VK_CONTROL};
+        for (int i = 0; i < 4; ++i) {
+            keys[i].type = INPUT_KEYBOARD;
+            keys[i].ki.wVk = sequence[i];
+            keys[i].ki.wScan = WORD(MapVirtualKeyW(sequence[i], MAPVK_VK_TO_VSC));
+            keys[i].ki.dwFlags = i >= 2 ? KEYEVENTF_KEYUP : 0;
+        }
+        SendInput(4, keys, sizeof(INPUT));
+    });
 }
 
 void RdpSession::focusRemote()
@@ -353,7 +406,8 @@ void RdpSession::poll()
     if (c != m_lastPolled || elapsed - m_lastHeartbeat >= 5000) {
         m_lastHeartbeat = elapsed;
         m_lastPolled = c;
-        log(QStringLiteral("poll +%1ms Connected=%2 state=%3 visible=%4 ext=%5")
+        Log::detail(QStringLiteral("[%1] poll +%2ms Connected=%3 state=%4 visible=%5 ext=%6")
+                .arg(m_profile.name)
                 .arg(elapsed).arg(c).arg(int(m_state)).arg(isVisible())
                 .arg(m_ax->property("ExtendedDisconnectReason").toInt()));
     }
@@ -394,7 +448,7 @@ bool RdpSession::createControl()
     connect(m_ax, SIGNAL(OnDisconnected(int)), this, SLOT(onDisconnected(int)));
     // Every COM event, including ones without a slot above.
     connect(m_ax, &QAxWidget::signal, this, [this](const QString &name, int argc, void *) {
-        log(QStringLiteral("event %1 (%2 args)").arg(name).arg(argc));
+        Log::detail(QStringLiteral("[%1] event %2 (%3 args)").arg(m_profile.name, name).arg(argc));
     });
     connect(m_ax, &QAxWidget::exception, this, [this](int code, const QString &src, const QString &desc, const QString &help) {
         log(QStringLiteral("COM exception %1 src=%2 desc=%3 help=%4").arg(code).arg(src, desc, help));
@@ -434,8 +488,6 @@ void RdpSession::applySettings()
         adv->setProperty("AudioCaptureRedirectionMode", false);
         adv->setProperty("EnableCredSspSupport", true);
         adv->setProperty("AuthenticationLevel", m_profile.ignoreCertWarnings ? 0 : 2);
-        // Windows key, Alt+Tab and the like go to the server while this tab has the keyboard, not to this PC.
-        adv->setProperty("KeyboardHookMode", 1);
         adv->setProperty("EnableAutoReconnect", true);
         adv->setProperty("MaxReconnectAttempts", 5);
         adv->setProperty("BitmapPeristence", 1);
@@ -445,6 +497,15 @@ void RdpSession::applySettings()
         // LAN: auto-detect lets the server pick lossy codecs on internet links, which blurs text.
         adv->setProperty("NetworkConnectionType", 6);
         adv->setProperty("BandwidthDetection", false);
+    }
+
+    // Windows key, Alt+Tab and the like go to the server while this tab has the keyboard, not to this PC. The control
+    // defaults to 2 (only in full screen); the property is on SecuredSettings2, not on AdvancedSettings.
+    if (QAxObject *secured = m_ax->querySubObject("SecuredSettings2")) {
+        secured->setProperty("KeyboardHookMode", 1);
+        log(QStringLiteral("KeyboardHookMode = %1").arg(secured->property("KeyboardHookMode").toString()));
+    } else {
+        log(QStringLiteral("SecuredSettings2 object: MISSING (Windows key and Alt+Tab stay on this PC)"));
     }
 
     // Opens the session at the local DPI instead of 100% until the first resize.

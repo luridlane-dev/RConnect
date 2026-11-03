@@ -22,6 +22,7 @@ concurrency:
 
 env:
   QT_VERSION: 6.11.1
+  QT_FALLBACK_VERSION: 6.11.3
 
 jobs:
   release:
@@ -53,11 +54,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The Qt download mirror sometimes fails for one version (as on 2026-11-03); the second step then
+      # tries a newer patch release of the same series.
       - name: Install Qt
+        id: qt
         if: steps.ver.outputs.exists == 'false'
+        continue-on-error: true
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Install Qt (fallback)
+        if: steps.ver.outputs.exists == 'false' && steps.qt.outcome == 'failure'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_FALLBACK_VERSION }}
           host: windows
           target: desktop
           arch: win64_msvc2022_64

@@ -8,6 +8,8 @@
 #include "SessionWindow.h"
 #include "Theme.h"
 #include "core/AccessLog.h"
+#include "core/Contacts.h"
+#include "core/Log.h"
 #include "core/ServerImport.h"
 #include "core/StatusMonitor.h"
 #include "core/Threats.h"
@@ -15,6 +17,7 @@
 #include "model/ServerStore.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QRegularExpression>
@@ -55,7 +58,7 @@ bool confirm(QWidget *parent, const QString &title, const QString &text, bool de
     return box.clickedButton() == yes;
 }
 
-// Rounded, opaque background for the server popup. Painted by hand because the window is
+// Opaque background for the server popup. Painted by hand because the window is
 // translucent (rounded corners) and a style sheet does not fill it reliably.
 class PopupFrame : public QFrame {
 public:
@@ -68,7 +71,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(QPen(Theme::kPopupBorder, 1));
         p.setBrush(Theme::kPopupFill);
-        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 12, 12);
+        p.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
     }
 };
 
@@ -108,11 +111,15 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     , m_updater(new UpdateChecker(this))
 {
     m_home = new HomePage(m_store);
+    connect(&Contacts::instance(), &Contacts::changed, m_store, &ServerStore::refreshDisplay);
+    connect(m_home, &HomePage::importRequested, this, &Workspace::importServers);
+    connect(m_home, &HomePage::exportRequested, this, &Workspace::exportServers);
     connect(m_home, &HomePage::updateCheckRequested, this, [this] { checkForUpdates(true); });
     connect(m_updater, &UpdateChecker::checked, this, &Workspace::onUpdateChecked);
     connect(m_home->liveSessions(), &LiveSessionsPage::refreshRequested, m_monitor, &StatusMonitor::refreshAllNow);
     connect(m_home->liveSessions(), &LiveSessionsPage::messageRequested, this, &Workspace::sendMessage);
     connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
+    connect(m_monitor, &StatusMonitor::unknownPerson, this, &Workspace::showStranger);
     ServerPanel *panel = m_home->panel();
     connect(panel, &ServerPanel::auditRequested, this, &Workspace::enableAuditing);
     connect(panel, &ServerPanel::openRequested, this, [this](const QString &id) { openServer(id, m_main); });
@@ -171,7 +178,13 @@ void Workspace::start(bool startMinimized)
     else
         m_main->showFullScreen();
     // The "new country" check compares with the history; read it before the first events arrive.
-    QThreadPool::globalInstance()->start([] { Threats::warmUp(); });
+    QThreadPool::globalInstance()->start([] {
+        AccessLog::maintain(); // folds password-guessing runs and drops very old lines before anything reads the file
+        Threats::warmUp();
+    });
+    auto *maintenance = new QTimer(this);
+    connect(maintenance, &QTimer::timeout, this, [] { QThreadPool::globalInstance()->start([] { AccessLog::maintain(); }); });
+    maintenance->start(24 * 3600 * 1000);
     m_monitor->setActive(true);
     m_monitor->resolveCountries();
 
@@ -319,6 +332,7 @@ void Workspace::endSession(const QString &id)
     RdpSession *s = m_sessions.take(id);
     if (!s)
         return;
+    audit(m_store->profileById(id), QStringLiteral("Closed"));
     SessionWindow *w = windowOf(id);
     if (w)
         w->takeSession(id);
@@ -497,9 +511,18 @@ void Workspace::addServer()
     ServerEditDialog dlg(ServerProfile{}, true, m_store->usedColors(), dialogParent());
     if (dlg.exec() != QDialog::Accepted)
         return;
-    m_store->add(dlg.profile());
+    const ServerProfile added = dlg.profile();
+    m_store->add(added);
+    audit(added, QStringLiteral("ServerAdded"), QStringLiteral("%1:%2").arg(added.host).arg(added.port));
     m_monitor->refreshAll();
     m_monitor->resolveCountries();
+}
+
+void Workspace::audit(const ServerProfile &p, const QString &event, const QString &detail)
+{
+    // Adding a server is always recorded; the rest only with detailed logging.
+    if (Log::detailed() || event == QLatin1String("ServerAdded"))
+        AccessLog::note(p, event, p.displayUser(), detail);
 }
 
 void Workspace::importServers()
@@ -523,7 +546,10 @@ void Workspace::importServers()
         res = ServerImport::load(path, passphrase);
     }
     if (res.status != ServerImport::Status::Ok) {
-        QMessageBox::warning(dialogParent(), tr("Import servers"), tr("This file could not be read."));
+        Log::write(QStringLiteral("[import] failed: %1").arg(res.error.isEmpty() ? QStringLiteral("unknown") : res.error));
+        QMessageBox::warning(dialogParent(), tr("Import servers"),
+                             tr("This file could not be read.") + QStringLiteral("\n\n")
+                                 + tr("Details are in the log file (Settings > Detailed logging > Open log file)."));
         return;
     }
 
@@ -551,6 +577,8 @@ void Workspace::importServers()
         m_store->add(p);
         ++added;
     }
+    Log::write(QStringLiteral("[import] %1 added, %2 skipped").arg(added).arg(skipped));
+    audit(ServerProfile{}, QStringLiteral("Import"), tr("%1 added, %2 skipped").arg(added).arg(skipped));
     if (added > 0) {
         m_monitor->refreshAll();
         m_monitor->resolveCountries();
@@ -558,6 +586,47 @@ void Workspace::importServers()
     QMessageBox::information(dialogParent(), tr("Import servers"),
                              skipped > 0 ? tr("%1 servers imported, %2 already in the list.").arg(added).arg(skipped)
                                          : tr("%1 servers imported.").arg(added));
+}
+
+void Workspace::exportServers()
+{
+    const QList<ServerProfile> servers = m_store->all();
+    if (servers.isEmpty()) {
+        QMessageBox::information(dialogParent(), tr("Export servers"), tr("There are no servers to export."));
+        return;
+    }
+    // A passphrase encrypts the file and lets it carry the saved passwords; without one the file holds none.
+    QString passphrase;
+    for (;;) {
+        bool ok = false;
+        passphrase = QInputDialog::getText(dialogParent(), tr("Export servers"),
+                                           tr("Passphrase to protect the file and the saved passwords. Leave it empty to "
+                                              "export the servers without passwords:"),
+                                           QLineEdit::Password, QString(), &ok);
+        if (!ok)
+            return;
+        if (passphrase.isEmpty())
+            break;
+        const QString again = QInputDialog::getText(dialogParent(), tr("Export servers"), tr("Type the passphrase again:"),
+                                                    QLineEdit::Password, QString(), &ok);
+        if (!ok)
+            return;
+        if (again == passphrase)
+            break;
+        QMessageBox::warning(dialogParent(), tr("Export servers"), tr("The passphrases are different."));
+    }
+    const QString name = QStringLiteral("rconnect-servers-%1.json")
+                             .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd")));
+    const QString path = QFileDialog::getSaveFileName(dialogParent(), tr("Export servers"), name, tr("Server list (*.json)"));
+    if (path.isEmpty())
+        return;
+    if (!ServerImport::save(path, servers, passphrase)) {
+        QMessageBox::warning(dialogParent(), tr("Export servers"), tr("Could not write the file."));
+        return;
+    }
+    QMessageBox::information(dialogParent(), tr("Export servers"),
+                             passphrase.isEmpty() ? tr("%1 servers exported, without passwords.").arg(servers.size())
+                                                  : tr("%1 servers exported with their passwords.").arg(servers.size()));
 }
 
 void Workspace::editServer(const QString &id)
@@ -569,6 +638,23 @@ void Workspace::editServer(const QString &id)
     if (dlg.exec() != QDialog::Accepted)
         return;
     const ServerProfile updated = dlg.profile();
+    {
+        // Which settings changed (never the values of the password or notes).
+        QStringList changed;
+        const auto note = [&changed](bool differs, const char *name) { if (differs) changed << QLatin1String(name); };
+        note(cur.name != updated.name, "name");
+        note(cur.host != updated.host, "host");
+        note(cur.port != updated.port, "port");
+        note(cur.user != updated.user, "user");
+        note(cur.domain != updated.domain, "domain");
+        note(cur.password != updated.password, "password");
+        note(cur.notes != updated.notes, "notes");
+        note(cur.resolution != updated.resolution || cur.colorDepth != updated.colorDepth, "display");
+        note(cur.clipboard != updated.clipboard || cur.drives != updated.drives || cur.audio != updated.audio,
+             "redirection");
+        note(cur.monitor != updated.monitor || cur.checkSessions != updated.checkSessions, "monitoring");
+        audit(updated, QStringLiteral("ServerEdited"), changed.join(QStringLiteral(", ")));
+    }
     m_store->update(updated);
     m_monitor->refresh(id);
     m_monitor->resolveCountries();
@@ -589,6 +675,7 @@ void Workspace::removeServer(const QString &id)
     if (!confirm(dialogParent(), tr("Delete server"), tr("Remove “%1” from the list?").arg(p.name)))
         return;
     endSession(id);
+    audit(p, QStringLiteral("ServerRemoved"), QStringLiteral("%1:%2").arg(p.host).arg(p.port));
     m_store->remove(id);
 }
 
@@ -667,7 +754,7 @@ void Workspace::enableAuditing(const QString &id)
 }
 
 // A warning from Threats, or a tampering event, as a Windows notification.
-void Workspace::showAlert(const AccessRecord &alert)
+QSystemTrayIcon *Workspace::tray()
 {
     if (!m_tray) {
         m_tray = new QSystemTrayIcon(QApplication::windowIcon(), this);
@@ -680,7 +767,19 @@ void Workspace::showAlert(const AccessRecord &alert)
         });
     }
     m_tray->show();
-    m_tray->showMessage(tr("Security alert: %1").arg(alert.server), AccessLogPage::alertSummary(alert),
+    return m_tray;
+}
+
+void Workspace::showAlert(const AccessRecord &alert)
+{
+    tray()->showMessage(tr("Security alert: %1").arg(alert.server), AccessLogPage::alertSummary(alert),
+                        QSystemTrayIcon::Warning, 20000);
+}
+
+void Workspace::showStranger(const QString &server, const QString &client, const QString &user)
+{
+    tray()->showMessage(tr("Unknown person on %1").arg(server),
+                        tr("%1 (account %2) connected and is not in your contacts.").arg(client, user),
                         QSystemTrayIcon::Warning, 20000);
 }
 
@@ -864,9 +963,10 @@ void Workspace::installUpdate(const UpdateInfo &info)
             return;
         QMessageBox::warning(dialogParent(), tr("Update"), tr("The update could not be downloaded: %1").arg(error));
     });
-    connect(m_updater, &UpdateChecker::downloaded, progress, [this, progress](const QString &path) {
+    connect(m_updater, &UpdateChecker::downloaded, progress, [this, progress, info](const QString &path) {
         progress->close();
         // The installer closes this copy, installs over it and starts the new one.
+        audit(ServerProfile{}, QStringLiteral("Update"), tr("Installing %1").arg(info.version));
         if (QProcess::startDetached(path, {QStringLiteral("/SILENT"), QStringLiteral("/CLOSEAPPLICATIONS")})) {
             quit(false);
         } else {

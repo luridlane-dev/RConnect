@@ -15,21 +15,18 @@ namespace {
 
 // Tokens in @name@ are replaced by the colours of the current mode.
 const char *const kStyleSheet = R"(
-* { font-family: "SF Pro Text", "Segoe UI Variable Text", "Segoe UI"; font-size: 13px; }
-QWidget { color: @text@; }
-QWidget#root {
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 @bgTop@, stop: 1 @bg@);
-}
+QWidget { color: @text@; font-family: "SF Pro Text", "Segoe UI Variable Text", "Segoe UI"; font-size: 13px; }
+QWidget#root { background: @bg@; }
 QMainWindow, QDialog, QMessageBox { background: @bg@; }
 
 QWidget#topBar { background: @topBar@; border-bottom: 1px solid @border@; }
 QToolButton#menuButton {
-    background: transparent; border: none; border-radius: 9px; color: @text2@; padding: 0 0 4px 0; margin: 6px 4px; font-size: 18px;
+    background: transparent; border: none; border-radius: 0; color: @text2@; padding: 0 0 4px 0; margin: 6px 4px; font-size: 18px;
 }
 QToolButton#menuButton:hover { background: @hover@; color: @text@; }
 QToolButton#menuButton:pressed { background: @press@; }
 QToolButton#homeTab {
-    background: transparent; border: none; border-radius: 9px; padding: 0; margin: 6px 4px 6px 6px;
+    background: transparent; border: none; border-radius: 0; padding: 0; margin: 6px 4px 6px 6px;
     min-width: 34px; max-width: 34px;
 }
 QToolButton#homeTab:hover { background: @hover@; }
@@ -51,23 +48,23 @@ QToolButton#trafficMax { background: #28c840; }
 QToolButton#trafficClose:hover { background: #ff8780; }
 QToolButton#trafficMin:hover { background: #ffd060; }
 QToolButton#trafficMax:hover { background: #5bdc70; }
-QFrame#popup { background: @solid@; border: 1px solid @solidBorder@; border-radius: 12px; }
+QFrame#popup { background: @solid@; border: 1px solid @solidBorder@; border-radius: 0; }
 QLabel#brandName { font-size: 16px; font-weight: 700; color: @text@; }
 QLabel#brandSummary { color: @text2@; font-size: 12px; }
 QLabel#pageTitle { font-size: 26px; font-weight: 700; color: @text@; }
 QLabel#pageSubtitle { color: @text2@; font-size: 13px; }
 QLabel#operatorName { color: @text@; font-size: 12px; font-weight: 600; }
 QFrame#sidebar { background: @sidebar@; border-right: 1px solid @border@; }
-QFrame#detailCard { background: @surface@; border: 1px solid @border@; border-radius: 12px; }
-QFrame#statTile { background: @surface@; border: 1px solid @border@; border-radius: 14px; }
+QFrame#detailCard { background: @surface@; border: 1px solid @border@; border-radius: 0; }
+QFrame#statTile { background: @surface@; border: 1px solid @border@; border-radius: 0; }
 QLabel#statValue { font-size: 26px; font-weight: 700; color: @text@; background: transparent; }
 QLabel#statValue[tone="green"] { color: @green@; }
 QLabel#statValue[tone="orange"] { color: @orange@; }
 QLabel#statValue[tone="red"] { color: @red@; }
 QLabel#statCaption { font-size: 12px; color: @text2@; background: transparent; }
-QFrame#navPill { background: @tabPill@; border-radius: 9px; }
+QFrame#navPill { background: @tabPill@; border-radius: 0; }
 QPushButton#navButton {
-    background: transparent; border: none; border-radius: 9px; color: @text2@; text-align: left;
+    background: transparent; border: none; border-radius: 0; color: @text2@; text-align: left;
     padding: 7px 12px; font-size: 14px; font-weight: 500;
 }
 QPushButton#navButton:hover { background: @hoverSoft@; color: @text@; }
@@ -81,7 +78,7 @@ QToolButton#barButton {
 QToolButton#barButton:hover { background: @hover@; color: @text@; }
 QToolButton#settingsButton {
     font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 16px; background: @button@;
-    border: none; border-radius: 7px; color: @text2@; padding: 0;
+    border: none; border-radius: 0; color: @text2@; padding: 0;
 }
 QToolButton#settingsButton:hover { background: @hover@; color: @text@; }
 QToolButton#sectionToggle {
@@ -89,14 +86,14 @@ QToolButton#sectionToggle {
 }
 QToolButton#sectionToggle:hover { color: @accent@; }
 QPlainTextEdit {
-    background: @field@; border: 1px solid @border@; border-radius: 9px; padding: 5px 8px;
+    background: @field@; border: 1px solid @border@; border-radius: 0; padding: 5px 8px;
     selection-background-color: @accent@; selection-color: #ffffff;
 }
 QPlainTextEdit:focus { border-color: @accent@; }
 
 QListView { background: transparent; border: none; outline: none; }
 QTableView {
-    background: @surface@; alternate-background-color: @surfaceAlt@; border: 1px solid @border@; border-radius: 12px;
+    background: @surface@; alternate-background-color: @surfaceAlt@; border: 1px solid @border@; border-radius: 0;
     gridline-color: transparent; outline: none; selection-background-color: @accent@; selection-color: #ffffff;
 }
 QTableView::item { padding: 3px 8px; border: none; }
@@ -105,16 +102,16 @@ QHeaderView::section {
     font-weight: 600;
 }
 QTableView QScrollBar:horizontal { height: 8px; margin: 2px; background: transparent; }
-QTableView QScrollBar::handle:horizontal { background: @scroll@; border-radius: 3px; min-width: 36px; }
+QTableView QScrollBar::handle:horizontal { background: @scroll@; border-radius: 0; min-width: 36px; }
 QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
-QScrollBar::handle:vertical { background: @scroll@; border-radius: 3px; min-height: 36px; }
+QScrollBar::handle:vertical { background: @scroll@; border-radius: 0; min-height: 36px; }
 QScrollBar::handle:vertical:hover { background: @scrollHover@; }
 QScrollBar::handle:vertical:disabled { background: transparent; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
 QPushButton, QToolButton {
-    background: @button@; border: 1px solid @border@; border-radius: 8px; padding: 6px 14px;
+    background: @button@; border: 1px solid @border@; border-radius: 0; padding: 6px 14px;
 }
 QPushButton:hover, QToolButton:hover { background: @hover@; }
 QPushButton:pressed, QToolButton:pressed { background: @press@; }
@@ -124,43 +121,43 @@ QPushButton#primaryButton:disabled { background: @surface@; color: @text3@; }
 QPushButton#primaryButton:hover { background: @accentHover@; }
 QPushButton#primaryButton:pressed { background: @accentPress@; }
 QPushButton#addButton {
-    background: @accent@; border-color: transparent; color: #ffffff; font-weight: 600; border-radius: 9px;
+    background: @accent@; border-color: transparent; color: #ffffff; font-weight: 600; border-radius: 0;
     padding: 0 18px; min-height: 36px;
 }
 QPushButton#addButton:hover { background: @accentHover@; }
 QPushButton#addButton:pressed { background: @accentPress@; }
 
-QFrame#segmented { background: @segTrack@; border-radius: 10px; }
+QFrame#segmented { background: @segTrack@; border-radius: 0; }
 QPushButton#segment {
-    background: transparent; color: @text2@; border: none; border-radius: 8px; padding: 0 14px;
+    background: transparent; color: @text2@; border: none; border-radius: 0; padding: 0 14px;
     min-height: 28px; font-weight: 500;
 }
 QPushButton#segment:hover { color: @text@; background: transparent; }
 QPushButton#segment:checked { background: @segOn@; color: @text@; }
 
 QLineEdit, QSpinBox, QComboBox {
-    background: @field@; border: 1px solid @border@; border-radius: 9px; padding: 6px 10px;
+    background: @field@; border: 1px solid @border@; border-radius: 0; padding: 6px 10px;
     selection-background-color: @accent@; selection-color: #ffffff;
 }
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid @accent@; }
-QLineEdit#searchField { border-radius: 10px; padding: 0 12px; min-height: 36px; }
+QLineEdit#searchField { border-radius: 0; padding: 0 12px; min-height: 36px; }
 QComboBox QAbstractItemView {
-    background: @solid@; border: 1px solid @solidBorder@; border-radius: 8px; selection-background-color: @accent@;
+    background: @solid@; border: 1px solid @solidBorder@; border-radius: 0; selection-background-color: @accent@;
     selection-color: #ffffff; outline: none;
 }
 QCheckBox { spacing: 10px; }
-QCheckBox::indicator { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid @text3@; background: transparent; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 0; border: 1.5px solid @text3@; background: transparent; }
 QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
 
 QTabBar { background: transparent; }
 QTabBar::tab {
-    background: transparent; color: @text2@; padding: 0 10px 2px 10px; margin: 0; border: none;
+    background: transparent; color: @text2@; padding: 0 10px 0 22px; margin: 0; border: none;
     min-width: 90px; max-width: 200px;
 }
 QTabBar::tab:hover { color: @text@; }
 QTabBar::tab:selected { color: @text@; background: transparent; }
 QToolButton#tabClose {
-    background: transparent; border: none; border-radius: 9px; color: @text2@; font-size: 14px; padding: 0; margin: 0;
+    background: transparent; border: none; border-radius: 0; color: @text2@; font-size: 14px; padding: 0; margin: 0;
 }
 QToolButton#tabClose:hover { background: @hover@; color: @text@; }
 QToolButton#tabClose:pressed { background: @press@; }
@@ -171,8 +168,8 @@ QWidget#sessionOverlay { background: @overlay@; }
 QLabel#overlayTitle { font-size: 22px; font-weight: 700; color: @overlayText@; }
 QLabel#overlayMessage { color: @overlayText2@; font-size: 14px; }
 
-QMenu { background: @solid@; border: 1px solid @solidBorder@; border-radius: 10px; padding: 5px; }
-QMenu::item { padding: 6px 22px; border-radius: 6px; }
+QMenu { background: @solid@; border: 1px solid @solidBorder@; border-radius: 0; padding: 5px; }
+QMenu::item { padding: 6px 22px; border-radius: 0; }
 QMenu::item:selected { background: @accent@; color: #ffffff; }
 QMenu::separator { height: 1px; background: @solidBorder@; margin: 4px 8px; }
 QToolTip { background: @solid@; color: @text@; border: 1px solid @solidBorder@; padding: 5px 9px; font-size: 12px; }
@@ -187,28 +184,28 @@ Palette darkPalette()
 {
     Palette p;
     p.tokens = {
-        {"bg", "#000000"}, {"bgTop", "#101014"}, {"topBar", "rgba(255, 255, 255, 0.04)"},
-        {"text", "#f5f5f7"}, {"text2", "#a1a1a6"}, {"text3", "#6e6e73"},
-        {"surface", "rgba(255, 255, 255, 0.05)"}, {"surfaceAlt", "rgba(255, 255, 255, 0.03)"},
-        {"sidebar", "rgba(255, 255, 255, 0.03)"},
-        {"button", "rgba(255, 255, 255, 0.09)"}, {"hover", "rgba(255, 255, 255, 0.14)"},
-        {"hoverSoft", "rgba(255, 255, 255, 0.07)"}, {"press", "rgba(255, 255, 255, 0.06)"},
-        {"field", "rgba(255, 255, 255, 0.07)"}, {"border", "rgba(255, 255, 255, 0.10)"},
-        {"tabPill", "rgba(255, 255, 255, 0.11)"},
-        {"segTrack", "rgba(255, 255, 255, 0.07)"}, {"segOn", "rgba(255, 255, 255, 0.18)"},
-        {"scroll", "rgba(255, 255, 255, 0.25)"}, {"scrollHover", "rgba(255, 255, 255, 0.45)"},
-        {"solid", "#16161a"}, {"solidBorder", "#2c2c32"},
-        {"accent", "#0a84ff"}, {"accentHover", "#409cff"}, {"accentPress", "#0066d6"}, {"accentText", "#64a8ff"},
-        {"green", "#30d158"}, {"orange", "#ff9f0a"}, {"red", "#ff453a"},
-        {"overlay", "#000000"}, {"overlayText", "#ffffff"}, {"overlayText2", "#a1a1a6"},
+        {"bg", "#000000"}, {"bgTop", "#000000"}, {"topBar", "#000000"},
+        {"text", "#e8e8e8"}, {"text2", "#8f8f8f"}, {"text3", "#5e5e5e"},
+        {"surface", "rgba(255, 255, 255, 0.04)"}, {"surfaceAlt", "rgba(255, 255, 255, 0.025)"},
+        {"sidebar", "rgba(255, 255, 255, 0.025)"},
+        {"button", "rgba(255, 255, 255, 0.07)"}, {"hover", "rgba(255, 255, 255, 0.12)"},
+        {"hoverSoft", "rgba(255, 255, 255, 0.06)"}, {"press", "rgba(255, 255, 255, 0.05)"},
+        {"field", "rgba(255, 255, 255, 0.06)"}, {"border", "rgba(255, 255, 255, 0.10)"},
+        {"tabPill", "rgba(255, 255, 255, 0.10)"},
+        {"segTrack", "rgba(255, 255, 255, 0.06)"}, {"segOn", "rgba(255, 255, 255, 0.14)"},
+        {"scroll", "rgba(255, 255, 255, 0.20)"}, {"scrollHover", "rgba(255, 255, 255, 0.40)"},
+        {"solid", "#0b0b0b"}, {"solidBorder", "#2a2a2a"},
+        {"accent", "#4a86c8"}, {"accentHover", "#5a95d6"}, {"accentPress", "#3b72b0"}, {"accentText", "#7da9dc"},
+        {"green", "#6aa97d"}, {"orange", "#c8975a"}, {"red", "#c4675f"},
+        {"overlay", "#000000"}, {"overlayText", "#e8e8e8"}, {"overlayText2", "#8f8f8f"},
     };
     p.bg = QColor(0x00, 0x00, 0x00);
-    p.text = QColor(0xf5, 0xf5, 0xf7);
-    p.text2 = QColor(0xa1, 0xa1, 0xa6);
-    p.text3 = QColor(0x6e, 0x6e, 0x73);
-    p.accent = QColor(0x0a, 0x84, 0xff);
-    p.solid = QColor(0x16, 0x16, 0x1a);
-    p.button = QColor(0x24, 0x24, 0x28);
+    p.text = QColor(0xe8, 0xe8, 0xe8);
+    p.text2 = QColor(0x8f, 0x8f, 0x8f);
+    p.text3 = QColor(0x5e, 0x5e, 0x5e);
+    p.accent = QColor(0x4a, 0x86, 0xc8);
+    p.solid = QColor(0x0b, 0x0b, 0x0b);
+    p.button = QColor(0x16, 0x16, 0x16);
     return p;
 }
 
@@ -216,26 +213,26 @@ Palette lightPalette()
 {
     Palette p;
     p.tokens = {
-        {"bg", "#e9ebf1"}, {"bgTop", "#f7f8fb"}, {"topBar", "rgba(255, 255, 255, 0.55)"},
-        {"text", "#1d1d1f"}, {"text2", "#5c5c63"}, {"text3", "#8e8e93"},
-        {"surface", "rgba(255, 255, 255, 0.68)"}, {"surfaceAlt", "rgba(255, 255, 255, 0.40)"},
-        {"sidebar", "rgba(255, 255, 255, 0.45)"},
-        {"button", "rgba(255, 255, 255, 0.85)"}, {"hover", "rgba(0, 0, 0, 0.07)"},
-        {"hoverSoft", "rgba(0, 0, 0, 0.045)"}, {"press", "rgba(0, 0, 0, 0.11)"},
-        {"field", "rgba(255, 255, 255, 0.85)"}, {"border", "rgba(0, 0, 0, 0.10)"},
-        {"tabPill", "rgba(255, 255, 255, 0.95)"},
-        {"segTrack", "rgba(0, 0, 0, 0.07)"}, {"segOn", "#ffffff"},
-        {"scroll", "rgba(0, 0, 0, 0.25)"}, {"scrollHover", "rgba(0, 0, 0, 0.45)"},
-        {"solid", "#ffffff"}, {"solidBorder", "#d2d4db"},
-        {"accent", "#0071e3"}, {"accentHover", "#0a84ff"}, {"accentPress", "#0058b8"}, {"accentText", "#0066cc"},
-        {"green", "#1f9d3c"}, {"orange", "#c76a00"}, {"red", "#d92d20"},
-        {"overlay", "#f3f4f8"}, {"overlayText", "#1d1d1f"}, {"overlayText2", "#5c5c63"},
+        {"bg", "#f3f3f3"}, {"bgTop", "#f3f3f3"}, {"topBar", "#ffffff"},
+        {"text", "#1c1c1c"}, {"text2", "#6b6b6b"}, {"text3", "#9a9a9a"},
+        {"surface", "#ffffff"}, {"surfaceAlt", "#fafafa"},
+        {"sidebar", "#fafafa"},
+        {"button", "#ffffff"}, {"hover", "rgba(0, 0, 0, 0.06)"},
+        {"hoverSoft", "rgba(0, 0, 0, 0.04)"}, {"press", "rgba(0, 0, 0, 0.10)"},
+        {"field", "#ffffff"}, {"border", "rgba(0, 0, 0, 0.10)"},
+        {"tabPill", "rgba(0, 0, 0, 0.07)"},
+        {"segTrack", "rgba(0, 0, 0, 0.06)"}, {"segOn", "#ffffff"},
+        {"scroll", "rgba(0, 0, 0, 0.22)"}, {"scrollHover", "rgba(0, 0, 0, 0.42)"},
+        {"solid", "#ffffff"}, {"solidBorder", "#d9d9d9"},
+        {"accent", "#2f6fb5"}, {"accentHover", "#3f7fc5"}, {"accentPress", "#265c98"}, {"accentText", "#2f6fb5"},
+        {"green", "#3f8a56"}, {"orange", "#a9702a"}, {"red", "#b5483f"},
+        {"overlay", "#f3f3f3"}, {"overlayText", "#1c1c1c"}, {"overlayText2", "#6b6b6b"},
     };
-    p.bg = QColor(0xe9, 0xeb, 0xf1);
-    p.text = QColor(0x1d, 0x1d, 0x1f);
-    p.text2 = QColor(0x5c, 0x5c, 0x63);
-    p.text3 = QColor(0x8e, 0x8e, 0x93);
-    p.accent = QColor(0x00, 0x71, 0xe3);
+    p.bg = QColor(0xf3, 0xf3, 0xf3);
+    p.text = QColor(0x1c, 0x1c, 0x1c);
+    p.text2 = QColor(0x6b, 0x6b, 0x6b);
+    p.text3 = QColor(0x9a, 0x9a, 0x9a);
+    p.accent = QColor(0x2f, 0x6f, 0xb5);
     p.solid = QColor(0xff, 0xff, 0xff);
     p.button = QColor(0xff, 0xff, 0xff);
     return p;
@@ -257,43 +254,43 @@ void setColours(bool dark)
     using namespace Theme;
     if (dark) {
         kBackground = QColor(0x00, 0x00, 0x00);
-        kCard = QColor(255, 255, 255, 15);
-        kCardHover = QColor(255, 255, 255, 27);
-        kCardPressed = QColor(255, 255, 255, 20);
-        kSeparator = QColor(255, 255, 255, 26);
-        kSeparatorStrong = QColor(255, 255, 255, 56);
-        kLabel = QColor(0xf5, 0xf5, 0xf7);
-        kLabelSecondary = QColor(0xa1, 0xa1, 0xa6);
-        kLabelTertiary = QColor(0x6e, 0x6e, 0x73);
-        kBlue = QColor(0x0a, 0x84, 0xff);
-        kBlueText = QColor(0x64, 0xa8, 0xff);
-        kGreen = QColor(0x30, 0xd1, 0x58);
-        kOrange = QColor(0xff, 0x9f, 0x0a);
-        kRed = QColor(0xff, 0x45, 0x3a);
-        kTabPill = QColor(255, 255, 255, 28);
-        kBarOff = QColor(255, 255, 255, 46);
-        kPopupFill = QColor(0x16, 0x16, 0x1a);
-        kPopupBorder = QColor(0x2c, 0x2c, 0x32);
+        kCard = QColor(0x0c, 0x0c, 0x0c);
+        kCardHover = QColor(0x16, 0x16, 0x16);
+        kCardPressed = QColor(0x10, 0x10, 0x10);
+        kSeparator = QColor(255, 255, 255, 22);
+        kSeparatorStrong = QColor(255, 255, 255, 50);
+        kLabel = QColor(0xe8, 0xe8, 0xe8);
+        kLabelSecondary = QColor(0x8f, 0x8f, 0x8f);
+        kLabelTertiary = QColor(0x5e, 0x5e, 0x5e);
+        kBlue = QColor(0x4a, 0x86, 0xc8);
+        kBlueText = QColor(0x7d, 0xa9, 0xdc);
+        kGreen = QColor(0x6a, 0xa9, 0x7d);
+        kOrange = QColor(0xc8, 0x97, 0x5a);
+        kRed = QColor(0xc4, 0x67, 0x5f);
+        kTabPill = QColor(255, 255, 255, 26);
+        kBarOff = QColor(255, 255, 255, 40);
+        kPopupFill = QColor(0x0b, 0x0b, 0x0b);
+        kPopupBorder = QColor(0x2a, 0x2a, 0x2a);
         kIconLine = QColor(0xd1, 0xd1, 0xd6);
     } else {
-        kBackground = QColor(0xe9, 0xeb, 0xf1);
-        kCard = QColor(255, 255, 255, 175);
-        kCardHover = QColor(255, 255, 255, 235);
-        kCardPressed = QColor(255, 255, 255, 140);
-        kSeparator = QColor(0, 0, 0, 26);
+        kBackground = QColor(0xf3, 0xf3, 0xf3);
+        kCard = QColor(0xff, 0xff, 0xff);
+        kCardHover = QColor(0xf8, 0xf8, 0xf8);
+        kCardPressed = QColor(0xec, 0xec, 0xec);
+        kSeparator = QColor(0, 0, 0, 22);
         kSeparatorStrong = QColor(0, 0, 0, 56);
-        kLabel = QColor(0x1d, 0x1d, 0x1f);
-        kLabelSecondary = QColor(0x5c, 0x5c, 0x63);
-        kLabelTertiary = QColor(0x8e, 0x8e, 0x93);
-        kBlue = QColor(0x00, 0x71, 0xe3);
-        kBlueText = QColor(0x00, 0x66, 0xcc);
-        kGreen = QColor(0x1f, 0x9d, 0x3c);
-        kOrange = QColor(0xc7, 0x6a, 0x00);
-        kRed = QColor(0xd9, 0x2d, 0x20);
-        kTabPill = QColor(255, 255, 255, 240);
+        kLabel = QColor(0x1c, 0x1c, 0x1c);
+        kLabelSecondary = QColor(0x6b, 0x6b, 0x6b);
+        kLabelTertiary = QColor(0x9a, 0x9a, 0x9a);
+        kBlue = QColor(0x2f, 0x6f, 0xb5);
+        kBlueText = QColor(0x2f, 0x6f, 0xb5);
+        kGreen = QColor(0x3f, 0x8a, 0x56);
+        kOrange = QColor(0xa9, 0x70, 0x2a);
+        kRed = QColor(0xb5, 0x48, 0x3f);
+        kTabPill = QColor(0, 0, 0, 18);
         kBarOff = QColor(0, 0, 0, 36);
         kPopupFill = QColor(0xff, 0xff, 0xff);
-        kPopupBorder = QColor(0xd2, 0xd4, 0xdb);
+        kPopupBorder = QColor(0xd9, 0xd9, 0xd9);
         kIconLine = QColor(0x3a, 0x3a, 0x3f);
     }
 }
@@ -307,7 +304,7 @@ void applyMode(QApplication &app)
     QPalette p;
     p.setColor(QPalette::Window, pal.bg);
     p.setColor(QPalette::WindowText, pal.text);
-    p.setColor(QPalette::Base, dark ? QColor(0x1c, 0x1c, 0x20) : QColor(0xff, 0xff, 0xff));
+    p.setColor(QPalette::Base, dark ? QColor(0x0a, 0x0a, 0x0a) : QColor(0xff, 0xff, 0xff));
     p.setColor(QPalette::AlternateBase, pal.bg);
     p.setColor(QPalette::Text, pal.text);
     p.setColor(QPalette::Button, pal.button);

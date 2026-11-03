@@ -23,6 +23,10 @@ server. Turn it off per server under Advanced settings.
 
 ## Access log
 
+Recording server events is off by default; turn it on under Settings > Logging > Record server access
+events. Adding a server and connecting to one are always recorded. Detailed logging (same menu) adds
+the other actions taken in RConnect.
+
 With the same WinRM check, RConnect records what happens on each server, including people who did
 not use RConnect, and appends it to `%LOCALAPPDATA%\RConnect\RConnect\access-log.csv` once a minute.
 The file only grows. The first check of a server reads the last 7 days; after that only newer

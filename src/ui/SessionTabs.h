@@ -1,4 +1,6 @@
 #pragma once
+#include <QColor>
+#include <QHash>
 #include <QTabBar>
 #include <QVariantAnimation>
 
@@ -15,6 +17,7 @@ public:
 
     QToolButton *addButton() const { return m_add; }
     void setSelectionVisible(bool visible);
+    // Colours the tab of a session by its state (green connected, blue connecting, red closed, orange replaced).
 
 signals:
     void addRequested();

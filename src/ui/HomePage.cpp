@@ -1,23 +1,30 @@
 #include "HomePage.h"
 
 #include "AccessLogPage.h"
+#include "ContactsDialog.h"
 #include "LiveSessionsPage.h"
 #include "SessionWindow.h"
 #include "ServerPanel.h"
 #include "Theme.h"
 #include "UsagePage.h"
+#include "core/AccessLog.h"
 #include "core/Autostart.h"
 #include "core/Language.h"
+#include "core/Log.h"
 #include "core/UpdateChecker.h"
 #include "model/ServerStore.h"
 
 #include <QActionGroup>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QDesktopServices>
+#include <QFileInfo>
+#include <QUrl>
 #include <QEvent>
 #include <QFrame>
 #include <QPainter>
 #include <QPropertyAnimation>
+#include <QSettings>
 #include <QShowEvent>
 #include <QTimer>
 #include <QHBoxLayout>
@@ -83,6 +90,18 @@ QPixmap glyphPixmap(Glyph glyph, const QColor &color)
 
 constexpr Glyph kNavGlyphs[4] = {Monitor, People, Bars, Clock};
 
+// The three monitoring pages only get a button in the navigation when they are turned on in the settings; they
+// are off by default. Turning one off hides the button only: what is recorded does not change.
+struct OptionalPage {
+    const char *key;
+};
+constexpr OptionalPage kOptionalPages[4] = {{nullptr}, {"pages/live"}, {"pages/usage"}, {"pages/log"}};
+
+bool pageEnabled(int index)
+{
+    return !kOptionalPages[index].key || QSettings().value(QLatin1String(kOptionalPages[index].key), false).toBool();
+}
+
 // Grey, and white once the button is checked.
 QIcon navIcon(Glyph glyph)
 {
@@ -113,7 +132,7 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     m_navPill->setObjectName(QStringLiteral("navPill"));
     m_navPill->hide();
     m_pillAnim = new QPropertyAnimation(m_navPill, "geometry", this);
-    m_pillAnim->setDuration(280);
+    m_pillAnim->setDuration(140);
     m_pillAnim->setEasingCurve(QEasingCurve::OutCubic);
     sidebar->installEventFilter(this);
 
@@ -236,6 +255,7 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     lay->addWidget(sidebar);
     lay->addWidget(content, 1);
 
+    applyPages();
     connect(m_nav, &QButtonGroup::idClicked, this, [this](int i) {
         if (i == m_pages->currentIndex())
             return;
@@ -287,6 +307,18 @@ void HomePage::movePill(bool animate)
     m_pillAnim->setStartValue(m_navPill->geometry());
     m_pillAnim->setEndValue(target);
     m_pillAnim->start();
+}
+
+// Shows the buttons of the pages that are turned on. If the page being viewed was turned off, the server list comes back.
+void HomePage::applyPages()
+{
+    for (int i = 1; i < 4; ++i)
+        m_nav->button(i)->setVisible(pageEnabled(i));
+    if (!pageEnabled(m_pages->currentIndex())) {
+        m_pages->setCurrentIndex(0);
+        m_nav->button(0)->setChecked(true);
+    }
+    QTimer::singleShot(0, this, [this] { movePill(false); });
 }
 
 void HomePage::retranslate()
@@ -358,6 +390,39 @@ void HomePage::showSettingsMenu()
     autostart->setChecked(Autostart::isEnabled());
     connect(autostart, &QAction::toggled, this, [](bool on) { Autostart::setEnabled(on); });
     menu.addSeparator();
+    QMenu *pages = menu.addMenu(tr("Pages"));
+    const QStringList pageNames = {QString(), tr("Who's connected"), tr("Time on servers"), tr("Activity history")};
+    for (int i = 1; i < 4; ++i) {
+        QAction *a = pages->addAction(pageNames.at(i));
+        a->setCheckable(true);
+        a->setChecked(pageEnabled(i));
+        connect(a, &QAction::toggled, this, [this, i](bool on) {
+            QSettings().setValue(QLatin1String(kOptionalPages[i].key), on);
+            applyPages();
+        });
+    }
+    menu.addAction(tr("Contacts…"), this, [this] { ContactsDialog(window()).exec(); });
+    menu.addAction(tr("Import servers…"), this, &HomePage::importRequested);
+    menu.addAction(tr("Export servers…"), this, &HomePage::exportRequested);
+    menu.addSeparator();
+    QMenu *logging = menu.addMenu(tr("Logging"));
+    QAction *serverEvents = logging->addAction(tr("Record server access events"));
+    serverEvents->setCheckable(true);
+    serverEvents->setChecked(AccessLog::serverEventsEnabled());
+    serverEvents->setToolTip(tr("Reads the servers' own logs for sign-ins, failed attempts and usage times. Off by default."));
+    connect(serverEvents, &QAction::toggled, this, [](bool on) { AccessLog::setServerEventsEnabled(on); });
+    QAction *detailed = logging->addAction(tr("Detailed logging"));
+    detailed->setCheckable(true);
+    detailed->setChecked(Log::detailed());
+    detailed->setToolTip(tr("Also records connection details in the log file, and changing, removing and "
+                            "importing servers and closing connections in Activity history."));
+    connect(detailed, &QAction::toggled, this, [](bool on) { Log::setDetailed(on); });
+    logging->setToolTipsVisible(true);
+    logging->addAction(tr("Open log file"), this, [] { QDesktopServices::openUrl(QUrl::fromLocalFile(Log::path())); });
+    logging->addAction(tr("Open log folder"), this, [] {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(Log::path()).absolutePath()));
+    });
+    menu.addSeparator();
     menu.addAction(tr("Check for updates…"), this, &HomePage::updateCheckRequested);
     QAction *autoUpdate = menu.addAction(tr("Check for updates automatically"));
     autoUpdate->setCheckable(true);
@@ -375,8 +440,11 @@ void HomePage::showAbout()
     box.setIconPixmap(QIcon(QStringLiteral(":/icon.png")).pixmap(56, 56));
     box.setText(QStringLiteral("<b>RConnect %1</b>").arg(QApplication::applicationVersion()));
     box.setInformativeText(tr("Saves your Remote Desktop servers and connects to them in one click.")
-                           + QStringLiteral("<br><br>MIT License<br>"
-                                            "<a href=\"https://db-ip.com\" style=\"color:#5cb0ee\">IP Geolocation by DB-IP</a>"));
+                           + QStringLiteral("<br><br>")
+                           + tr("Developed by Lurid Lane")
+                           + QStringLiteral("<br><a href=\"https://github.com/luridlane-dev/RConnect\" style=\"color:#7da9dc\">"
+                                            "github.com/luridlane-dev/RConnect</a><br><br>MIT License<br>"
+                                            "<a href=\"https://db-ip.com\" style=\"color:#7da9dc\">IP Geolocation by DB-IP</a>"));
     box.setTextFormat(Qt::RichText);
     box.setTextInteractionFlags(Qt::TextBrowserInteraction);
     box.exec();

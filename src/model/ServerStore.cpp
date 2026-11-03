@@ -50,6 +50,13 @@ void ServerStore::queueSummary()
         m_summaryTimer.start();
 }
 
+void ServerStore::refreshDisplay()
+{
+    if (!m_profiles.isEmpty())
+        emit dataChanged(index(0), index(int(m_profiles.size()) - 1), {StatusBadgeRole, SearchRole});
+    queueSummary();
+}
+
 QString ServerStore::filePath()
 {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
@@ -78,7 +85,12 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     case StatusRole:       return int(st.state);
     case StatusBadgeRole:  return statusBadge(st);
     case UserRole_:        return p.displayUser();
-    case SearchRole:       return p.name + QLatin1Char(' ') + p.host + QLatin1Char(' ') + p.displayUser();
+    case SearchRole: {
+        QString text = p.name + QLatin1Char(' ') + p.host + QLatin1Char(' ') + p.displayUser();
+        for (const RemoteSession &s : st.all) // so searching a nickname finds the server that person is on
+            text += QLatin1Char(' ') + sessionOwner(s) + QLatin1Char(' ') + s.client + QLatin1Char(' ') + s.user;
+        return text;
+    }
     case CountryRole:      return p.countryHost == p.host ? p.country : QString();
     case StatusColorRole:  return statusColor(st);
     case StatusToolTipRole: return statusToolTip(st);

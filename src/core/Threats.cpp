@@ -110,14 +110,14 @@ void loadHistory()
     if (g_loaded)
         return;
     g_loaded = true;
-    for (const AccessRecord &r : AccessLog::readAll()) {
+    AccessLog::forEach([](const AccessRecord &r) {
         if (r.source == QLatin1String("RCONNECT") || !isSignIn(r.event))
-            continue;
+            return;
         g_serversWithHistory.insert(r.serverId);
         const QString country = countryOf(r.address);
         if (!country.isEmpty())
             g_known.insert(knownKey(r.serverId, r.user, country));
-    }
+    }, true);
     GeoIp::release();
 }
 

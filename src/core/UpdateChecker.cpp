@@ -64,6 +64,11 @@ void UpdateChecker::check()
     QNetworkReply *reply = m_net->get(makeRequest(QUrl(QString::fromLatin1(kLatestRelease))));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
+        // 404: nothing has been published yet, so there is nothing newer.
+        if (reply->error() == QNetworkReply::ContentNotFoundError) {
+            emit checked(true, false, {}, {});
+            return;
+        }
         if (reply->error() != QNetworkReply::NoError) {
             emit checked(false, false, {}, reply->errorString());
             return;

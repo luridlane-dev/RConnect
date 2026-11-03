@@ -30,9 +30,9 @@ void darkTitleBar(QWidget *window);
 // Colours; they change with the mode. Painted surfaces are translucent so the window's soft
 // gradient shows through them, like frosted glass.
 inline QColor kBackground(0x00, 0x00, 0x00);
-inline QColor kCard(255, 255, 255, 15);
-inline QColor kCardHover(255, 255, 255, 27);
-inline QColor kCardPressed(255, 255, 255, 20);
+inline QColor kCard(0x0c, 0x0c, 0x0c);
+inline QColor kCardHover(0x16, 0x16, 0x16);
+inline QColor kCardPressed(0x10, 0x10, 0x10);
 inline QColor kSeparator(255, 255, 255, 26);
 inline QColor kSeparatorStrong(255, 255, 255, 56);
 inline QColor kLabel(0xf5, 0xf5, 0xf7);

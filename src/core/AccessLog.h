@@ -5,6 +5,8 @@
 #include <QList>
 #include <QString>
 
+#include <functional>
+
 struct ServerProfile;
 
 // One line of access-log.csv.
@@ -32,6 +34,11 @@ namespace AccessLog {
 
 QString path();
 
+// Reading the servers' own event logs (who signed in or failed to, how long people used a server, warnings) is off
+// until it is turned on in the settings. Adding a server and connecting to one are always recorded.
+bool serverEventsEnabled();
+void setServerEventsEnabled(bool on);
+
 // Event names as written to the file, in the order the viewer lists them.
 const QStringList &events();
 
@@ -56,6 +63,16 @@ void alert(const ServerProfile &server, const QString &timeUtc, const QString &e
            const QString &address, const QString &detail);
 
 QList<AccessRecord> readAll();
+
+// Every line of the file, one at a time (the file can be hundreds of MB, so it is never held whole in
+// memory). With `withoutFailedSignIns` the failed sign-ins, which are most of a busy server's file, are skipped
+// before they are parsed.
+void forEach(const std::function<void(const AccessRecord &)> &each, bool withoutFailedSignIns = false);
+
+// Keeps the file small, off the GUI thread: failed sign-ins older than 30 days and other lines older than a
+// year are dropped, and a long run of failed sign-ins from one address (password guessing from the internet
+// is thousands a day) is folded into its first few lines and one summary line that counts the rest.
+void maintain();
 
 // Only the end of the file, as much as fits in `maxBytes`: enough for the viewer however long the
 // log has grown.

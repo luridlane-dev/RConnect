@@ -76,7 +76,7 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
         b->setFixedSize(26, 26);
         b->setCursor(Qt::PointingHandCursor);
         b->setStyleSheet(QStringLiteral(
-            "QToolButton { background: %1; border: 3px solid transparent; border-radius: 13px; padding: 0; }"
+            "QToolButton { background: %1; border: 3px solid transparent; border-radius: 0; padding: 0; }"
             "QToolButton:hover { border-color: rgba(128, 128, 128, 0.55); }"
             "QToolButton:checked { border-color: %2; }").arg(kPalette[i], Theme::kLabel.name()));
         m_colors->addButton(b, i);

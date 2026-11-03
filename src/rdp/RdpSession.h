@@ -3,9 +3,13 @@
 
 #include <QElapsedTimer>
 #include <QTimer>
+#include <QUrl>
 #include <QWidget>
 
 class QAxWidget;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class QStackedLayout;
 class SessionOverlay;
 
@@ -40,6 +44,10 @@ protected:
     void resizeEvent(QResizeEvent *e) override;
     void changeEvent(QEvent *e) override;
     void showEvent(QShowEvent *e) override;
+    // Files dropped on the session are copied to the server through the shared clipboard.
+    void dragEnterEvent(QDragEnterEvent *e) override;
+    void dragMoveEvent(QDragMoveEvent *e) override;
+    void dropEvent(QDropEvent *e) override;
 
 private slots:
     void onConnecting();
@@ -60,6 +68,7 @@ private:
     void setState(State s);
     void log(const QString &text) const;
     void showOverlay();
+    void sendFiles(const QList<QUrl> &files);
     QString describe(int reason, int extReason) const;
 
     ServerProfile m_profile;

@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Contacts.h"
 #include "core/WinRm.h"
 #include "ui/Theme.h"
 
@@ -65,9 +66,12 @@ inline QString idleText(int minutes)
     return QCoreApplication::translate("ServerStatus", "not used for %1 h").arg(minutes / 60);
 }
 
-// Computer name, or the user name when the computer is unknown.
+// The nickname from the contacts, else the computer name, or the user name when the computer is unknown.
 inline QString sessionOwner(const RemoteSession &s)
 {
+    const QString nickname = Contacts::instance().nameFor(s.client, s.user);
+    if (!nickname.isEmpty())
+        return nickname;
     return s.client.isEmpty() ? s.user : s.client;
 }
 

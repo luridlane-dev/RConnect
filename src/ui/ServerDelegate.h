@@ -8,7 +8,7 @@ class ServerDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
 
-    static constexpr int kCardHeight = 88;
+    static constexpr int kCardHeight = 92;
     static constexpr int kMinCardWidth = 270;
 
     void setOpenIds(const QSet<QString> &ids) { m_open = ids; }

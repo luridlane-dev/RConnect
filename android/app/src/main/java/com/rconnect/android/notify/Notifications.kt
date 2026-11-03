@@ -1,0 +1,163 @@
+package com.rconnect.android.notify
+
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.rconnect.android.MainActivity
+import com.rconnect.android.R
+import com.rconnect.android.data.Contact
+import com.rconnect.android.data.ContactBook
+import com.rconnect.android.winrm.RemoteSession
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** What the person wants to be told about. Everything is off until they turn it on in the app. */
+class NotificationPrefs(context: Context) {
+    private val prefs = context.getSharedPreferences("notifications", Context.MODE_PRIVATE)
+
+    var enabled: Boolean
+        get() = prefs.getBoolean("enabled", false)
+        set(v) = prefs.edit().putBoolean("enabled", v).apply()
+    var onConnect: Boolean
+        get() = prefs.getBoolean("connect", true)
+        set(v) = prefs.edit().putBoolean("connect", v).apply()
+    var onLeave: Boolean
+        get() = prefs.getBoolean("leave", true)
+        set(v) = prefs.edit().putBoolean("leave", v).apply()
+    var onProblem: Boolean
+        get() = prefs.getBoolean("problem", true)
+        set(v) = prefs.edit().putBoolean("problem", v).apply()
+
+    var onStranger: Boolean
+        get() = prefs.getBoolean("stranger", true)
+        set(v) = prefs.edit().putBoolean("stranger", v).apply()
+
+    fun wants(change: Change) = enabled && when (change.kind) {
+        Change.Kind.Connected -> onConnect
+        Change.Kind.Stranger -> onStranger
+        Change.Kind.Left -> onLeave
+        Change.Kind.Problem, Change.Kind.Recovered -> onProblem
+    }
+}
+
+/** Something that changed on a server since the last check. */
+data class Change(val kind: Kind, val serverId: String, val server: String, val who: String = "") {
+    enum class Kind { Connected, Stranger, Left, Problem, Recovered }
+}
+
+/**
+ * Compares each answer with the previous one, which is kept on the phone so the app in front and the background
+ * check agree on what is new. The first answer of a server never counts as a change.
+ */
+class ChangeDetector(context: Context) {
+    private val prefs = context.getSharedPreferences("observed", Context.MODE_PRIVATE)
+
+    @Synchronized
+    fun detect(serverId: String, title: String, ok: Boolean, sessions: List<RemoteSession>?, contacts: List<Contact>): List<Change> {
+        val previous = prefs.getString(serverId, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val connected = sessions.orEmpty().filter { it.connected }
+        val keys = connected.associateBy { "${it.id}|${it.user}|${it.logonUtcMs}" }
+        // A failed check does not say who is connected: keep what was known.
+        val stored = JSONObject().put("ok", ok)
+        val oldKeys = previous?.optJSONArray("s")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+        stored.put("s", JSONArray(if (ok) keys.keys.toList() else oldKeys))
+        prefs.edit().putString(serverId, stored.toString()).apply()
+        if (previous == null) return emptyList()
+
+        val changes = ArrayList<Change>()
+        val wasOk = previous.optBoolean("ok", true)
+        when {
+            wasOk && !ok -> changes += Change(Change.Kind.Problem, serverId, title)
+            !wasOk && ok -> changes += Change(Change.Kind.Recovered, serverId, title)
+        }
+        if (ok && wasOk) {
+            for ((key, s) in keys) if (key !in oldKeys) {
+                // Someone whose computer is in nobody's address book: worth a louder message. With an empty address
+                // book everyone would be a stranger, so it stays quiet then.
+                val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && ContactBook.nameFor(contacts, s.client, s.user) == null
+                changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, who(s, contacts))
+            }
+            for (key in oldKeys) if (key !in keys) changes += Change(Change.Kind.Left, serverId, title, whoLeft(key, contacts))
+        }
+        return changes
+    }
+
+    fun forget(serverId: String) = prefs.edit().remove(serverId).apply()
+
+    private fun who(s: RemoteSession, contacts: List<Contact>) =
+        ContactBook.nameFor(contacts, s.client, s.user) ?: s.client.ifBlank { s.user.substringAfter('\\') }
+
+    // A session that left is only known by its key, which holds the account.
+    private fun whoLeft(key: String, contacts: List<Contact>): String {
+        val user = key.split('|').getOrElse(1) { "" }
+        return ContactBook.nameFor(contacts, "", user) ?: user.substringAfter('\\')
+    }
+}
+
+/** Process-wide flag: the background check stays quiet while the app is on screen, which shows changes itself. */
+object AppVisibility {
+    @Volatile
+    var inFront = false
+}
+
+object Notifier {
+    private const val CHANNEL_ACTIVITY = "activity"
+    private const val CHANNEL_PROBLEMS = "problems"
+    const val EXTRA_SERVER = "server"
+
+    fun canPost(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    fun text(context: Context, c: Change): String = when (c.kind) {
+        Change.Kind.Connected -> context.getString(R.string.note_connected, c.who)
+        Change.Kind.Stranger -> context.getString(R.string.note_stranger, c.who)
+        Change.Kind.Left -> context.getString(R.string.note_left, c.who)
+        Change.Kind.Problem -> context.getString(R.string.note_problem)
+        Change.Kind.Recovered -> context.getString(R.string.note_recovered)
+    }
+
+    fun post(context: Context, c: Change) {
+        if (!canPost(context)) return
+        createChannels(context)
+        val open = PendingIntent.getActivity(
+            context, c.serverId.hashCode(),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_SERVER, c.serverId).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val problem = c.kind == Change.Kind.Problem || c.kind == Change.Kind.Stranger
+        val n = NotificationCompat.Builder(context, if (problem) CHANNEL_PROBLEMS else CHANNEL_ACTIVITY)
+            .setSmallIcon(R.drawable.ic_stat_rconnect)
+            .setContentTitle(c.server)
+            .setContentText(text(context, c))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setCategory(if (problem) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
+            .setPriority(if (problem) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setColor(0xFF4A86C8.toInt())
+            .build()
+        // One notification per server and kind: a flapping server replaces its own message instead of piling up.
+        try {
+            NotificationManagerCompat.from(context).notify("${c.serverId}|${c.kind}|${c.who}", 1, n)
+        } catch (e: SecurityException) {
+            // permission withdrawn meanwhile
+        }
+    }
+
+    private fun createChannels(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ACTIVITY, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_PROBLEMS, context.getString(R.string.channel_problems), NotificationManager.IMPORTANCE_HIGH))
+    }
+}

@@ -53,17 +53,24 @@ QIcon homeIcon()
     return QIcon(pm);
 }
 
+// The state marker of a tab: a small flat square. Icons are cached by colour, since the marker of a tab that is
+// still connecting changes many times a second.
 QIcon dotIcon(const QColor &c)
 {
+    static QHash<QRgb, QIcon> cache;
+    const auto found = cache.constFind(c.rgba());
+    if (found != cache.constEnd())
+        return found.value();
     QPixmap pm(32, 32);
     pm.setDevicePixelRatio(2.0);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
     p.setBrush(c);
-    p.drawEllipse(QRectF(4, 6, 8, 8));
-    return QIcon(pm);
+    p.drawRect(QRect(5, 7, 7, 7));
+    const QIcon icon(pm);
+    cache.insert(c.rgba(), icon);
+    return icon;
 }
 
 QColor sessionColor(RdpSession::State s)
@@ -182,7 +189,7 @@ SessionWindow::SessionWindow(QWidget *home, QWidget *parent)
     s_all << this;
 
     // The dot of a tab that is still connecting breathes.
-    m_pulse.setInterval(50);
+    m_pulse.setInterval(100);
     connect(&m_pulse, &QTimer::timeout, this, &SessionWindow::pulseTabs);
 
     m_pages = new QStackedWidget(this);
@@ -334,7 +341,7 @@ void SessionWindow::pulseTabs()
             continue;
         any = true;
         QColor c = Theme::kBlue;
-        c.setAlphaF(0.35 + 0.65 * phase);
+        c.setAlpha(qRound((0.35 + 0.65 * phase) * 8) * 255 / 8);
         m_tabBar->setTabIcon(i, dotIcon(c));
     }
     if (!any)
@@ -348,7 +355,8 @@ void SessionWindow::onTabChanged(int index)
     m_homeActive = false;
     if (RdpSession *s = m_sessions.value(m_tabBar->tabData(index).toString())) {
         m_sessionStack->setCurrentWidget(s);
-        m_tabBar->setTabText(index, s->serverName()); // clears the "!" marker
+        if (m_tabBar->tabText(index) != s->serverName())
+            m_tabBar->setTabText(index, s->serverName()); // clears the "!" marker
         s->focusRemote();
     }
     updateNotesButton();

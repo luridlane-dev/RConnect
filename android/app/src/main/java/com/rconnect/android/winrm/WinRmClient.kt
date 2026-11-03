@@ -86,7 +86,7 @@ class WinRmClient(
             if (b == '\n'.code) break
             if (b != '\r'.code) line.write(b)
         }
-        return line.toString(Charsets.ISO_8859_1)
+        return String(line.toByteArray(), Charsets.ISO_8859_1)
     }
 
     private fun readBytes(n: Int): ByteArray {
@@ -180,7 +180,7 @@ class WinRmClient(
             // Shells count against a per-user limit on the server.
             try { call("$TRANSFER_NS/Delete", shellId, "", "") } catch (_: Exception) {}
         }
-        return out.toString(Charsets.UTF_8)
+        return String(out.toByteArray(), Charsets.UTF_8)
     }
 
     private class Reply(val shellId: String, val commandId: String, val stdout: ByteArray, val done: Boolean, val faultCode: String, val faultText: String)

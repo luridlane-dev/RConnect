@@ -1,6 +1,7 @@
 #include "UsagePage.h"
 
 #include "Theme.h"
+#include "core/Contacts.h"
 #include "core/UsageEngine.h"
 #include "core/UsageLog.h"
 
@@ -23,7 +24,7 @@
 
 namespace {
 
-enum Column { Name, Computer, Address, Entries, FirstIn, LastOut, Total, Active, Away, Unknown, Note, ColumnCount };
+enum Column { Name, Computer, Address, Entries, FirstIn, LastOut, Total, Active, Away, Unknown, ColumnCount };
 enum Range { Today, Yesterday, Week, Month, Everything };
 constexpr int kKeyRole = Qt::UserRole + 1;
 
@@ -124,7 +125,7 @@ UsagePage::UsagePage(QWidget *parent)
     m_view->header()->setStretchLastSection(true);
     m_view->header()->setHighlightSections(false);
     m_view->header()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    const int widths[ColumnCount] = {230, 160, 140, 80, 150, 140, 140, 110, 120, 110, 300};
+    const int widths[ColumnCount] = {230, 160, 140, 80, 150, 140, 140, 110, 120, 110};
     for (int c = 0; c < ColumnCount; ++c)
         m_view->setColumnWidth(c, widths[c]);
 
@@ -143,6 +144,7 @@ UsagePage::UsagePage(QWidget *parent)
     m_timer = new QTimer(this);
     m_timer->setInterval(kRefreshMs);
     connect(m_timer, &QTimer::timeout, this, &UsagePage::reload);
+    connect(&Contacts::instance(), &Contacts::changed, this, [this] { if (isVisible()) reload(); });
     retranslate();
 }
 
@@ -167,7 +169,7 @@ void UsagePage::retranslate()
     m_range->blockSignals(false);
     m_model->setHorizontalHeaderLabels({tr("Server"), tr("Computer"), tr("IP address"), tr("Visits"),
                                         tr("First in"), tr("Last out"), tr("Time on server"), tr("Active time"),
-                                        tr("Away time (AFK)"), tr("Unknown"), tr("Note")});
+                                        tr("Away time (AFK)"), tr("Not measured")});
     reload();
 }
 
@@ -217,8 +219,10 @@ void UsagePage::explain()
            "<p><b>Away (AFK).</b> RConnect asks every server about every 2 minutes how long the person has not "
            "touched the mouse or keyboard. If that is %2 minutes or more, the whole stretch is away, from the "
            "last touch on, and it is not active time.</p>"
-           "<p><b>Unknown.</b> If RConnect was closed or could not reach the server, nobody measured. That time "
-           "is shown as unknown and is never guessed.</p>"
+           "<p><b>Not measured.</b> Signing in and out is always exact, because the server writes it down. "
+           "Whether the person was active or away is only measured while RConnect is open and can reach the "
+           "server. For the time it was not, the total stays correct but the split is not known, and it is never "
+           "guessed. Keep RConnect running (Settings > Start with Windows) to measure all day.</p>"
            "<p><b>Accuracy.</b> Entering and leaving: exact to the second. Away time: the server reports whole "
            "minutes and RConnect asks about every 2 minutes, so each away stretch can be off by up to 2 minutes "
            "(usually too short rather than too long). Computer names come from the server at the time of the "
@@ -317,15 +321,13 @@ void UsagePage::reload()
         else if (latest && latest->intoNextDay)
             lastOut = tr("Midnight (goes on)");
 
-        QStringList note;
-        if (g.uncertain)
-            note << tr("Some times are not exact: open the row");
-        if (g.unknownMs > 0)
-            note << tr("Part of it was not measured");
         const QList<QStandardItem *> parent = rowOf(
-            {g.server, g.client.isEmpty() ? dash : g.client, g.address.isEmpty() ? dash : g.address,
+            {g.server, g.client.isEmpty()
+                           ? dash
+                           : Contacts::instance().label(g.client, {}),
+             g.address.isEmpty() ? dash : g.address,
              QString::number(g.entries), firstIn, lastOut, duration(g.totalMs()), duration(g.activeMs),
-             duration(g.afkMs), g.unknownMs > 0 ? duration(g.unknownMs) : dash, note.join(QStringLiteral("; "))});
+             duration(g.afkMs), g.unknownMs > 0 ? duration(g.unknownMs) : dash});
         const QString key = QStringLiteral("G|") + g.day.toString(Qt::ISODate) + QLatin1Char('|') + g.serverId
                             + QLatin1Char('|') + g.client + QLatin1Char('|') + g.address;
         parent.at(Name)->setData(key, kKeyRole);
@@ -341,8 +343,6 @@ void UsagePage::reload()
         parent.at(Away)->setForeground(Theme::kLabelSecondary);
         if (g.unknownMs > 0)
             parent.at(Unknown)->setForeground(Theme::kOrange);
-        if (g.uncertain || g.unknownMs > 0)
-            parent.at(Note)->setForeground(Theme::kOrange);
 
         int ordinal = 0;
         for (const UsageEngine::DayVisit &dv : g.visits) {
@@ -359,35 +359,15 @@ void UsagePage::reload()
             else if (!v.endKnown())
                 end = tr("not known");
 
-            QStringList notes;
-            if (v.inferred())
-                notes << tr("Not in the event log: only the server's list of connected people shows it");
-            else {
-                if (!v.startKnown() && !dv.fromPreviousDay)
-                    notes << tr("No sign-in event in the log");
-                if (!v.endKnown() && !dv.intoNextDay && !v.open())
-                    notes << tr("No sign-out event in the log");
-            }
-            if (v.joined() > 0)
-                notes << tr("%1 short break(s) of up to %2 minutes counted as one visit")
-                             .arg(v.joined()).arg(UsageEngine::kMergeGapSec / 60);
-            if (v.open() && !dv.intoNextDay)
-                notes << tr("Still going on");
-            if (dv.unknownMs > 0)
-                notes << tr("Part of it was not measured");
-
             const bool exact = v.startKnown() && v.endKnown() && !v.inferred();
             const QString prefix = exact || dv.totalMs() == 0 ? QString() : tr("at least ");
             const QList<QStandardItem *> visit = rowOf(
                 {tr("Visit %1").arg(ordinal), {}, {}, {}, start, end, prefix + duration(dv.totalMs()),
-                 duration(dv.activeMs), duration(dv.afkMs), dv.unknownMs > 0 ? duration(dv.unknownMs) : dash,
-                 notes.join(QStringLiteral("; "))});
+                 duration(dv.activeMs), duration(dv.afkMs), dv.unknownMs > 0 ? duration(dv.unknownMs) : dash});
             visit.at(Name)->setToolTip(tr("Account: %1").arg(v.user));
             visit.at(Away)->setForeground(Theme::kLabelSecondary);
             if (dv.unknownMs > 0)
                 visit.at(Unknown)->setForeground(Theme::kOrange);
-            if (!exact || dv.unknownMs > 0)
-                visit.at(Note)->setForeground(Theme::kOrange);
             if (v.open() && !dv.intoNextDay)
                 visit.at(LastOut)->setForeground(Theme::kGreen);
 
@@ -396,11 +376,9 @@ void UsagePage::reload()
                     continue;
                 const bool away = p.kind == UsageEngine::Kind::Afk;
                 const QList<QStandardItem *> part = rowOf(
-                    {away ? tr("Away (AFK)") : tr("Unknown"), {}, {}, {}, clock(p.start, true), clock(p.end, true),
+                    {away ? tr("Away (AFK)") : tr("Not measured"), {}, {}, {}, clock(p.start, true), clock(p.end, true),
                      duration(p.end - p.start), {}, away ? duration(p.end - p.start) : QString(),
-                     away ? QString() : duration(p.end - p.start),
-                     away ? tr("No mouse or keyboard for %1 minutes or more").arg(UsageEngine::kAfkMinutes)
-                          : tr("Nobody measured this time")});
+                     away ? QString() : duration(p.end - p.start)});
                 paint(part, away ? Theme::kLabelSecondary : Theme::kOrange);
                 visit.at(Name)->appendRow(part);
             }
@@ -449,6 +427,6 @@ void UsagePage::reload()
     m_total->setText(groups == 0
                          ? tr("No visits in this period. Times are recorded while RConnect is open; sign-ins and "
                               "sign-outs are read from the servers' logs.")
-                         : tr("Total: %1 on servers: %2 active, %3 away, %4 unknown.")
+                         : tr("Total: %1 on servers: %2 active, %3 away, %4 not measured.")
                                .arg(duration(totalMs), duration(activeMs), duration(afkMs), duration(unknownMs)));
 }

@@ -331,6 +331,74 @@
         <source>Windows session no.</source>
         <translation>Windows oturum numarası (teknik)</translation>
     </message>
+    <message>
+        <source>Connection closed in RConnect</source>
+        <translation>RConnect'te bağlantı kapatıldı</translation>
+    </message>
+    <message>
+        <source>Server added in RConnect</source>
+        <translation>RConnect'te sunucu eklendi</translation>
+    </message>
+    <message>
+        <source>Server changed in RConnect</source>
+        <translation>RConnect'te sunucu değiştirildi</translation>
+    </message>
+    <message>
+        <source>Server removed in RConnect</source>
+        <translation>RConnect'te sunucu silindi</translation>
+    </message>
+    <message>
+        <source>Servers imported in RConnect</source>
+        <translation>RConnect'te sunucular içe aktarıldı</translation>
+    </message>
+    <message>
+        <source>RConnect updated</source>
+        <translation>RConnect güncellendi</translation>
+    </message>
+    <message>
+        <source>Any time</source>
+        <translation>Her zaman</translation>
+    </message>
+    <message>
+        <source>Last hour</source>
+        <translation>Son 1 saat</translation>
+    </message>
+    <message>
+        <source>Last 24 hours</source>
+        <translation>Son 24 saat</translation>
+    </message>
+    <message>
+        <source>Last 7 days</source>
+        <translation>Son 7 gün</translation>
+    </message>
+    <message>
+        <source>Last 30 days</source>
+        <translation>Son 30 gün</translation>
+    </message>
+    <message>
+        <source>All servers</source>
+        <translation>Tüm sunucular</translation>
+    </message>
+    <message>
+        <source>Add nickname…</source>
+        <translation>Takma ad ekle…</translation>
+    </message>
+    <message>
+        <source>Edit nickname…</source>
+        <translation>Takma adı düzenle…</translation>
+    </message>
+    <message>
+        <source>Nickname</source>
+        <translation>Takma ad</translation>
+    </message>
+    <message>
+        <source>Edit contact…</source>
+        <translation>Kişiyi düzenle…</translation>
+    </message>
+    <message>
+        <source>Add to contacts…</source>
+        <translation>Rehbere ekle…</translation>
+    </message>
 </context>
 <context>
     <name>AnimatedTabBar</name>
@@ -429,6 +497,54 @@
         <source>Check for updates automatically</source>
         <translation>Güncellemeleri otomatik denetle</translation>
     </message>
+    <message>
+        <source>Logging</source>
+        <translation>Günlük kaydı</translation>
+    </message>
+    <message>
+        <source>Record server access events</source>
+        <translation>Sunucu erişim olaylarını kaydet</translation>
+    </message>
+    <message>
+        <source>Reads the servers' own logs for sign-ins, failed attempts and usage times. Off by default.</source>
+        <translation>Sunucuların kendi günlüklerinden girişleri, başarısız denemeleri ve kullanım sürelerini okur. Varsayılan olarak kapalıdır.</translation>
+    </message>
+    <message>
+        <source>Detailed logging</source>
+        <translation>Ayrıntılı kayıt</translation>
+    </message>
+    <message>
+        <source>Also records connection details in the log file, and changing, removing and importing servers and closing connections in Activity history.</source>
+        <translation>Bağlantı ayrıntılarını günlük dosyasına; sunucu değiştirme, silme, içe aktarma ve bağlantı kapatmayı da Etkinlik geçmişine kaydeder.</translation>
+    </message>
+    <message>
+        <source>Open log file</source>
+        <translation>Günlük dosyasını aç</translation>
+    </message>
+    <message>
+        <source>Open log folder</source>
+        <translation>Günlük klasörünü aç</translation>
+    </message>
+    <message>
+        <source>Contacts…</source>
+        <translation>Rehber…</translation>
+    </message>
+    <message>
+        <source>Import servers…</source>
+        <translation>Sunucuları içe aktar…</translation>
+    </message>
+    <message>
+        <source>Export servers…</source>
+        <translation>Sunucuları dışa aktar…</translation>
+    </message>
+    <message>
+        <source>Developed by Lurid Lane</source>
+        <translation>Lurid Lane tarafından geliştirildi</translation>
+    </message>
+    <message>
+        <source>Pages</source>
+        <translation>Sayfalar</translation>
+    </message>
 </context>
 <context>
     <name>LiveSessionsPage</name>
@@ -483,6 +599,22 @@
     <message>
         <source>Activity</source>
         <translation>Durum</translation>
+    </message>
+    <message>
+        <source>Add nickname…</source>
+        <translation>Takma ad ekle…</translation>
+    </message>
+    <message>
+        <source>Edit nickname…</source>
+        <translation>Takma adı düzenle…</translation>
+    </message>
+    <message>
+        <source>Edit contact…</source>
+        <translation>Kişiyi düzenle…</translation>
+    </message>
+    <message>
+        <source>Add to contacts…</source>
+        <translation>Rehbere ekle…</translation>
     </message>
 </context>
 <context>
@@ -586,6 +718,14 @@
     <message>
         <source>Reaching the server…</source>
         <translation>Sunucuya ulaşılıyor…</translation>
+    </message>
+    <message>
+        <source>Sending files needs “Share clipboard” (edit the server to turn it on).</source>
+        <translation>Dosya göndermek için “Panoyu paylaş” gerekir (sunucuyu düzenleyip açın).</translation>
+    </message>
+    <message>
+        <source>Sending %1 file(s) to the server…</source>
+        <translation>%1 dosya sunucuya gönderiliyor…</translation>
     </message>
 </context>
 <context>
@@ -822,6 +962,14 @@ Use “+ Add server” to get started.</source>
         <source>Import</source>
         <translation>İçe aktar</translation>
     </message>
+    <message>
+        <source>Add “%1” to contacts…</source>
+        <translation>“%1” kişisini rehbere ekle…</translation>
+    </message>
+    <message>
+        <source>Edit contact “%1”…</source>
+        <translation>“%1” kişisini düzenle…</translation>
+    </message>
 </context>
 <context>
     <name>ServerStatus</name>
@@ -1028,8 +1176,8 @@ Use “+ Add server” to get started.</source>
         <translation>Uzakta (AFK)</translation>
     </message>
     <message>
-        <source>Unknown</source>
-        <translation>Belirsiz</translation>
+        <source>Not measured</source>
+        <translation>Ölçülmedi</translation>
     </message>
     <message>
         <source>Note</source>
@@ -1040,8 +1188,8 @@ Use “+ Add server” to get started.</source>
         <translation>Tamam. Erişim kaydından %1 giriş, çıkış, kopma ve yeniden bağlanma olayı okundu ve bütün günler yeniden hesaplandı.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;&lt;b&gt;Where the times come from.&lt;/b&gt; From the server&apos;s own session log (Windows events: signed in, disconnected, reconnected, signed out). Those times are exact. All times are saved in UTC and shown in this PC&apos;s time zone; a day ends at this PC&apos;s midnight.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Visit.&lt;/b&gt; From connecting to disconnecting. Time while disconnected is never counted. If the same computer (same IP address) comes back within %1 minutes, it is one visit and the short break is not counted.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Away (AFK).&lt;/b&gt; RConnect asks every server about every 2 minutes how long the person has not touched the mouse or keyboard. If that is %2 minutes or more, the whole stretch is away, from the last touch on, and it is not active time.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Unknown.&lt;/b&gt; If RConnect was closed or could not reach the server, nobody measured. That time is shown as unknown and is never guessed.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Accuracy.&lt;/b&gt; Entering and leaving: exact to the second. Away time: the server reports whole minutes and RConnect asks about every 2 minutes, so each away stretch can be off by up to 2 minutes (usually too short rather than too long). Computer names come from the server at the time of the visit; if no measurement was made during a visit, only the IP address is known.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;&lt;b&gt;Saatler nereden geliyor?&lt;/b&gt; Sunucunun kendi oturum kaydından (Windows olayları: giriş yaptı, bağlantı koptu, yeniden bağlandı, çıkış yaptı). Bu saatler kesindir. Bütün saatler UTC olarak saklanır, bu bilgisayarın saat diliminde gösterilir; gün, bu bilgisayarın gece yarısında biter.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Giriş (ziyaret).&lt;/b&gt; Bağlanmadan kopmaya kadar geçen süre. Bağlantının kopuk olduğu süre hiçbir zaman sayılmaz. Aynı bilgisayar (aynı IP adresi) %1 dakika içinde geri gelirse tek giriş sayılır ve kısa ara süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Uzakta (AFK).&lt;/b&gt; RConnect her sunucuya yaklaşık 2 dakikada bir kişinin fareye veya klavyeye ne zamandır dokunmadığını sorar. Bu süre %2 dakika veya daha fazlaysa, son dokunuştan itibaren bütün süre uzakta sayılır ve aktif süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Belirsiz.&lt;/b&gt; RConnect kapalıysa veya sunucuya ulaşamadıysa kimse ölçüm yapmamıştır. O süre &quot;belirsiz&quot; olarak gösterilir, asla tahmin edilmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Doğruluk.&lt;/b&gt; Giriş ve çıkış saatleri saniyesine kadar kesindir. Uzakta süresi: sunucu yalnızca tam dakikayı bildirir ve RConnect yaklaşık 2 dakikada bir sorar; bu yüzden her uzakta süresi en fazla yaklaşık 2 dakika sapabilir (genellikle fazla değil, eksik görünür). Bilgisayar adları girişin sırasında sunucudan alınır; bir giriş sırasında hiç ölçüm yapılmadıysa yalnızca IP adresi bilinir.&lt;/p&gt;</translation>
+        <source>&lt;p&gt;&lt;b&gt;Where the times come from.&lt;/b&gt; From the server&apos;s own session log (Windows events: signed in, disconnected, reconnected, signed out). Those times are exact. All times are saved in UTC and shown in this PC&apos;s time zone; a day ends at this PC&apos;s midnight.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Visit.&lt;/b&gt; From connecting to disconnecting. Time while disconnected is never counted. If the same computer (same IP address) comes back within %1 minutes, it is one visit and the short break is not counted.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Away (AFK).&lt;/b&gt; RConnect asks every server about every 2 minutes how long the person has not touched the mouse or keyboard. If that is %2 minutes or more, the whole stretch is away, from the last touch on, and it is not active time.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Not measured.&lt;/b&gt; Signing in and out is always exact, because the server writes it down. Whether the person was active or away is only measured while RConnect is open and can reach the server. For the time it was not, the total stays correct but the split is not known, and it is never guessed. Keep RConnect running (Settings &gt; Start with Windows) to measure all day.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Accuracy.&lt;/b&gt; Entering and leaving: exact to the second. Away time: the server reports whole minutes and RConnect asks about every 2 minutes, so each away stretch can be off by up to 2 minutes (usually too short rather than too long). Computer names come from the server at the time of the visit; if no measurement was made during a visit, only the IP address is known.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Saatler nereden geliyor?&lt;/b&gt; Sunucunun kendi oturum kaydından (Windows olayları: giriş yaptı, bağlantı koptu, yeniden bağlandı, çıkış yaptı). Bu saatler kesindir. Bütün saatler UTC olarak saklanır, bu bilgisayarın saat diliminde gösterilir; gün, bu bilgisayarın gece yarısında biter.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Giriş (ziyaret).&lt;/b&gt; Bağlanmadan kopmaya kadar geçen süre. Bağlantının kopuk olduğu süre hiçbir zaman sayılmaz. Aynı bilgisayar (aynı IP adresi) %1 dakika içinde geri gelirse tek giriş sayılır ve kısa ara süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Uzakta (AFK).&lt;/b&gt; RConnect her sunucuya yaklaşık 2 dakikada bir kişinin fareye veya klavyeye ne zamandır dokunmadığını sorar. Bu süre %2 dakika veya daha fazlaysa, son dokunuştan itibaren bütün süre uzakta sayılır ve aktif süreye eklenmez.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Ölçülmedi.&lt;/b&gt; Giriş ve çıkış her zaman kesindir, çünkü sunucu bunları kaydeder. Kişinin aktif mi uzakta mı olduğu ise yalnızca RConnect açıkken ve sunucuya ulaşabilirken ölçülür. Ölçülmeyen sürede toplam doğru kalır ama dağılım bilinmez ve asla tahmin edilmez. Gün boyu ölçmek için RConnect açık kalsın (Ayarlar &gt; Windows ile başlat).&lt;/p&gt;&lt;p&gt;&lt;b&gt;Doğruluk.&lt;/b&gt; Giriş ve çıkış saatleri saniyesine kadar kesindir. Uzakta süresi: sunucu yalnızca tam dakikayı bildirir ve RConnect yaklaşık 2 dakikada bir sorar; bu yüzden her uzakta süresi en fazla yaklaşık 2 dakika sapabilir (genellikle fazla değil, eksik görünür). Bilgisayar adları girişin sırasında sunucudan alınır; bir giriş sırasında hiç ölçüm yapılmadıysa yalnızca IP adresi bilinir.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>%1 (from the day before)</source>
@@ -1084,8 +1232,8 @@ Use “+ Add server” to get started.</source>
         <translation>Devam ediyor</translation>
     </message>
     <message>
-        <source>Part of it was not measured</source>
-        <translation>Bir kısmı ölçülmedi</translation>
+        <source>%1% not measured</source>
+        <translation>%1% ölçülmedi</translation>
     </message>
     <message>
         <source>at least </source>
@@ -1108,8 +1256,8 @@ Use “+ Add server” to get started.</source>
         <translation>%1 dakika veya daha uzun süre fare/klavye kullanılmadı</translation>
     </message>
     <message>
-        <source>Nobody measured this time</source>
-        <translation>Bu süre ölçülmedi</translation>
+        <source>RConnect was closed or the server did not answer</source>
+        <translation>RConnect kapalıydı veya sunucu yanıt vermedi</translation>
     </message>
     <message>
         <source>%1: the server says someone is connected, but its event log has no sign-in for that. This time is shown as not in the log.</source>
@@ -1124,8 +1272,8 @@ Use “+ Add server” to get started.</source>
         <translation>Bu dönemde giriş yok. Süreler RConnect açıkken ölçülür; giriş ve çıkışlar sunucuların kayıtlarından okunur.</translation>
     </message>
     <message>
-        <source>Total: %1 on servers: %2 active, %3 away, %4 unknown.</source>
-        <translation>Toplam: sunucularda %1; %2 aktif, %3 uzakta, %4 belirsiz.</translation>
+        <source>Total: %1 on servers: %2 active, %3 away, %4 not measured.</source>
+        <translation>Toplam: sunucularda %1; %2 aktif, %3 uzakta, %4 ölçülmedi.</translation>
     </message>
     <message>
         <source>Computer</source>
@@ -1423,6 +1571,62 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
         <translation>Kurulum başlatılamadı. Kendiniz çalıştırabilirsiniz:
 %1</translation>
     </message>
+    <message>
+        <source>Details are in the log file (Settings &gt; Detailed logging &gt; Open log file).</source>
+        <translation>Ayrıntılar günlük dosyasında (Ayarlar &gt; Günlük kaydı &gt; Günlük dosyasını aç).</translation>
+    </message>
+    <message>
+        <source>Installing %1</source>
+        <translation>%1 kuruluyor</translation>
+    </message>
+    <message>
+        <source>%1 added, %2 skipped</source>
+        <translation>%1 eklendi, %2 atlandı</translation>
+    </message>
+    <message>
+        <source>Export servers</source>
+        <translation>Sunucuları dışa aktar</translation>
+    </message>
+    <message>
+        <source>There are no servers to export.</source>
+        <translation>Dışa aktarılacak sunucu yok.</translation>
+    </message>
+    <message>
+        <source>Passphrase to protect the file and the saved passwords. Leave it empty to export the servers without passwords:</source>
+        <translation>Dosyayı ve kayıtlı şifreleri korumak için parola. Boş bırakırsanız sunucular şifresiz dışa aktarılır:</translation>
+    </message>
+    <message>
+        <source>Type the passphrase again:</source>
+        <translation>Parolayı tekrar yazın:</translation>
+    </message>
+    <message>
+        <source>The passphrases are different.</source>
+        <translation>Parolalar farklı.</translation>
+    </message>
+    <message>
+        <source>Server list (*.json)</source>
+        <translation>Sunucu listesi (*.json)</translation>
+    </message>
+    <message>
+        <source>Could not write the file.</source>
+        <translation>Dosya yazılamadı.</translation>
+    </message>
+    <message>
+        <source>%1 servers exported, without passwords.</source>
+        <translation>%1 sunucu şifresiz dışa aktarıldı.</translation>
+    </message>
+    <message>
+        <source>%1 servers exported with their passwords.</source>
+        <translation>%1 sunucu şifreleriyle dışa aktarıldı.</translation>
+    </message>
+    <message>
+        <source>Unknown person on %1</source>
+        <translation>%1 üzerinde tanınmayan kişi</translation>
+    </message>
+    <message>
+        <source>%1 (account %2) connected and is not in your contacts.</source>
+        <translation>%1 (hesap: %2) bağlandı ve rehberinizde yok.</translation>
+    </message>
 </context>
 <context>
     <name>UpdateChecker</name>
@@ -1441,6 +1645,165 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
     <message>
         <source>The downloaded file does not match its checksum.</source>
         <translation>İndirilen dosya sağlama toplamıyla eşleşmiyor.</translation>
+    </message>
+</context>
+<context>
+    <name>ContactsDialog</name>
+    <message>
+        <source>Contacts</source>
+        <translation>Rehber</translation>
+    </message>
+    <message>
+        <source>Give a computer or an account a nickname, for example the computer LENOVO is “Elif”. The nickname is shown in the server list, in who is connected and in the history.</source>
+        <translation>Bir bilgisayara veya hesaba takma ad verin; örneğin LENOVO bilgisayarı “Elif”. Takma ad sunucu listesinde, kimin bağlı olduğunda ve geçmişte görünür.</translation>
+    </message>
+    <message>
+        <source>Nickname</source>
+        <translation>Takma ad</translation>
+    </message>
+    <message>
+        <source>Computer</source>
+        <translation>Bilgisayar</translation>
+    </message>
+    <message>
+        <source>IP address</source>
+        <translation>IP adresi</translation>
+    </message>
+    <message>
+        <source>Account</source>
+        <translation>Hesap</translation>
+    </message>
+    <message>
+        <source>Note</source>
+        <translation>Not</translation>
+    </message>
+    <message>
+        <source>No contacts yet. Add one, or right-click a line in Who's connected or Activity history.</source>
+        <translation>Henüz kimse yok. Ekleyin veya Kimler bağlı ya da Etkinlik geçmişinde bir satıra sağ tıklayın.</translation>
+    </message>
+    <message>
+        <source>Add…</source>
+        <translation>Ekle…</translation>
+    </message>
+    <message>
+        <source>Edit…</source>
+        <translation>Düzenle…</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Sil</translation>
+    </message>
+    <message>
+        <source>Import…</source>
+        <translation>İçe aktar…</translation>
+    </message>
+    <message>
+        <source>Export…</source>
+        <translation>Dışa aktar…</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Kapat</translation>
+    </message>
+    <message>
+        <source>Delete contact</source>
+        <translation>Kişiyi sil</translation>
+    </message>
+    <message>
+        <source>Remove “%1” from the contacts?</source>
+        <translation>“%1” rehberden silinsin mi?</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>Evet</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>Hayır</translation>
+    </message>
+    <message>
+        <source>Import contacts</source>
+        <translation>Rehberi içe aktar</translation>
+    </message>
+    <message>
+        <source>Contacts (*.json)</source>
+        <translation>Rehber (*.json)</translation>
+    </message>
+    <message>
+        <source>This file is not a contacts list.</source>
+        <translation>Bu dosya bir rehber listesi değil.</translation>
+    </message>
+    <message>
+        <source>%1 contacts added or updated.</source>
+        <translation>%1 kişi eklendi veya güncellendi.</translation>
+    </message>
+    <message>
+        <source>Export contacts</source>
+        <translation>Rehberi dışa aktar</translation>
+    </message>
+    <message>
+        <source>Could not write the file.</source>
+        <translation>Dosya yazılamadı.</translation>
+    </message>
+    <message>
+        <source>New contact</source>
+        <translation>Yeni kişi</translation>
+    </message>
+    <message>
+        <source>Edit contact</source>
+        <translation>Kişiyi düzenle</translation>
+    </message>
+    <message>
+        <source>e.g. Elif</source>
+        <translation>örn. Elif</translation>
+    </message>
+    <message>
+        <source>e.g. LENOVO</source>
+        <translation>örn. LENOVO</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>İsteğe bağlı</translation>
+    </message>
+    <message>
+        <source>Optional, e.g. department or phone</source>
+        <translation>İsteğe bağlı, örn. birim veya telefon</translation>
+    </message>
+    <message>
+        <source>Fill in the computer, the IP address, the account, or a mix. A line is matched only when everything you filled in fits.</source>
+        <translation>Bilgisayarı, IP adresini, hesabı veya bunların bir karışımını doldurun. Bir satır, yalnızca doldurduğunuz her şey uyduğunda eşleşir.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Kaydet</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>İptal</translation>
+    </message>
+    <message>
+        <source>Enter a nickname and at least one of: computer, IP address, account.</source>
+        <translation>Bir takma ad ve bilgisayar, IP adresi veya hesaptan en az birini girin.</translation>
+    </message>
+    <message>
+        <source>Give a computer a nickname, for example LENOVO is “Elif”. The nickname is shown in the server list, in who is connected and in the history, whatever IP address the person connects from. To add someone quickly, right-click a server with a person on it.</source>
+        <translation>Bir bilgisayara takma ad verin; örneğin LENOVO “Elif” olsun. Takma ad, kişi hangi IP adresinden bağlanırsa bağlansın sunucu listesinde, kimin bağlı olduğunda ve geçmişte görünür. Hızlıca eklemek için üzerinde biri olan bir sunucuya sağ tıklayın.</translation>
+    </message>
+    <message>
+        <source>No contacts yet. Right-click a server with a person on it, or press Add.</source>
+        <translation>Henüz kimse yok. Üzerinde biri olan bir sunucuya sağ tıklayın veya Ekle’ye basın.</translation>
+    </message>
+    <message>
+        <source>Add to contacts</source>
+        <translation>Rehbere ekle</translation>
+    </message>
+    <message>
+        <source>The computer name is enough: the nickname follows it from any IP address. Fill in the account only if this person signs in with their own account.</source>
+        <translation>Bilgisayar adı yeterli: takma ad, hangi IP adresinden olursa olsun onu takip eder. Hesabı yalnızca bu kişi kendi hesabıyla giriyorsa doldurun.</translation>
+    </message>
+    <message>
+        <source>Enter a nickname and a computer name or an account.</source>
+        <translation>Bir takma ad ve bir bilgisayar adı veya hesap girin.</translation>
     </message>
 </context>
 </TS>

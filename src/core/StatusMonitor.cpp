@@ -1,8 +1,10 @@
 #include "StatusMonitor.h"
 #include "AccessLog.h"
+#include "Contacts.h"
 #include "GeoIp.h"
 #include "Log.h"
 #include "Threats.h"
+#include "UsageEngine.h"
 #include "UsageLog.h"
 #include "model/ServerStore.h"
 
@@ -19,17 +21,25 @@
 
 namespace {
 
-constexpr int kPollIntervalMs = 60000;
+// The port is checked this often. Who is connected is asked about every 20 to 60 seconds (see sessionAgeMs()),
+// the servers' logs once a minute.
+constexpr int kPollIntervalMs = 10000;
 constexpr int kConnectTimeoutMs = 2000;
 // Checks are spread over this window instead of firing at once.
-constexpr int kSpreadMs = 20000;
+constexpr int kSpreadMs = 3000;
 constexpr int kSessionTimeoutMs = 8000;
 // The periodic check also reads the access events, which can be a few hundred kB after a long pause.
 constexpr int kPollSessionTimeoutMs = 20000;
 // At most this many checks run at once, so a long list never opens hundreds of sockets.
 constexpr int kMaxParallelChecks = 8;
-// WinRM costs a whole sign-in, so it is asked less often than the port.
-constexpr qint64 kSessionMaxAgeMs = 100000;
+// WinRM costs a whole sign-in, so it is asked less often than the port: every 20 s for a short list, up to
+// every 60 s for a long one (each check takes a second or two and 8 run at once).
+qint64 sessionAgeMs(qsizetype servers)
+{
+    return qBound<qint64>(18000, qint64(servers) * 350, qint64(58000));
+}
+// The logs are read (and the usage sampled) once a minute.
+constexpr qint64 kEventsEveryMs = 55000;
 // A single failed port check is retried before a server is shown as offline.
 constexpr int kRetryDelayMs = 4000;
 
@@ -182,15 +192,18 @@ void StatusMonitor::refresh(const QString &id, bool force)
     }
 
     m_inFlight.insert(id);
-    const bool check = canCheckSessions(p)
-        && (force || QDateTime::currentMSecsSinceEpoch() - current.checkedAt >= kSessionMaxAgeMs);
-    m_pool.start([channel = m_channel, p, check] {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool check = canCheckSessions(p) && (force || now - current.checkedAt >= sessionAgeMs(m_store->rowCount()));
+    // Most checks only ask who is connected; once a minute the logs are read too.
+    const bool withEvents = check && AccessLog::serverEventsEnabled() && now - m_eventsAt.value(id) >= kEventsEveryMs;
+    m_pool.start([channel = m_channel, p, check, withEvents] {
         const int latency = probe(p.host.toStdWString(), quint16(p.port));
-        const SessionQuery q = latency >= 0 && check ? pollSessions(p) : SessionQuery{};
+        const bool ask = latency >= 0 && check;
+        const SessionQuery q = !ask ? SessionQuery{} : withEvents ? pollSessions(p) : querySessions(p);
         std::lock_guard lock(channel->mutex);
         if (StatusMonitor *target = channel->target)
-            QMetaObject::invokeMethod(target, [target, id = p.id, latency, check, q] {
-                target->finished(id, latency, latency >= 0 && check, q);
+            QMetaObject::invokeMethod(target, [target, id = p.id, latency, ask, withEvents, q] {
+                target->finished(id, latency, ask, withEvents, q);
             }, Qt::QueuedConnection);
     });
 }
@@ -265,7 +278,31 @@ void StatusMonitor::resolveCountries()
     });
 }
 
-void StatusMonitor::finished(const QString &id, int latency, bool checked, const SessionQuery &q)
+// With an address book in use, a person connecting from a computer that is not in it is reported once.
+void StatusMonitor::warnAboutStrangers(const QString &id, const ServerStatus &s)
+{
+    QSet<QString> present;
+    const bool book = !Contacts::instance().all().isEmpty();
+    for (const RemoteSession &r : s.others) {
+        if (!r.connected || r.client.isEmpty())
+            continue;
+        const QString key = id + QLatin1Char('|') + r.client.toLower();
+        present.insert(key);
+        if (!book || Contacts::instance().match(r.client, UsageEngine::accountOf(r.user)) || m_strangers.contains(key))
+            continue;
+        m_strangers.insert(key);
+        emit unknownPerson(m_store->profileById(id).name, r.client, UsageEngine::accountOf(r.user));
+    }
+    // Once they have left, the next time they connect counts again.
+    for (auto it = m_strangers.begin(); it != m_strangers.end();) {
+        if (it->startsWith(id + QLatin1Char('|')) && !present.contains(*it))
+            it = m_strangers.erase(it);
+        else
+            ++it;
+    }
+}
+
+void StatusMonitor::finished(const QString &id, int latency, bool checked, bool withEvents, const SessionQuery &q)
 {
     m_inFlight.remove(id);
     if (!m_store->profileById(id).isValid())
@@ -297,6 +334,9 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, const
     } else if (checked) {
         applySessions(s, q);
         if (q.result == SessionQuery::Ok)
+            warnAboutStrangers(id, s);
+        if (q.result == SessionQuery::Ok && withEvents) {
+            m_eventsAt.insert(id, QDateTime::currentMSecsSinceEpoch());
             m_pool.start([channel = m_channel, p = m_store->profileById(id), events = q.events, live = q.sessions,
                           serverNow = q.serverNowUtcMs, skipped = q.eventsSkipped] {
                 if (skipped > 0)
@@ -315,6 +355,7 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, const
                             emit target->alertRaised(a);
                     }, Qt::QueuedConnection);
             });
+        }
     } // otherwise the last answer is still fresh
     m_store->setStatus(id, s);
 }

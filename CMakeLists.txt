@@ -31,6 +31,7 @@ add_executable(RConnect WIN32
     ${CMAKE_CURRENT_BINARY_DIR}/app.rc
     src/core/AccessLog.h         src/core/AccessLog.cpp
     src/core/Autostart.h         src/core/Autostart.cpp
+    src/core/Contacts.h          src/core/Contacts.cpp
     src/core/GeoIp.h             src/core/GeoIp.cpp
     src/core/Language.h          src/core/Language.cpp
     src/core/Log.h               src/core/Log.cpp
@@ -48,6 +49,7 @@ add_executable(RConnect WIN32
     src/model/ServerStore.h      src/model/ServerStore.cpp
     src/rdp/RdpSession.h         src/rdp/RdpSession.cpp
     src/ui/AccessLogPage.h       src/ui/AccessLogPage.cpp
+    src/ui/ContactsDialog.h      src/ui/ContactsDialog.cpp
     src/ui/HomePage.h            src/ui/HomePage.cpp
     src/ui/LiveSessionsPage.h    src/ui/LiveSessionsPage.cpp
     src/ui/ServerDelegate.h      src/ui/ServerDelegate.cpp

@@ -1,6 +1,9 @@
 #include "LiveSessionsPage.h"
 
+#include "ContactsDialog.h"
 #include "Theme.h"
+
+#include "core/Contacts.h"
 
 #include "model/ServerStore.h"
 
@@ -8,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QStandardItemModel>
 #include <QTimer>
@@ -21,6 +25,8 @@ enum Column { Server, User, From, State, Idle, ColumnCount };
 constexpr int kServerIdRole = Qt::UserRole + 1;
 constexpr int kSessionIdRole = Qt::UserRole + 2;
 constexpr int kConnectedRole = Qt::UserRole + 3;
+constexpr int kClientRole = Qt::UserRole + 4;
+constexpr int kUserRole = Qt::UserRole + 5;
 
 } // namespace
 
@@ -81,6 +87,22 @@ LiveSessionsPage::LiveSessionsPage(ServerStore *store, QWidget *parent)
         m_message->setEnabled(row.isValid() && row.sibling(row.row(), State).data(kConnectedRole).toBool());
     });
     connect(m_view, &QTableView::doubleClicked, this, [this] { requestMessage(); });
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_view, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        const QModelIndex index = m_view->indexAt(pos);
+        if (!index.isValid())
+            return;
+        const QString client = index.sibling(index.row(), Server).data(kClientRole).toString();
+        const QString user = index.sibling(index.row(), Server).data(kUserRole).toString();
+        QMenu menu(this);
+        const bool known = Contacts::instance().match(client, user) != nullptr;
+        if (!known && client.isEmpty())
+            return; // nothing to tell this person by
+        menu.addAction(known ? tr("Edit contact…") : tr("Add to contacts…"), this,
+                       [this, client, user] { ContactsDialog::editFor(client, user, this); });
+        menu.exec(m_view->viewport()->mapToGlobal(pos));
+    });
+    connect(&Contacts::instance(), &Contacts::changed, this, &LiveSessionsPage::reload);
 
     // Statuses of many servers arrive one by one: the table is rebuilt once a second at most.
     m_reloadTimer = new QTimer(this);
@@ -162,7 +184,10 @@ void LiveSessionsPage::reload()
         for (const RemoteSession &s : status.all) {
             ++sessions;
             const QString texts[ColumnCount] = {
-                p.name, s.user, s.client.isEmpty() ? QStringLiteral("—") : s.client,
+                p.name, s.user,
+                s.client.isEmpty() && Contacts::instance().nameFor({}, s.user).isEmpty()
+                    ? QStringLiteral("—")
+                    : Contacts::instance().label(s.client, s.user),
                 s.connected ? tr("Active") : tr("Disconnected"), s.connected ? idleText(s.idleMinutes) : QString()};
             QList<QStandardItem *> items;
             for (int c = 0; c < ColumnCount; ++c) {
@@ -170,6 +195,8 @@ void LiveSessionsPage::reload()
                 item->setData(p.id, kServerIdRole);
                 item->setData(s.id, kSessionIdRole);
                 item->setData(s.connected, kConnectedRole);
+                item->setData(s.client, kClientRole);
+                item->setData(s.user, kUserRole);
                 if (c == State)
                     item->setForeground(s.connected ? Theme::kGreen : Theme::kLabelSecondary);
                 items << item;

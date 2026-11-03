@@ -20,6 +20,7 @@ class QWidget;
 class ServerStore;
 class SessionWindow;
 class StatusMonitor;
+struct ServerProfile;
 struct ServerStatus;
 
 // Owns the server list, the windows and the sessions.
@@ -55,13 +56,18 @@ private:
     void showServerPopup(SessionWindow *w);
     void addServer();
     void importServers();
+    void exportServers();
     void editServer(const QString &id);
     void removeServer(const QString &id);
     void onSessionState(RdpSession::State state);
     void refreshOpenMarkers();
     void enableAuditing(const QString &id);
     void showAlert(const AccessRecord &alert);
+    void showStranger(const QString &server, const QString &client, const QString &user);
+    QSystemTrayIcon *tray();
     void sendMessage(const QString &serverId, int sessionId, const QString &user);
+    // Detailed logging only: what was done in RConnect, written to the activity history.
+    static void audit(const ServerProfile &p, const QString &event, const QString &detail = {});
 
     // manual: started from the Settings menu, so it also reports "up to date" and errors.
     void checkForUpdates(bool manual);

@@ -45,6 +45,8 @@ private:
     void apply(QList<AccessLine> lines);
     void showDetail();
     void updateCount();
+    void fillServers();
+    void applyPeriod();
     void exportCsv();
 
     QStandardItemModel *m_model;
@@ -54,6 +56,8 @@ private:
     QLabel *m_subtitle;
     QLineEdit *m_filter;
     QComboBox *m_category;
+    QComboBox *m_server;
+    QComboBox *m_period;
     QLabel *m_count;
     QTimer *m_timer;
     QPushButton *m_refresh;

@@ -27,6 +27,8 @@ public:
 
 signals:
     void updateCheckRequested();
+    void importRequested();
+    void exportRequested();
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -39,6 +41,7 @@ private:
     void showSettingsMenu();
     void showAbout();
     void movePill(bool animate);
+    void applyPages();
 
     ServerStore *m_store;
     ServerPanel *m_panel;
