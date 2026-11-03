@@ -191,7 +191,7 @@ private fun ServerRow(server: ServerEntry, state: ServerState, contacts: List<Co
                     style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
-                Health.Problem -> if (state.errorKind == ServerState.ErrorKind.Other) Muted(errorExplanation(state), maxLines = 2)
+                Health.Problem -> if (state.errorKind == ServerState.ErrorKind.Other || state.errorKind == ServerState.ErrorKind.NoWinRm) Muted(errorExplanation(state), maxLines = 2)
                 else -> {}
             }
         }

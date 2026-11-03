@@ -32,7 +32,8 @@ data class ServerSnapshot(
 )
 
 sealed class WinRmException(message: String) : Exception(message) {
-    class Unreachable(message: String) : WinRmException(message)
+    /** [rdpOpen]: the server still answers on the Remote Desktop port, so it is up and only WinRM is not. */
+    class Unreachable(message: String, val rdpOpen: Boolean = false) : WinRmException(message)
     class AuthFailed(message: String) : WinRmException(message)
     class Failed(message: String) : WinRmException(message)
 }

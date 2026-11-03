@@ -38,6 +38,7 @@
     <string name="status_free">Free</string>
     <string name="status_in_use">In use · %1$d</string>
     <string name="status_unreachable">Unreachable</string>
+    <string name="status_no_winrm">Online · sessions unknown</string>
     <string name="status_auth">Sign-in refused</string>
     <string name="status_error">Error</string>
 
@@ -75,6 +76,7 @@
     <string name="import_result">%1$d added, %2$d skipped (incomplete or already in the list).</string>
 
     <string name="err_unreachable">Cannot reach the server (port 5985). Check the address, that WinRM is on, and that this phone is on the same network or VPN.</string>
+    <string name="err_no_winrm">The server is up (Remote Desktop answers), but its remote management service (WinRM, port 5985) does not, so the sessions cannot be read.</string>
     <string name="err_auth">Sign-in refused. Use one of the server\'s administrator accounts.</string>
     <string name="err_other">The server did not answer.</string>
     <plurals name="group_count">

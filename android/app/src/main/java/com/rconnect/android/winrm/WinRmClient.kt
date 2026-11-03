@@ -43,7 +43,13 @@ class WinRmClient(
         try {
             connect()
         } catch (e: IOException) {
-            throw WinRmException.Unreachable("Could not reach the server's remote management service (port $port).")
+            // One lost connection attempt is not an outage (mobile networks drop some); try once more.
+            try {
+                Thread.sleep(RETRY_DELAY_MS)
+                connect()
+            } catch (e: IOException) {
+                throw WinRmException.Unreachable("Could not reach the server's remote management service (port $port).", rdpOpen())
+            }
         }
         try {
             authenticate()
@@ -66,6 +72,14 @@ class WinRmClient(
         socket.tcpNoDelay = true
         input = socket.getInputStream().buffered()
         output = socket.getOutputStream()
+    }
+
+    /** Whether the server answers on the Remote Desktop port, which is how the desktop program tells it is up. */
+    private fun rdpOpen(): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress(host, RDP_PORT), 3000) }
+        true
+    } catch (e: IOException) {
+        false
     }
 
     private fun request(contentType: String, body: ByteArray, auth: ByteArray? = null): ByteArray {
@@ -258,6 +272,8 @@ class WinRmClient(
 
     companion object {
         const val DEFAULT_LOOKBACK_MS = 2L * 24 * 3600 * 1000
+        private const val RETRY_DELAY_MS = 1500L
+        private const val RDP_PORT = 3389
         private const val BOUNDARY = "--Encrypted Boundary"
         private const val PROTOCOL = "application/HTTP-SPNEGO-session-encrypted"
         private val OCTET_HEADER = "\tContent-Type: application/octet-stream\r\n".toByteArray()

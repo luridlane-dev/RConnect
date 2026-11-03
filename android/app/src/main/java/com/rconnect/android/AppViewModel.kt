@@ -42,7 +42,7 @@ data class ServerState(
     val error: String? = null,
     val errorKind: ErrorKind = ErrorKind.None,
 ) {
-    enum class ErrorKind { None, Unreachable, AuthFailed, Other }
+    enum class ErrorKind { None, Unreachable, NoWinRm, AuthFailed, Other }
 
     val health: Health
         get() = when {
@@ -217,7 +217,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 val e = result.exceptionOrNull()
                 val kind = when (e) {
-                    is WinRmException.Unreachable -> ServerState.ErrorKind.Unreachable
+                    is WinRmException.Unreachable -> if (e.rdpOpen) ServerState.ErrorKind.NoWinRm else ServerState.ErrorKind.Unreachable
                     is WinRmException.AuthFailed -> ServerState.ErrorKind.AuthFailed
                     else -> ServerState.ErrorKind.Other
                 }

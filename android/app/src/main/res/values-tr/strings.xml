@@ -38,6 +38,7 @@
     <string name="status_free">Boş</string>
     <string name="status_in_use">Kullanımda · %1$d</string>
     <string name="status_unreachable">Ulaşılamıyor</string>
+    <string name="status_no_winrm">Açık · oturumlar okunamıyor</string>
     <string name="status_auth">Giriş reddedildi</string>
     <string name="status_error">Hata</string>
 
@@ -75,6 +76,7 @@
     <string name="import_result">%1$d eklendi, %2$d atlandı (eksik ya da listede zaten var).</string>
 
     <string name="err_unreachable">Sunucuya ulaşılamıyor (port 5985). Adresi, WinRM\'in açık olduğunu ve telefonun aynı ağda ya da VPN\'de olduğunu kontrol edin.</string>
+    <string name="err_no_winrm">Sunucu açık (Uzak Masaüstü yanıt veriyor), ama uzaktan yönetim servisi (WinRM, port 5985) yanıt vermiyor; bu yüzden oturumlar okunamıyor.</string>
     <string name="err_auth">Giriş reddedildi. Sunucunun yönetici hesaplarından birini kullanın.</string>
     <string name="err_other">Sunucu yanıt vermedi.</string>
     <plurals name="group_count">

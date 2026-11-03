@@ -227,6 +227,7 @@ fun healthLabel(s: ServerState): String = when (s.health) {
     Health.InUse -> stringResource(R.string.status_in_use, s.connected.size)
     Health.Problem -> when (s.errorKind) {
         ServerState.ErrorKind.Unreachable -> stringResource(R.string.status_unreachable)
+        ServerState.ErrorKind.NoWinRm -> stringResource(R.string.status_no_winrm)
         ServerState.ErrorKind.AuthFailed -> stringResource(R.string.status_auth)
         else -> stringResource(R.string.status_error)
     }
@@ -235,6 +236,7 @@ fun healthLabel(s: ServerState): String = when (s.health) {
 @Composable
 fun errorExplanation(s: ServerState): String = when (s.errorKind) {
     ServerState.ErrorKind.Unreachable -> stringResource(R.string.err_unreachable)
+    ServerState.ErrorKind.NoWinRm -> stringResource(R.string.err_no_winrm)
     ServerState.ErrorKind.AuthFailed -> stringResource(R.string.err_auth)
     else -> s.error?.takeIf { it.isNotBlank() } ?: stringResource(R.string.err_other)
 }
