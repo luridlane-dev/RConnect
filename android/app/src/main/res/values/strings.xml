@@ -128,7 +128,11 @@
     <string name="about_version">Version %1$s</string>
     <string name="about_open">Open on GitHub</string>
     <string name="notify_leave">Someone leaves</string>
+    <string name="notify_watch">Check every 30 seconds in the background</string>
+    <string name="watch_title">Watching your servers</string>
+    <string name="watch_text">Tap to open RConnect</string>
+    <string name="channel_watch">Background watching</string>
     <string name="notify_problem">A server stops answering</string>
-    <string name="notifications_help">While the app is open, changes appear at the top. When it is closed, the phone checks the servers about every 15 minutes (less often when saving battery).</string>
+    <string name="notifications_help">Changes arrive as Android notifications. With background checking on, the phone looks every 30 seconds and shows a permanent notification; without it, about every 15 minutes (less often when saving battery).</string>
     <string name="notifications_denied">Android did not allow notifications. You can allow them in the phone\'s settings for this app.</string>
 </resources>

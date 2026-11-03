@@ -38,12 +38,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.rconnect.android.AppViewModel
 import com.rconnect.android.R
 import com.rconnect.android.Tab
-import com.rconnect.android.notify.Change
-import com.rconnect.android.notify.Notifier
 import kotlinx.coroutines.delay
 
-private const val REFRESH_MS = 60_000L
-private const val BANNER_MS = 4_000L
+private const val REFRESH_MS = 20_000L
 
 @Composable
 fun RConnectApp(vm: AppViewModel) {
@@ -61,16 +58,6 @@ fun RConnectApp(vm: AppViewModel) {
                 selected?.let { vm.refresh(it, force = true) }
                 delay(REFRESH_MS)
             }
-        }
-    }
-
-    // What changed on the servers while the app is open appears for a few seconds at the top.
-    var banner by remember { mutableStateOf<Pair<String, Change.Kind>?>(null) }
-    LaunchedEffect(vm) {
-        vm.changes.collect { c ->
-            banner = "${c.server} · ${Notifier.text(context, c)}" to c.kind
-            delay(BANNER_MS)
-            banner = null
         }
     }
 
@@ -95,16 +82,6 @@ fun RConnectApp(vm: AppViewModel) {
             Box(Modifier.fillMaxSize().background(Palette.Background).statusBarsPadding()) {
                 if (entry != null) DetailScreen(vm, entry) else MainTabs(vm, tab)
             }
-        }
-        Box(Modifier.statusBarsPadding().align(Alignment.TopCenter)) {
-            Banner(banner?.first, banner?.second.let { kind ->
-                when (kind) {
-                    Change.Kind.Problem, Change.Kind.Stranger -> Red
-                    Change.Kind.Connected -> Orange
-                    Change.Kind.Recovered -> Green
-                    else -> Palette.Accent
-                }
-            })
         }
     }
 }

@@ -12,19 +12,18 @@ import com.rconnect.android.data.ServerEntry
 import com.rconnect.android.data.ServerFile
 import com.rconnect.android.data.ServerImport
 import com.rconnect.android.data.ServerStore
-import com.rconnect.android.notify.Change
 import com.rconnect.android.notify.ChangeDetector
 import com.rconnect.android.notify.CheckWorker
 import com.rconnect.android.notify.NotificationPrefs
+import com.rconnect.android.notify.Notifier
+import com.rconnect.android.notify.WatchService
 import com.rconnect.android.winrm.AccessEvent
 import com.rconnect.android.winrm.RemoteSession
 import com.rconnect.android.winrm.ServerSnapshot
 import com.rconnect.android.winrm.WinRmClient
 import com.rconnect.android.winrm.WinRmException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -65,9 +64,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val detector = ChangeDetector(app)
     val notificationPrefs = NotificationPrefs(app)
 
-    /** Changes found while the app is on screen (someone connected or left, a server stopped answering). */
-    private val _changes = MutableSharedFlow<Change>(extraBufferCapacity = 16)
-    val changes: SharedFlow<Change> = _changes
     private val parallel = Semaphore(MAX_PARALLEL)
 
     private val _servers = MutableStateFlow(store.load())
@@ -169,6 +165,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setNotificationsEnabled(on: Boolean) {
         notificationPrefs.enabled = on
         if (on) CheckWorker.schedule(getApplication()) else CheckWorker.cancel(getApplication())
+        WatchService.sync(getApplication())
+    }
+
+    fun setWatching(on: Boolean) {
+        notificationPrefs.watch = on
+        WatchService.sync(getApplication())
     }
 
     fun groups(): List<String> = _servers.value.map { it.group }.filter { it.isNotBlank() }.distinct().sorted()
@@ -201,7 +203,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val snapshot = result.getOrNull()?.let { withNames(id, it) }
             viewModelScope.launch(Dispatchers.Default) {
                 for (c in detector.detect(id, server.title, snapshot != null, snapshot?.sessions, _contacts.value))
-                    if (notificationPrefs.wants(c)) _changes.tryEmit(c)
+                    if (notificationPrefs.wants(c)) Notifier.post(getApplication(), c)
             }
             if (snapshot != null) {
                 setState(id) {
@@ -244,6 +246,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val MAX_PARALLEL = 8
-        const val STALE_MS = 30_000L
+        const val STALE_MS = 10_000L
     }
 }

@@ -217,29 +217,6 @@ fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
-/** A short message that slides in at the top and goes away by itself. */
-@Composable
-fun Banner(text: String?, color: Color, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = text != null,
-        modifier = modifier,
-        enter = slideInVertically(spring(dampingRatio = 0.7f)) { -it } + fadeIn(),
-        exit = slideOutVertically { -it } + fadeOut(),
-    ) {
-        var last by remember { mutableStateOf("") }
-        if (text != null) last = text
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clip(RectangleShape).background(Palette.PanelRaised)
-                .border(0.5.dp, Palette.Separator, RectangleShape).padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusDot(color, 10)
-            Spacer(Modifier.width(10.dp))
-            Text(last, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
 // ---- state texts -------------------------------------------------------------------------------
 
 /** The state in words, so it never depends on colour alone. */

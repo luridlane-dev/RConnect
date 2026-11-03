@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.rconnect.android.notify.AppVisibility
 import com.rconnect.android.notify.Notifier
+import com.rconnect.android.notify.WatchService
 import com.rconnect.android.ui.RConnectApp
 import com.rconnect.android.ui.RConnectTheme
 
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         AppVisibility.inFront = true
+        WatchService.sync(this)
     }
 
     override fun onStop() {

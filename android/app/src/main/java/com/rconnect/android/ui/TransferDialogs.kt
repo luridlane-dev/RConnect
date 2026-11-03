@@ -162,6 +162,7 @@ fun NotificationsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
     var onLeave by remember { mutableStateOf(prefs.onLeave) }
     var onProblem by remember { mutableStateOf(prefs.onProblem) }
     var onStranger by remember { mutableStateOf(prefs.onStranger) }
+    var watch by remember { mutableStateOf(prefs.watch) }
     var denied by remember { mutableStateOf(false) }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -197,6 +198,7 @@ fun NotificationsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
                 Option(stringResource(R.string.notify_stranger), onStranger, enabled) { onStranger = it; prefs.onStranger = it }
                 Option(stringResource(R.string.notify_leave), onLeave, enabled) { onLeave = it; prefs.onLeave = it }
                 Option(stringResource(R.string.notify_problem), onProblem, enabled) { onProblem = it; prefs.onProblem = it }
+                Option(stringResource(R.string.notify_watch), watch, enabled) { watch = it; vm.setWatching(it) }
                 Spacer(Modifier.height(8.dp))
                 Muted(stringResource(if (denied) R.string.notifications_denied else R.string.notifications_help))
             }

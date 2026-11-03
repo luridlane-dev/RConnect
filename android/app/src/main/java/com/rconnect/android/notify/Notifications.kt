@@ -36,6 +36,9 @@ class NotificationPrefs(context: Context) {
         get() = prefs.getBoolean("problem", true)
         set(v) = prefs.edit().putBoolean("problem", v).apply()
 
+    var watch: Boolean
+        get() = prefs.getBoolean("watch", true)
+        set(v) = prefs.edit().putBoolean("watch", v).apply()
     var onStranger: Boolean
         get() = prefs.getBoolean("stranger", true)
         set(v) = prefs.edit().putBoolean("stranger", v).apply()
@@ -69,6 +72,11 @@ class ChangeDetector(context: Context) {
         val stored = JSONObject().put("ok", ok)
         val oldKeys = previous?.optJSONArray("s")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
         stored.put("s", JSONArray(if (ok) keys.keys.toList() else oldKeys))
+        // The computer of each session is kept too: when the session ends, only this tells who it was.
+        val oldClients = previous?.optJSONObject("c")
+        val clients = JSONObject()
+        if (ok) for ((key, s) in keys) clients.put(key, s.client) else oldClients?.let { o -> o.keys().forEach { clients.put(it, o.getString(it)) } }
+        stored.put("c", clients)
         prefs.edit().putString(serverId, stored.toString()).apply()
         if (previous == null) return emptyList()
 
@@ -85,7 +93,7 @@ class ChangeDetector(context: Context) {
                 val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && ContactBook.nameFor(contacts, s.client, s.user) == null
                 changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, who(s, contacts))
             }
-            for (key in oldKeys) if (key !in keys) changes += Change(Change.Kind.Left, serverId, title, whoLeft(key, contacts))
+            for (key in oldKeys) if (key !in keys) changes += Change(Change.Kind.Left, serverId, title, whoLeft(key, oldClients?.optString(key).orEmpty(), contacts))
         }
         return changes
     }
@@ -95,10 +103,10 @@ class ChangeDetector(context: Context) {
     private fun who(s: RemoteSession, contacts: List<Contact>) =
         ContactBook.nameFor(contacts, s.client, s.user) ?: s.client.ifBlank { s.user.substringAfter('\\') }
 
-    // A session that left is only known by its key, which holds the account.
-    private fun whoLeft(key: String, contacts: List<Contact>): String {
+    // A session that left: the computer it was connected from, as remembered; the account only if that was never known.
+    private fun whoLeft(key: String, client: String, contacts: List<Contact>): String {
         val user = key.split('|').getOrElse(1) { "" }
-        return ContactBook.nameFor(contacts, "", user) ?: user.substringAfter('\\')
+        return ContactBook.nameFor(contacts, client, user) ?: client.ifBlank { user.substringAfter('\\') }
     }
 }
 
@@ -111,6 +119,8 @@ object AppVisibility {
 object Notifier {
     private const val CHANNEL_ACTIVITY = "activity"
     private const val CHANNEL_PROBLEMS = "problems"
+    private const val CHANNEL_WATCH = "watch"
+    const val WATCH_ID = 7
     const val EXTRA_SERVER = "server"
 
     fun canPost(context: Context): Boolean =
@@ -152,6 +162,25 @@ object Notifier {
         }
     }
 
+    /** The permanent notification of [WatchService]. */
+    fun watching(context: Context): android.app.Notification {
+        createChannels(context)
+        val open = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, CHANNEL_WATCH)
+            .setSmallIcon(R.drawable.ic_stat_rconnect)
+            .setContentTitle(context.getString(R.string.watch_title))
+            .setContentText(context.getString(R.string.watch_text))
+            .setContentIntent(open)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
     private fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -159,5 +188,7 @@ object Notifier {
             NotificationChannel(CHANNEL_ACTIVITY, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_DEFAULT))
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_PROBLEMS, context.getString(R.string.channel_problems), NotificationManager.IMPORTANCE_HIGH))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_WATCH, context.getString(R.string.channel_watch), NotificationManager.IMPORTANCE_MIN))
     }
 }

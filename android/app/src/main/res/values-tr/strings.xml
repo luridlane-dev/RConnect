@@ -106,6 +106,10 @@
     <string name="about_version">Sürüm %1$s</string>
     <string name="about_open">GitHub üzerinde aç</string>
     <string name="note_left">%1$s ayrıldı</string>
+    <string name="notify_watch">Arka planda 30 saniyede bir kontrol et</string>
+    <string name="watch_title">Sunucularınız izleniyor</string>
+    <string name="watch_text">Açmak için dokunun</string>
+    <string name="channel_watch">Arka planda izleme</string>
     <string name="note_problem">Yanıt vermiyor</string>
     <string name="note_recovered">Yeniden yanıt veriyor</string>
     <string name="channel_activity">Kim bağlandı, kim ayrıldı</string>
@@ -129,6 +133,6 @@
     <string name="notify_connect">Biri bağlandığında</string>
     <string name="notify_leave">Biri ayrıldığında</string>
     <string name="notify_problem">Bir sunucu yanıt vermeyi bıraktığında</string>
-    <string name="notifications_help">Uygulama açıkken değişiklikler üstte görünür. Kapalıyken telefon sunucuları yaklaşık 15 dakikada bir kontrol eder (pil tasarrufunda daha seyrek).</string>
+    <string name="notifications_help">Değişiklikler Android bildirimi olarak gelir. Arka plan kontrolü açıkken telefon 30 saniyede bir bakar ve kalıcı bir bildirim gösterir; kapalıyken yaklaşık 15 dakikada bir bakar (pil tasarrufunda daha seyrek).</string>
     <string name="notifications_denied">Android bildirimlere izin vermedi. Telefonun ayarlarından bu uygulama için izin verebilirsiniz.</string>
 </resources>
