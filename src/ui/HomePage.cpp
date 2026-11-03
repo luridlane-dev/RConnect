@@ -8,6 +8,7 @@
 #include "UsagePage.h"
 #include "core/Autostart.h"
 #include "core/Language.h"
+#include "core/UpdateChecker.h"
 #include "model/ServerStore.h"
 
 #include <QActionGroup>
@@ -356,6 +357,12 @@ void HomePage::showSettingsMenu()
     autostart->setCheckable(true);
     autostart->setChecked(Autostart::isEnabled());
     connect(autostart, &QAction::toggled, this, [](bool on) { Autostart::setEnabled(on); });
+    menu.addSeparator();
+    menu.addAction(tr("Check for updates…"), this, &HomePage::updateCheckRequested);
+    QAction *autoUpdate = menu.addAction(tr("Check for updates automatically"));
+    autoUpdate->setCheckable(true);
+    autoUpdate->setChecked(UpdateChecker::autoCheckEnabled());
+    connect(autoUpdate, &QAction::toggled, this, [](bool on) { UpdateChecker::setAutoCheckEnabled(on); });
     menu.addSeparator();
     menu.addAction(tr("About RConnect"), this, &HomePage::showAbout);
     menu.exec(m_settings->mapToGlobal(QPoint(0, 0)) - QPoint(0, menu.sizeHint().height() + 4));

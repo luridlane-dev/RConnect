@@ -15,6 +15,8 @@
 #include "model/ServerStore.h"
 
 #include <QApplication>
+#include <QDesktopServices>
+#include <QDir>
 #include <QRegularExpression>
 #include <QSystemTrayIcon>
 #include <QFileDialog>
@@ -29,6 +31,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
@@ -102,8 +105,11 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     , m_marker(windowMarker)
     , m_store(new ServerStore(this))
     , m_monitor(new StatusMonitor(m_store, this))
+    , m_updater(new UpdateChecker(this))
 {
     m_home = new HomePage(m_store);
+    connect(m_home, &HomePage::updateCheckRequested, this, [this] { checkForUpdates(true); });
+    connect(m_updater, &UpdateChecker::checked, this, &Workspace::onUpdateChecked);
     connect(m_home->liveSessions(), &LiveSessionsPage::refreshRequested, m_monitor, &StatusMonitor::refreshAllNow);
     connect(m_home->liveSessions(), &LiveSessionsPage::messageRequested, this, &Workspace::sendMessage);
     connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
@@ -123,6 +129,14 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
             return;
         m_keepWatching = false;
         m_monitor->setActive(!minimized);
+    });
+    // An update found while minimized is offered once the window is back.
+    connect(m_main, &SessionWindow::minimizedChanged, this, [this](bool minimized) {
+        if (!minimized && m_pendingUpdate) {
+            const UpdateInfo info = *m_pendingUpdate;
+            m_pendingUpdate.reset();
+            QTimer::singleShot(0, this, [this, info] { offerUpdate(info); });
+        }
     });
 
     // Windows sign-out or shutdown
@@ -160,6 +174,16 @@ void Workspace::start(bool startMinimized)
     QThreadPool::globalInstance()->start([] { Threats::warmUp(); });
     m_monitor->setActive(true);
     m_monitor->resolveCountries();
+
+    // Look for a new release shortly after start, then every hour (at most once per 12 hours).
+    auto autoCheck = [this] {
+        if (UpdateChecker::autoCheckEnabled() && UpdateChecker::autoCheckDue())
+            checkForUpdates(false);
+    };
+    QTimer::singleShot(20000, this, autoCheck);
+    auto *updateTimer = new QTimer(this);
+    connect(updateTimer, &QTimer::timeout, this, autoCheck);
+    updateTimer->start(3600 * 1000);
 }
 
 SessionWindow *Workspace::activeSessionWindow() const
@@ -742,4 +766,115 @@ exit $ex
             }
         }, Qt::QueuedConnection);
     });
+}
+
+void Workspace::checkForUpdates(bool manual)
+{
+    if (m_updateChecking || m_updateDialogOpen)
+        return;
+    m_updateChecking = true;
+    m_manualCheck = manual;
+    m_updater->check();
+}
+
+void Workspace::onUpdateChecked(bool ok, bool available, const UpdateInfo &info, const QString &error)
+{
+    m_updateChecking = false;
+    if (!ok) {
+        if (m_manualCheck)
+            QMessageBox::warning(dialogParent(), tr("Check for updates"),
+                                 tr("Could not check for updates: %1").arg(error));
+        return;
+    }
+    if (!available) {
+        if (m_manualCheck)
+            QMessageBox::information(dialogParent(), tr("Check for updates"),
+                                     tr("RConnect %1 is the latest version.").arg(QApplication::applicationVersion()));
+        return;
+    }
+    if (!m_manualCheck) {
+        if (UpdateChecker::skippedVersion() == info.version)
+            return;
+        if (m_main->isMinimized()) {
+            m_pendingUpdate = info;
+            return;
+        }
+    }
+    offerUpdate(info);
+}
+
+void Workspace::offerUpdate(const UpdateInfo &info)
+{
+    if (m_updateDialogOpen)
+        return;
+    m_updateDialogOpen = true;
+    const bool canInstall = UpdateChecker::installedBySetup() && info.installerUrl.isValid();
+
+    QMessageBox box(QMessageBox::Information, tr("Update available"),
+                    tr("RConnect %1 is available. You have %2.").arg(info.version, QApplication::applicationVersion()),
+                    QMessageBox::NoButton, dialogParent());
+    if (!info.notes.isEmpty())
+        box.setDetailedText(info.notes);
+    QPushButton *update = box.addButton(canInstall ? tr("Update now") : tr("Open download page"), QMessageBox::AcceptRole);
+    box.addButton(tr("Later"), QMessageBox::RejectRole);
+    QPushButton *skip = box.addButton(tr("Skip this version"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(update);
+    box.exec();
+    m_updateDialogOpen = false;
+
+    if (box.clickedButton() == update) {
+        if (canInstall)
+            installUpdate(info);
+        else
+            QDesktopServices::openUrl(info.pageUrl);
+    } else if (box.clickedButton() == skip) {
+        UpdateChecker::setSkippedVersion(info.version);
+    }
+}
+
+void Workspace::installUpdate(const UpdateInfo &info)
+{
+    bool anyConnected = false;
+    for (RdpSession *s : std::as_const(m_sessions))
+        anyConnected |= s->state() == RdpSession::Connected;
+    if (anyConnected
+        && !confirm(dialogParent(), tr("Update"),
+                    tr("Installing the update closes RConnect and all open connections. Continue?"), false))
+        return;
+
+    auto *progress = new QProgressDialog(tr("Downloading RConnect %1…").arg(info.version), tr("Cancel"), 0, 0,
+                                         dialogParent());
+    progress->setWindowTitle(tr("Update"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setMinimumDuration(0);
+    progress->setAutoClose(false);
+    progress->setAutoReset(false);
+    progress->setAttribute(Qt::WA_DeleteOnClose);
+    connect(progress, &QProgressDialog::canceled, m_updater, &UpdateChecker::cancelDownload);
+    connect(m_updater, &UpdateChecker::downloadProgress, progress, [progress](qint64 received, qint64 total) {
+        if (total <= 0)
+            return;
+        progress->setMaximum(int(total / 1024));
+        progress->setValue(int(received / 1024));
+    });
+    connect(m_updater, &UpdateChecker::downloadFailed, progress, [this, progress](const QString &error) {
+        const bool cancelled = progress->wasCanceled();
+        progress->close();
+        if (cancelled)
+            return;
+        QMessageBox::warning(dialogParent(), tr("Update"), tr("The update could not be downloaded: %1").arg(error));
+    });
+    connect(m_updater, &UpdateChecker::downloaded, progress, [this, progress](const QString &path) {
+        progress->close();
+        // The installer closes this copy, installs over it and starts the new one.
+        if (QProcess::startDetached(path, {QStringLiteral("/SILENT"), QStringLiteral("/CLOSEAPPLICATIONS")})) {
+            quit(false);
+        } else {
+            QMessageBox::warning(dialogParent(), tr("Update"),
+                                 tr("The installer could not be started. You can run it yourself:\n%1")
+                                     .arg(QDir::toNativeSeparators(path)));
+        }
+    });
+    progress->show();
+    m_updater->download(info);
 }

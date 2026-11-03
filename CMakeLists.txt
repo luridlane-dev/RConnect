@@ -19,7 +19,7 @@ endif()
 option(RCONNECT_DEPLOY_QT "Run windeployqt after each build" ON)
 
 # ActiveQt needs the MSVC kit.
-find_package(Qt6 REQUIRED COMPONENTS Widgets AxContainer Sql LinguistTools)
+find_package(Qt6 REQUIRED COMPONENTS Widgets AxContainer Sql Network LinguistTools)
 
 configure_file(src/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/version.txt ${PROJECT_VERSION})
@@ -38,7 +38,8 @@ add_executable(RConnect WIN32
     src/core/ServerImport.h      src/core/ServerImport.cpp
     src/core/StatusMonitor.h     src/core/StatusMonitor.cpp
     src/core/Threats.h           src/core/Threats.cpp
-    src/core/UsageDiag.h         src/core/UsageDiag.cpp
+    src/core/UpdateChecker.h     src/core/UpdateChecker.cpp
+    src/core/UsageDiag.h        src/core/UsageDiag.cpp
     src/core/UsageEngine.h       src/core/UsageEngine.cpp
     src/core/UsageLog.h          src/core/UsageLog.cpp
     src/core/WinRm.h             src/core/WinRm.cpp
@@ -65,7 +66,7 @@ target_compile_definitions(RConnect PRIVATE
     QT_NO_FOREACH
     RCONNECT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(RConnect PRIVATE
-    Qt6::Widgets Qt6::AxContainer Qt6::Sql
+    Qt6::Widgets Qt6::AxContainer Qt6::Sql Qt6::Network
     bcrypt crypt32 dwmapi ole32 oleaut32 secur32 ws2_32)
 
 if(MSVC)

@@ -25,6 +25,9 @@ public:
     LiveSessionsPage *liveSessions() const { return m_live; }
     AccessLogPage *accessLog() const { return m_log; }
 
+signals:
+    void updateCheckRequested();
+
 protected:
     void changeEvent(QEvent *e) override;
     void showEvent(QShowEvent *e) override;

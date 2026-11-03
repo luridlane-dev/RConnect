@@ -1,5 +1,6 @@
 #pragma once
 #include "core/AccessLog.h"
+#include "core/UpdateChecker.h"
 #include "rdp/RdpSession.h"
 
 #include <QHash>
@@ -7,6 +8,7 @@
 #include <QObject>
 #include <QSet>
 
+#include <optional>
 #include <string>
 
 class HomePage;
@@ -61,9 +63,20 @@ private:
     void showAlert(const AccessRecord &alert);
     void sendMessage(const QString &serverId, int sessionId, const QString &user);
 
+    // manual: started from the Settings menu, so it also reports "up to date" and errors.
+    void checkForUpdates(bool manual);
+    void onUpdateChecked(bool ok, bool available, const UpdateInfo &info, const QString &error);
+    void offerUpdate(const UpdateInfo &info);
+    void installUpdate(const UpdateInfo &info);
+
     std::wstring m_marker;
     ServerStore *m_store;
     StatusMonitor *m_monitor;
+    UpdateChecker *m_updater;
+    bool m_updateChecking = false;
+    bool m_manualCheck = false;
+    bool m_updateDialogOpen = false;
+    std::optional<UpdateInfo> m_pendingUpdate; // found while the window was minimized
     HomePage *m_home = nullptr;
     SessionWindow *m_main = nullptr;
     QList<SessionWindow *> m_windows;

@@ -97,10 +97,13 @@ set /p VERSION=<"%BUILD%\version.txt"
 echo == Collecting files
 mkdir "%OUT%\platforms" || goto :fail
 copy /y "%BUILD%\RConnect.exe" "%OUT%\" >nul || goto :fail
-for %%d in (Qt6Core Qt6Gui Qt6Widgets Qt6Sql) do (
+for %%d in (Qt6Core Qt6Gui Qt6Widgets Qt6Sql Qt6Network) do (
     copy /y "%QT_DIR%\bin\%%d.dll" "%OUT%\" >nul || goto :fail
 )
 copy /y "%QT_DIR%\plugins\platforms\qwindows.dll" "%OUT%\platforms\" >nul || goto :fail
+rem HTTPS for the update check (Windows' own TLS)
+mkdir "%OUT%\tls" || goto :fail
+copy /y "%QT_DIR%\plugins\tls\qschannelbackend.dll" "%OUT%\tls\" >nul || goto :fail
 rem Server import reads the old program's SQLite database
 mkdir "%OUT%\sqldrivers" || goto :fail
 copy /y "%QT_DIR%\plugins\sqldrivers\qsqlite.dll" "%OUT%\sqldrivers\" >nul || goto :fail

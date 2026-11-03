@@ -159,6 +159,19 @@ Every run raises the patch number in the `VERSION` file (1.1.0 -> 1.1.1); edit t
 new major or minor version. Environment variables: `KEEP_VERSION=1` (rebuild without raising it), `QT_DIR` (if Qt is not in `C:\Qt\6.11.1\msvc2022_64`), `SIGN_CN` (another
 certificate name), `SKIP_SIGN=1` (build unsigned).
 
+### Releases and updates
+
+Pushing a changed `VERSION` file to `main` runs `.github/workflows/release.yml`: it builds the zip
+and the installer on GitHub, and publishes release `v<version>` (skipped if that release exists).
+The run can also be started by hand from the Actions tab. To sign the files in CI, add the
+repository secrets `SIGN_PFX_BASE64` (the `.pfx`, base64 encoded) and `SIGN_PFX_PASSWORD`;
+without them the build is unsigned.
+
+RConnect looks for a newer release about 20 seconds after it starts and then every 12 hours
+(Settings > Check for updates automatically). Settings > Check for updates... checks right away.
+If RConnect was installed with the installer, "Update now" downloads the new installer, verifies
+its SHA-256 and runs it; a portable copy opens the release page instead.
+
 Settings > Start with Windows opens RConnect minimized at sign-in and keeps watching the servers;
 the installer offers the same as an option.
 

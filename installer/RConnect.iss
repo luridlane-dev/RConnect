@@ -67,6 +67,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\RConnect.exe"; Description: "{cm:LaunchProgram,RConnect}"; Flags: nowait postinstall skipifsilent
+; The in-app updater runs the installer with /SILENT; start the new version afterwards.
+Filename: "{app}\RConnect.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 ; The app can be running from the Run entry.

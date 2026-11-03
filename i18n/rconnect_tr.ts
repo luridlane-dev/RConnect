@@ -421,6 +421,14 @@
         <source>Time on servers</source>
         <translation>Sunucuda geçen süre</translation>
     </message>
+    <message>
+        <source>Check for updates…</source>
+        <translation>Güncellemeleri denetle…</translation>
+    </message>
+    <message>
+        <source>Check for updates automatically</source>
+        <translation>Güncellemeleri otomatik denetle</translation>
+    </message>
 </context>
 <context>
     <name>LiveSessionsPage</name>
@@ -1352,6 +1360,87 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
     <message>
         <source>Refresh</source>
         <translation>Yenile</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Güncelleme denetimi</translation>
+    </message>
+    <message>
+        <source>Could not check for updates: %1</source>
+        <translation>Güncellemeler denetlenemedi: %1</translation>
+    </message>
+    <message>
+        <source>RConnect %1 is the latest version.</source>
+        <translation>RConnect %1 en son sürüm.</translation>
+    </message>
+    <message>
+        <source>Update available</source>
+        <translation>Güncelleme var</translation>
+    </message>
+    <message>
+        <source>RConnect %1 is available. You have %2.</source>
+        <translation>RConnect %1 yayında. Sizdeki sürüm: %2.</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>Şimdi güncelle</translation>
+    </message>
+    <message>
+        <source>Open download page</source>
+        <translation>İndirme sayfasını aç</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Sonra</translation>
+    </message>
+    <message>
+        <source>Skip this version</source>
+        <translation>Bu sürümü atla</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>Güncelleme</translation>
+    </message>
+    <message>
+        <source>Installing the update closes RConnect and all open connections. Continue?</source>
+        <translation>Güncelleme kurulurken RConnect ve tüm açık bağlantılar kapanır. Devam edilsin mi?</translation>
+    </message>
+    <message>
+        <source>Downloading RConnect %1…</source>
+        <translation>RConnect %1 indiriliyor…</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>İptal</translation>
+    </message>
+    <message>
+        <source>The update could not be downloaded: %1</source>
+        <translation>Güncelleme indirilemedi: %1</translation>
+    </message>
+    <message>
+        <source>The installer could not be started. You can run it yourself:
+%1</source>
+        <translation>Kurulum başlatılamadı. Kendiniz çalıştırabilirsiniz:
+%1</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateChecker</name>
+    <message>
+        <source>The server sent an unexpected answer.</source>
+        <translation>Sunucu beklenmeyen bir yanıt gönderdi.</translation>
+    </message>
+    <message>
+        <source>This release has no installer.</source>
+        <translation>Bu sürümde kurulum dosyası yok.</translation>
+    </message>
+    <message>
+        <source>The download was cancelled.</source>
+        <translation>İndirme iptal edildi.</translation>
+    </message>
+    <message>
+        <source>The downloaded file does not match its checksum.</source>
+        <translation>İndirilen dosya sağlama toplamıyla eşleşmiyor.</translation>
     </message>
 </context>
 </TS>
