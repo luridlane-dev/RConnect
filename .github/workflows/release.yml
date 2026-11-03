@@ -68,7 +68,10 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # The default package list includes "tools", which the current cmdline-tools no longer ship.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Keystore
         shell: bash

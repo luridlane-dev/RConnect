@@ -30,7 +30,9 @@ ASSETS = ROOT / "src" / "assets"
 
 
 def download(url):
-    with urllib.request.urlopen(url, timeout=60) as r:
+    # download.db-ip.com answers 403 to the default Python-urllib user agent.
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 RConnect"})
+    with urllib.request.urlopen(req, timeout=60) as r:
         return r.read()
 
 
