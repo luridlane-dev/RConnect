@@ -27,6 +27,9 @@
 
 #include <cmath>
 
+#include <windows.h>
+#include <shobjidl.h>
+
 namespace {
 
 bool s_macButtons = false;
@@ -83,6 +86,24 @@ QColor sessionColor(RdpSession::State s)
     case RdpSession::Disconnected: return Theme::kRed;
     default:                       return Theme::kLabelSecondary;
     }
+}
+
+// The taskbar steps behind a full-screen window only when it notices one; it misses a window that is already in
+// front when it goes full screen again, and stays on top of it. Telling it directly works every time.
+void markFullscreen(QWidget *w, bool full)
+{
+    static ITaskbarList2 *taskbar = [] {
+        ITaskbarList2 *t = nullptr;
+        if (FAILED(CoCreateInstance(__uuidof(TaskbarList), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&t)))
+            || FAILED(t->HrInit())) {
+            if (t)
+                t->Release();
+            t = nullptr;
+        }
+        return t;
+    }();
+    if (taskbar)
+        taskbar->MarkFullscreenWindow(reinterpret_cast<HWND>(w->winId()), full);
 }
 
 } // namespace
@@ -542,6 +563,16 @@ void SessionWindow::changeEvent(QEvent *e)
 {
     QWidget::changeEvent(e);
     if (e->type() == QEvent::WindowStateChange) {
+        // Full screen is this window's maximised state: the title bar's maximise button, a double click on the
+        // title bar, Win+Up and a snap to the top of the screen all go back to full screen.
+        if (isMaximized() && isVisible()) {
+            QTimer::singleShot(0, this, [this] {
+                if (isMaximized())
+                    showFullScreen();
+            });
+        }
+        if (!isMinimized())
+            markFullscreen(this, isFullScreen());
         applyChrome();
         emit minimizedChanged(isMinimized());
     } else if (e->type() == QEvent::LanguageChange) {
