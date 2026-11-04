@@ -43,6 +43,7 @@ inline QColor kBlueText(0x64, 0xa8, 0xff);
 inline QColor kGreen(0x30, 0xd1, 0x58);
 inline QColor kOrange(0xff, 0x9f, 0x0a);
 inline QColor kRed(0xff, 0x45, 0x3a);
+inline QColor kBusy(0xff, 0x5a, 0x4d); // a server somebody is using: stands out from every other state
 inline QColor kTabPill(255, 255, 255, 28);
 inline QColor kBarOff(255, 255, 255, 46);
 inline QColor kPopupFill(0x14, 0x14, 0x17);

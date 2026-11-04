@@ -31,7 +31,7 @@ inline QColor statusColor(const ServerStatus &s)
     switch (s.state) {
     case ServerStatus::Online:
         if (s.occupancy == ServerStatus::Busy)
-            return Theme::kOrange;
+            return Theme::kBusy;
         return s.mine ? Theme::kBlue : Theme::kGreen;
     case ServerStatus::Offline:  return Theme::kRed;
     default:                     return Theme::kLabelSecondary;

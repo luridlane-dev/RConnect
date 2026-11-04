@@ -160,13 +160,18 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     const QRectF flat = QRectF(cardRect).adjusted(0.5, 0.5, -0.5, -0.5);
     p->fillRect(flat, hover ? Theme::kCardHover : Theme::kCard);
     if (busyCard || freeCard) {
-        QColor wash = busyCard ? Theme::kOrange : Theme::kGreen;
-        wash.setAlpha((busyCard ? 20 : 9) + (hover ? 6 : 0));
+        QColor wash = busyCard ? Theme::kBusy : Theme::kGreen;
+        wash.setAlpha((busyCard ? 34 : 9) + (hover ? 6 : 0));
         p->fillRect(flat, wash);
     }
     p->setBrush(Qt::NoBrush);
-    p->setPen(QPen(open ? Theme::kBlue : (hover ? Theme::kSeparatorStrong : Theme::kSeparator), 1.0));
+    QColor border = open ? Theme::kBlue : (hover ? Theme::kSeparatorStrong : Theme::kSeparator);
+    if (busyCard && !open)
+        border = Theme::kBusy.darker(hover ? 100 : 130);
+    p->setPen(QPen(border, 1.0));
     p->drawRect(flat);
+    if (busyCard)
+        p->fillRect(QRectF(flat.left(), flat.top(), 4, flat.height()), Theme::kBusy);
     if (offlineCard)
         p->setOpacity(0.55);
 

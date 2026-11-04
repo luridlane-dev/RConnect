@@ -720,6 +720,10 @@
         <translation>Sunucuya ulaşılıyor…</translation>
     </message>
     <message>
+        <source>The connection was lost. Trying again (%1/3)…</source>
+        <translation>Bağlantı koptu. Yeniden deneniyor (%1/3)…</translation>
+    </message>
+    <message>
         <source>Sending files needs “Share clipboard” (edit the server to turn it on).</source>
         <translation>Dosya göndermek için “Panoyu paylaş” gerekir (sunucuyu düzenleyip açın).</translation>
     </message>

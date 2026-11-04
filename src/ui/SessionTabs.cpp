@@ -153,6 +153,9 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
         p.setPen(Qt::NoPen);
         p.setBrush(Theme::kTabPill);
         p.drawRect(m_current.adjusted(2, 4, -2, -4));
+        // An accent line under it, so the active tab is clear at a glance.
+        p.setBrush(Theme::kBlue);
+        p.drawRect(QRectF(m_current.left() + 2, m_current.bottom() - 6, m_current.width() - 4, 2));
     }
 
     QTabBar::paintEvent(e);

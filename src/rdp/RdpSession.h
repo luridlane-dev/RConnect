@@ -57,6 +57,9 @@ private slots:
 
 private:
     bool createControl();
+    // A control that has been connected once is never reused: a dropped one can stall on the next Connect().
+    void replaceControl();
+    bool worthRetrying(bool wasConnected) const;
     void applySettings();
     // The control's COM events don't reach Qt, so Connected is polled (0 off, 1 on, 2 connecting).
     void poll();
@@ -83,6 +86,8 @@ private:
     bool m_controlMissing = false;
     int m_lastReason = 0;
     int m_lastExtReason = 0;
+    int m_retryAttempt = 0; // automatic reconnects since the last good connection
+    QTimer m_retryTimer;
     QSize m_syncedSize; // last size sent to the server
     QElapsedTimer m_connectClock;
     qint64 m_lastHeartbeat = 0;

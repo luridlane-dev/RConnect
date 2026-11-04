@@ -265,6 +265,11 @@ RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
     m_resizeTimer.setSingleShot(true);
     m_resizeTimer.setInterval(250);
     connect(&m_resizeTimer, &QTimer::timeout, this, &RdpSession::syncDisplaySize);
+    m_retryTimer.setSingleShot(true);
+    connect(&m_retryTimer, &QTimer::timeout, this, [this] {
+        if (!m_closing && m_state == Connecting)
+            start();
+    });
 }
 
 QSize RdpSession::remoteSize() const
@@ -456,6 +461,47 @@ bool RdpSession::createControl()
     return true;
 }
 
+void RdpSession::replaceControl()
+{
+    QAxWidget *old = m_ax;
+    old->disconnect(this);
+    old->hide();
+    if (old->property("Connected").toInt() != 0)
+        old->dynamicCall("Disconnect()");
+    m_stack->removeWidget(old);
+    old->deleteLater();
+
+    m_ax = new QAxWidget(this);
+    m_stack->insertWidget(0, m_ax);
+    m_ax->show();
+    m_overlay->raise();
+    m_stack->activate();
+    m_syncedSize = {};
+    log(QStringLiteral("control replaced"));
+}
+
+bool RdpSession::worthRetrying(bool wasConnected) const
+{
+    constexpr int kMaxRetries = 3;
+    if (m_retryAttempt >= kMaxRetries || (!wasConnected && m_retryAttempt == 0))
+        return false;
+    // Someone ended the session on purpose, or retrying cannot help.
+    switch (m_lastExtReason) {
+    case kExtLogoff:
+    case kExtIdleTimeout:
+    case kExtLogonTimeout:
+    case kExtReplacedByOther:
+    case kExtServerDenied:
+    case kExtInsufficientPrivileges:
+        return false;
+    default:
+        break;
+    }
+    if (m_lastReason == 0 && m_lastExtReason == 0)
+        return false; // closed by the server, perhaps because another computer connected
+    return m_lastReason != 1 && m_lastReason != 2 && m_lastReason != 3 && m_lastReason != 260 && m_lastReason != 1798;
+}
+
 void RdpSession::applySettings()
 {
     const QSize fixed = m_profile.fixedResolution();
@@ -488,8 +534,9 @@ void RdpSession::applySettings()
         adv->setProperty("AudioCaptureRedirectionMode", false);
         adv->setProperty("EnableCredSspSupport", true);
         adv->setProperty("AuthenticationLevel", m_profile.ignoreCertWarnings ? 0 : 2);
-        adv->setProperty("EnableAutoReconnect", true);
-        adv->setProperty("MaxReconnectAttempts", 5);
+        // Off: the control's own retry shows a Windows dialog and holds the control for a long time.
+        // RdpSession reconnects with a fresh control instead (see handleDisconnected).
+        adv->setProperty("EnableAutoReconnect", false);
         adv->setProperty("BitmapPeristence", 1);
         adv->setProperty("Compress", 1);
         // No wallpaper, full-window drag, menu animations or cursor shadow.
@@ -553,8 +600,12 @@ void RdpSession::start()
     m_lastReason = m_lastExtReason = 0;
     m_lastPolled = -1;
     m_lastHeartbeat = 0;
+    m_refreshing = false;
+    m_retryTimer.stop();
     m_connectClock.start();
     log(QStringLiteral("start (log: %1)").arg(Log::path()));
+    if (!m_ax->isNull())
+        replaceControl();
     if (!createControl()) {
         m_controlMissing = true;
         setState(Failed);
@@ -582,6 +633,7 @@ void RdpSession::reconnect()
 {
     if (m_state == Connecting || m_state == Connected)
         return;
+    m_retryAttempt = 0;
     start();
 }
 
@@ -600,6 +652,7 @@ void RdpSession::shutdown()
 {
     m_closing = true;
     m_poll.stop();
+    m_retryTimer.stop();
     hide();
     if (m_ax->isNull() || m_state == Idle || m_state == Disconnected || m_state == Replaced || m_state == Failed) {
         deleteLater();
@@ -641,6 +694,7 @@ void RdpSession::onLoginComplete()
 {
     log(QStringLiteral("login complete"));
     m_everConnected = true;
+    m_retryAttempt = 0;
     m_overlay->hide();
     setState(Connected);
     focusRemote();
@@ -677,6 +731,18 @@ void RdpSession::handleDisconnected(int reason)
     m_lastExtReason = m_ax->property("ExtendedDisconnectReason").toInt();
     log(QStringLiteral("disconnected reason=%1 extReason=%2 everConnected=%3")
             .arg(m_lastReason).arg(m_lastExtReason).arg(m_everConnected));
+    const bool wasConnected = m_state == Connected;
+    if (worthRetrying(wasConnected)) {
+        // A dropped link: look again shortly with a fresh control, without a dialog.
+        static const int delays[] = {1500, 4000, 8000};
+        const int delay = delays[m_retryAttempt];
+        ++m_retryAttempt;
+        log(QStringLiteral("connection lost; automatic reconnect %1 in %2 ms").arg(m_retryAttempt).arg(delay));
+        setState(Connecting);
+        showOverlay();
+        m_retryTimer.start(delay);
+        return;
+    }
     if (m_lastExtReason == kExtReplacedByOther)
         setState(Replaced);
     else
@@ -694,8 +760,10 @@ void RdpSession::showOverlay()
     } else if (m_state == Connecting || m_state == Idle) {
         // The server answered (transport is up): now it signs in.
         m_overlay->setTexts(tr("Connecting to “%1”…").arg(m_profile.name),
-                            m_everConnected ? tr("Signing in…") : tr("Reaching the server…"), false, tr("Cancel"),
-                            SessionOverlay::Busy);
+                            m_retryAttempt > 0 ? tr("The connection was lost. Trying again (%1/3)…").arg(m_retryAttempt)
+                            : m_everConnected  ? tr("Signing in…")
+                                               : tr("Reaching the server…"),
+                            false, tr("Cancel"), SessionOverlay::Busy);
     } else if (m_state == Replaced) {
         m_overlay->setTexts(tr("Another computer connected"),
                             tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")

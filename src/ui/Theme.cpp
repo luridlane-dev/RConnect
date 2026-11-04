@@ -191,7 +191,7 @@ Palette darkPalette()
         {"button", "rgba(255, 255, 255, 0.07)"}, {"hover", "rgba(255, 255, 255, 0.12)"},
         {"hoverSoft", "rgba(255, 255, 255, 0.06)"}, {"press", "rgba(255, 255, 255, 0.05)"},
         {"field", "rgba(255, 255, 255, 0.06)"}, {"border", "rgba(255, 255, 255, 0.10)"},
-        {"tabPill", "rgba(255, 255, 255, 0.10)"},
+        {"tabPill", "rgba(255, 255, 255, 0.23)"},
         {"segTrack", "rgba(255, 255, 255, 0.06)"}, {"segOn", "rgba(255, 255, 255, 0.14)"},
         {"scroll", "rgba(255, 255, 255, 0.20)"}, {"scrollHover", "rgba(255, 255, 255, 0.40)"},
         {"solid", "#0b0b0b"}, {"solidBorder", "#2a2a2a"},
@@ -220,7 +220,7 @@ Palette lightPalette()
         {"button", "#ffffff"}, {"hover", "rgba(0, 0, 0, 0.06)"},
         {"hoverSoft", "rgba(0, 0, 0, 0.04)"}, {"press", "rgba(0, 0, 0, 0.10)"},
         {"field", "#ffffff"}, {"border", "rgba(0, 0, 0, 0.10)"},
-        {"tabPill", "rgba(0, 0, 0, 0.07)"},
+        {"tabPill", "rgba(0, 0, 0, 0.13)"},
         {"segTrack", "rgba(0, 0, 0, 0.06)"}, {"segOn", "#ffffff"},
         {"scroll", "rgba(0, 0, 0, 0.22)"}, {"scrollHover", "rgba(0, 0, 0, 0.42)"},
         {"solid", "#ffffff"}, {"solidBorder", "#d9d9d9"},
@@ -267,7 +267,8 @@ void setColours(bool dark)
         kGreen = QColor(0x6a, 0xa9, 0x7d);
         kOrange = QColor(0xc8, 0x97, 0x5a);
         kRed = QColor(0xc4, 0x67, 0x5f);
-        kTabPill = QColor(255, 255, 255, 26);
+        kBusy = QColor(0xff, 0x5a, 0x4d);
+        kTabPill = QColor(255, 255, 255, 58);
         kBarOff = QColor(255, 255, 255, 40);
         kPopupFill = QColor(0x0b, 0x0b, 0x0b);
         kPopupBorder = QColor(0x2a, 0x2a, 0x2a);
@@ -287,7 +288,8 @@ void setColours(bool dark)
         kGreen = QColor(0x3f, 0x8a, 0x56);
         kOrange = QColor(0xa9, 0x70, 0x2a);
         kRed = QColor(0xb5, 0x48, 0x3f);
-        kTabPill = QColor(0, 0, 0, 18);
+        kBusy = QColor(0xd9, 0x3a, 0x2e);
+        kTabPill = QColor(0, 0, 0, 34);
         kBarOff = QColor(0, 0, 0, 36);
         kPopupFill = QColor(0xff, 0xff, 0xff);
         kPopupBorder = QColor(0xd9, 0xd9, 0xd9);
