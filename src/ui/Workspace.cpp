@@ -71,7 +71,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(QPen(Theme::kPopupBorder, 1));
         p.setBrush(Theme::kPopupFill);
-        p.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
     }
 };
 
@@ -131,12 +131,8 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
 
     m_main = createWindow();
     SetPropW(reinterpret_cast<HWND>(m_main->winId()), m_marker.c_str(), HANDLE(1));
-    connect(m_main, &SessionWindow::minimizedChanged, this, [this](bool minimized) {
-        if (minimized && m_keepWatching)
-            return;
-        m_keepWatching = false;
-        m_monitor->setActive(!minimized);
-    });
+    // Checking goes on while the window is minimized (or in the tray): the history and the time on servers are only
+    // as complete as the checks, and a window that stays minimized for hours must not leave a gap in them.
     // An update found while minimized is offered once the window is back.
     connect(m_main, &SessionWindow::minimizedChanged, this, [this](bool minimized) {
         if (!minimized && m_pendingUpdate) {
@@ -172,7 +168,6 @@ void Workspace::start(bool startMinimized)
 {
     m_store->load();
     m_main->restoreGeometry(QSettings().value(QStringLiteral("geometry")).toByteArray());
-    m_keepWatching = startMinimized;
     if (startMinimized)
         m_main->showMinimized();
     else
@@ -508,7 +503,7 @@ void Workspace::showServerPopup(SessionWindow *w)
 
 void Workspace::addServer()
 {
-    ServerEditDialog dlg(ServerProfile{}, true, m_store->usedColors(), dialogParent());
+    ServerEditDialog dlg(ServerProfile{}, true, m_store->groups(), dialogParent());
     if (dlg.exec() != QDialog::Accepted)
         return;
     const ServerProfile added = dlg.profile();
@@ -520,8 +515,8 @@ void Workspace::addServer()
 
 void Workspace::audit(const ServerProfile &p, const QString &event, const QString &detail)
 {
-    // Adding a server is always recorded; the rest only with detailed logging.
-    if (Log::detailed() || event == QLatin1String("ServerAdded"))
+    // Adding a server and every connection RConnect opens or closes are always recorded; the rest only with detailed logging.
+    if (Log::detailed() || event == QLatin1String("ServerAdded") || event == QLatin1String("Closed"))
         AccessLog::note(p, event, p.displayUser(), detail);
 }
 
@@ -554,37 +549,41 @@ void Workspace::importServers()
     }
 
     // Keys of what is already in the list, so importing twice does not duplicate servers.
-    QSet<QString> known;
+    QHash<QString, ServerProfile> known;
     const auto keyOf = [](const ServerProfile &p) {
-        return QStringLiteral("%1:%2|%3").arg(p.host.toLower()).arg(p.port).arg(p.user.toLower());
+        return QStringLiteral("%1:%2|%3").arg(p.host.trimmed().toLower()).arg(p.port).arg(p.user.trimmed().toLower());
     };
     for (const ServerProfile &p : m_store->all())
-        known.insert(keyOf(p));
+        known.insert(keyOf(p), p);
 
-    static const QStringList palette = {QStringLiteral("#0a84ff"), QStringLiteral("#30d158"), QStringLiteral("#ff9f0a"),
-                                        QStringLiteral("#ff453a"), QStringLiteral("#bf5af2"), QStringLiteral("#40c8e0"),
-                                        QStringLiteral("#8e8e93"), QStringLiteral("#ac8e68")};
-    int added = 0, skipped = 0;
+    int added = 0, skipped = res.unusable, filled = 0;
     for (ServerProfile p : res.servers) {
         const QString key = keyOf(p);
         if (known.contains(key)) {
+            // Already in the list: it only takes the password it is missing.
+            ServerProfile have = known.value(key);
+            if (have.password.isEmpty() && !p.password.isEmpty()) {
+                have.password = p.password;
+                have.savePassword = true;
+                m_store->update(have);
+                known.insert(key, have);
+                ++filled;
+            }
             ++skipped;
             continue;
         }
-        known.insert(key);
-        if (p.color.isEmpty())
-            p.color = palette.at(added % palette.size());
+        known.insert(key, p);
         m_store->add(p);
         ++added;
     }
-    Log::write(QStringLiteral("[import] %1 added, %2 skipped").arg(added).arg(skipped));
+    Log::write(QStringLiteral("[import] %1 added, %2 skipped, %3 got a password").arg(added).arg(skipped).arg(filled));
     audit(ServerProfile{}, QStringLiteral("Import"), tr("%1 added, %2 skipped").arg(added).arg(skipped));
-    if (added > 0) {
+    if (added > 0 || filled > 0) {
         m_monitor->refreshAll();
         m_monitor->resolveCountries();
     }
     QMessageBox::information(dialogParent(), tr("Import servers"),
-                             skipped > 0 ? tr("%1 servers imported, %2 already in the list.").arg(added).arg(skipped)
+                             skipped > 0 ? tr("%1 servers imported, %2 already in the list or without an address.").arg(added).arg(skipped)
                                          : tr("%1 servers imported.").arg(added));
 }
 
@@ -634,7 +633,7 @@ void Workspace::editServer(const QString &id)
     const ServerProfile cur = m_store->profileById(id);
     if (!cur.isValid())
         return;
-    ServerEditDialog dlg(cur, false, m_store->usedColors(), dialogParent());
+    ServerEditDialog dlg(cur, false, m_store->groups(), dialogParent());
     if (dlg.exec() != QDialog::Accepted)
         return;
     const ServerProfile updated = dlg.profile();
@@ -692,6 +691,36 @@ void Workspace::onSessionState(RdpSession::State state)
     }
     if (state == RdpSession::Connected || state == RdpSession::Replaced)
         m_monitor->refresh(s->serverId());
+    if (state == RdpSession::Replaced || state == RdpSession::Disconnected)
+        explainEnd(s);
+}
+
+// The server does not always say why it ended a connection, and "another computer connected" is only what the
+// control reports. Ask the server who is connected right now and tell that, instead of leaving a guess on screen.
+void Workspace::explainEnd(RdpSession *s)
+{
+    const ServerProfile p = m_store->profileById(s->serverId());
+    if (!p.isValid() || !StatusMonitor::canCheckSessions(p))
+        return;
+    const RdpSession::State ended = s->state();
+    QPointer<RdpSession> session = s;
+    m_monitor->checkSessions(p, [this, session, ended, name = p.name](const ServerStatus &status) {
+        // Only if the tab is still showing that same ending.
+        if (m_quitting || !session || session->state() != ended || status.occupancy == ServerStatus::OccupancyError)
+            return;
+        if (status.occupancy == ServerStatus::Busy) {
+            QStringList who;
+            for (const RemoteSession &r : status.others)
+                who << tr("%1 (user %2, %3)").arg(sessionOwner(r), r.user, idleText(r.idleMinutes));
+            session->setServerView({}, tr("Checked just now. Connected: %1").arg(who.join(QStringLiteral(", "))));
+        } else if (ended == RdpSession::Replaced) {
+            session->setServerView(tr("Disconnected by the server"),
+                                   tr("Checked just now: nobody else is connected. The server ended this connection "
+                                      "(a time limit, a restart or a network drop can do this)."));
+        } else {
+            session->setServerView({}, tr("Checked just now: nobody else is connected."));
+        }
+    });
 }
 
 void Workspace::refreshOpenMarkers()

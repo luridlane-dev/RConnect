@@ -53,8 +53,10 @@ add_executable(RConnect WIN32
     src/ui/HomePage.h            src/ui/HomePage.cpp
     src/ui/LiveSessionsPage.h    src/ui/LiveSessionsPage.cpp
     src/ui/ServerDelegate.h      src/ui/ServerDelegate.cpp
+    src/ui/SettingsDialog.h      src/ui/SettingsDialog.cpp
     src/ui/ServerEditDialog.h    src/ui/ServerEditDialog.cpp
     src/ui/ServerPanel.h         src/ui/ServerPanel.cpp
+    src/ui/ServerSectionModel.h  src/ui/ServerSectionModel.cpp
     src/ui/SessionTabs.h         src/ui/SessionTabs.cpp
     src/ui/SessionWindow.h       src/ui/SessionWindow.cpp
     src/ui/UsagePage.h           src/ui/UsagePage.cpp

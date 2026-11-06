@@ -8,6 +8,8 @@
 #include "core/GeoIp.h"
 #include "core/Threats.h"
 
+#include <QAbstractTableModel>
+#include <QBrush>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QApplication>
@@ -29,12 +31,15 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSortFilterProxyModel>
-#include <QStandardItemModel>
 #include <QTableView>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <array>
+#include <functional>
+#include <vector>
 
 namespace {
 
@@ -127,72 +132,197 @@ QString csvField(QString text)
 
 } // namespace
 
-// Filters by category, server, period and by text in any column.
-class AccessProxy : public QSortFilterProxyModel {
+namespace {
+QDateTime parseUtc(const QString &timeUtc); // defined with the helpers below
+} // namespace
+
+// The rows of the table are indexes into the page's list, filtered and sorted. Nothing is copied into items: the
+// text of a row is made when it is first painted (or searched, or sorted on), so a reload or a filter change costs
+// a few passes over the list instead of hundreds of thousands of objects on the GUI thread.
+class AccessTableModel : public QAbstractTableModel {
 public:
-    using QSortFilterProxyModel::QSortFilterProxyModel;
+    using Cells = std::array<QString, ColumnCount>;
+    using Builder = std::function<Cells(const AccessLine &)>;
 
-    void setCategory(int category)
+    AccessTableModel(Builder builder, QObject *parent)
+        : QAbstractTableModel(parent)
+        , m_builder(std::move(builder))
     {
-        beginFilterChange();
-        m_category = category;
-        endFilterChange();
+        m_refilter.setSingleShot(true);
+        m_refilter.setInterval(0);
+        connect(&m_refilter, &QTimer::timeout, this, [this] { refilter(); });
     }
 
-    void setServer(const QString &serverId)
+    void setHeaders(const QStringList &headers)
     {
-        beginFilterChange();
-        m_server = serverId;
-        endFilterChange();
+        m_headers = headers;
+        emit headerDataChanged(Qt::Horizontal, 0, ColumnCount - 1);
     }
 
+    // `lines` is owned by the page and must outlive the model's use of it.
+    void setLines(const QList<AccessLine> *lines)
+    {
+        m_lines = lines;
+        m_cells.clear();
+        m_cells.resize(lines->size());
+        m_built.assign(size_t(lines->size()), false);
+        m_refilter.stop();
+        refilter();
+    }
+
+    void setCategory(int category) { change(m_category, category); }
+    void setServer(const QString &serverId) { change(m_server, serverId); }
     // Only rows at or after this UTC time ("2026-10-31T08:15:30"); empty = all.
-    void setSince(const QString &sinceUtc)
+    void setSince(const QString &sinceUtc) { change(m_since, sinceUtc); }
+    void setText(const QString &text) { change(m_text, text.trimmed()); }
+
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : int(m_rows.size()); }
+    int columnCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : int(ColumnCount); }
+
+    QVariant data(const QModelIndex &index, int role) const override
     {
-        beginFilterChange();
-        m_since = sinceUtc;
-        endFilterChange();
+        if (!index.isValid() || index.row() >= m_rows.size())
+            return {};
+        const int line = m_rows.at(index.row());
+        switch (role) {
+        case Qt::DisplayRole:
+            return cells(line)[size_t(index.column())];
+        case kLineRole:
+            return line;
+        case Qt::ForegroundRole: {
+            if (index.column() != Event)
+                return {};
+            const QString &event = m_lines->at(line).r.event;
+            if (event == QLatin1String("FailedLogon") || event.startsWith(QLatin1String("Alert"))
+                || Threats::isTampering(event))
+                return QBrush(Theme::kRed);
+            return {};
+        }
+        default:
+            return {};
+        }
     }
 
-    void setText(const QString &text)
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override
     {
-        beginFilterChange();
-        m_text = text.trimmed();
-        endFilterChange();
+        if (orientation == Qt::Horizontal && role == Qt::DisplayRole)
+            return m_headers.value(section);
+        return {};
     }
 
-protected:
-    bool filterAcceptsRow(int row, const QModelIndex &parent) const override
+    void sort(int column, Qt::SortOrder order) override
     {
-        const QAbstractItemModel *m = sourceModel();
-        if (!inCategory(m->index(row, Event, parent).data(kEventRole).toString(), m_category))
-            return false;
-        if (!m_server.isEmpty() && m->index(row, Server, parent).data(kServerRole).toString() != m_server)
-            return false;
-        if (!m_since.isEmpty() && m->index(row, Time, parent).data(Qt::UserRole).toString() < m_since)
-            return false;
-        if (m_text.isEmpty())
-            return true;
-        for (int c = 0; c < ColumnCount; ++c)
-            if (m->index(row, c, parent).data().toString().contains(m_text, Qt::CaseInsensitive))
-                return true;
-        return false;
+        m_sortColumn = column;
+        m_order = order;
+        beginResetModel();
+        sortRows();
+        endResetModel();
     }
 
 private:
+    template <typename T>
+    void change(T &field, const T &value)
+    {
+        if (field == value)
+            return;
+        field = value;
+        if (m_lines)
+            m_refilter.start(); // several filters change together when a reload ends: filtered once
+    }
+
+    const Cells &cells(int line) const
+    {
+        if (!m_built[size_t(line)]) {
+            m_cells[line] = m_builder(m_lines->at(line));
+            m_built[size_t(line)] = true;
+        }
+        return m_cells[line];
+    }
+
+    void refilter()
+    {
+        beginResetModel();
+        m_rows.clear();
+        if (m_lines) {
+            for (int i = 0; i < m_lines->size(); ++i) {
+                const AccessRecord &r = m_lines->at(i).r;
+                if (!inCategory(r.event, m_category))
+                    continue;
+                if (!m_server.isEmpty() && r.serverId != m_server)
+                    continue;
+                if (!m_since.isEmpty() && r.timeUtc < m_since)
+                    continue;
+                if (!m_text.isEmpty()) {
+                    bool hit = false;
+                    for (const QString &cell : cells(i))
+                        if (cell.contains(m_text, Qt::CaseInsensitive)) {
+                            hit = true;
+                            break;
+                        }
+                    if (!hit)
+                        continue;
+                }
+                m_rows.append(i);
+            }
+            sortRows();
+        }
+        endResetModel();
+    }
+
+    void sortRows()
+    {
+        if (!m_lines)
+            return;
+        const bool desc = m_order == Qt::DescendingOrder;
+        const int column = m_sortColumn;
+        // The time sorts as text ("2026-10-31T08:15:30"); the other columns by what is shown.
+        std::stable_sort(m_rows.begin(), m_rows.end(), [&](int a, int b) {
+            const int c = column == Time ? m_lines->at(a).r.timeUtc.compare(m_lines->at(b).r.timeUtc)
+                                         : cells(a)[size_t(column)].compare(cells(b)[size_t(column)]);
+            return desc ? c > 0 : c < 0;
+        });
+    }
+
+    Builder m_builder;
+    const QList<AccessLine> *m_lines = nullptr;
+    mutable QVector<Cells> m_cells;
+    mutable std::vector<bool> m_built;
+    QVector<int> m_rows; // indexes into m_lines, in the order shown
+    QStringList m_headers;
+    QTimer m_refilter;
     int m_category = All;
     QString m_server;
     QString m_since;
     QString m_text;
+    int m_sortColumn = Time;
+    Qt::SortOrder m_order = Qt::DescendingOrder;
 };
 
 AccessLogPage::AccessLogPage(QWidget *parent)
     : QWidget(parent)
 {
-    m_model = new QStandardItemModel(0, ColumnCount, this);
-    m_proxy = new AccessProxy(this);
-    m_proxy->setSourceModel(m_model);
-    m_proxy->setSortRole(Qt::UserRole);
+    m_model = new AccessTableModel(
+        [this](const AccessLine &line) {
+            const AccessRecord &r = line.r;
+            const QDateTime utc = parseUtc(r.timeUtc);
+            const QString time = utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                                               : r.timeUtc;
+            QStringList details;
+            if (line.attempts > 1)
+                details << tr("%1 attempts").arg(line.attempts);
+            const QString summary = alertSummary(r);
+            if (!summary.isEmpty())
+                details << summary;
+            else if (!r.detail.isEmpty())
+                details << detailText(r.detail);
+            // Without the computer name in front: the full account is in the details below.
+            const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
+            const QString device = r.source == QLatin1String("RCONNECT") ? r.client
+                                                                           : Contacts::instance().label(r.client, r.user);
+            return AccessTableModel::Cells{time, r.server, eventText(r.event), user, r.address, device,
+                                           details.join(QStringLiteral(", ")), r.operatorName};
+        },
+        this);
 
     m_title = new QLabel(this);
     m_title->setObjectName(QStringLiteral("pageTitle"));
@@ -219,15 +349,13 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     m_category = new QComboBox(this);
     m_category->setMinimumWidth(210);
     connect(m_category, &QComboBox::currentIndexChanged, this, [this](int i) {
-        m_proxy->setCategory(i);
-        updateCount();
+        m_model->setCategory(i);
     });
     m_server = new QComboBox(this);
     m_server->setMinimumWidth(170);
     m_server->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_server, &QComboBox::currentIndexChanged, this, [this] {
-        m_proxy->setServer(m_server->currentData().toString());
-        updateCount();
+        m_model->setServer(m_server->currentData().toString());
     });
     m_period = new QComboBox(this);
     m_period->setMinimumWidth(150);
@@ -235,8 +363,7 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     m_filter = new QLineEdit(this);
     m_filter->setClearButtonEnabled(true);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString &text) {
-        m_proxy->setText(text);
-        updateCount();
+        m_model->setText(text);
     });
     auto *filters = new QHBoxLayout;
     filters->setSpacing(10);
@@ -246,7 +373,7 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     filters->addWidget(m_filter, 1);
 
     auto *view = m_view = new QTableView(this);
-    view->setModel(m_proxy);
+    view->setModel(m_model);
     view->setAlternatingRowColors(true);
     view->setSelectionBehavior(QAbstractItemView::SelectRows);
     view->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -270,6 +397,8 @@ AccessLogPage::AccessLogPage(QWidget *parent)
 
     m_count = new QLabel(this);
     m_count->setObjectName(QStringLiteral("pageSubtitle"));
+    // The count under the table follows every refilter.
+    connect(m_model, &QAbstractItemModel::modelReset, this, &AccessLogPage::updateCount);
 
     m_detail = new QFrame(this);
     m_detail->setObjectName(QStringLiteral("detailCard"));
@@ -416,7 +545,7 @@ void AccessLogPage::retranslate()
     m_period->blockSignals(false);
     applyPeriod();
     fillServers();
-    m_model->setHorizontalHeaderLabels({tr("Time"), tr("Server"), tr("Activity"), tr("User"), tr("IP address"),
+    m_model->setHeaders({tr("Time"), tr("Server"), tr("Activity"), tr("User"), tr("IP address"),
                                         tr("Device"), tr("Details"), tr("By")});
     if (isVisible())
         reload();
@@ -542,47 +671,11 @@ void AccessLogPage::apply(QList<AccessLine> lines)
     m_busy = false;
     m_lines = std::move(lines);
 
-    // Filling a sorted, filtered model cell by cell would sort again after every cell, so it is
-    // detached meanwhile. That resets the header, so its sizes and sort order are put back.
+    // The model only points at the list, so swapping it is cheap; the header keeps its sizes and sort order.
     QHeaderView *header = m_view->horizontalHeader();
     const QByteArray headerState = header->saveState();
     m_view->setUpdatesEnabled(false);
-    m_proxy->setSourceModel(nullptr);
-    m_model->removeRows(0, m_model->rowCount());
-    m_model->setRowCount(int(m_lines.size()));
-    for (int row = 0; row < m_lines.size(); ++row) {
-        const AccessLine &line = m_lines.at(row);
-        const AccessRecord &r = line.r;
-        const QDateTime utc = parseUtc(r.timeUtc);
-        const QString time = utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
-                                           : r.timeUtc;
-        QStringList details;
-        if (line.attempts > 1)
-            details << tr("%1 attempts").arg(line.attempts);
-        const QString summary = alertSummary(r);
-        if (!summary.isEmpty())
-            details << summary;
-        else if (!r.detail.isEmpty())
-            details << detailText(r.detail);
-        // Without the computer name in front: the full account is in the details below.
-        const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
-        const QString device = r.source == QLatin1String("RCONNECT") ? r.client
-                                                                       : Contacts::instance().label(r.client, r.user);
-        const QString texts[ColumnCount] = {time, r.server, eventText(r.event), user, r.address, device,
-                                            details.join(QStringLiteral(", ")), r.operatorName};
-        for (int c = 0; c < ColumnCount; ++c) {
-            auto *item = new QStandardItem(texts[c]);
-            item->setData(c == Time ? r.timeUtc : texts[c], Qt::UserRole); // the time sorts as text
-            item->setData(r.event, kEventRole);
-            item->setData(row, kLineRole);
-            item->setData(r.serverId, kServerRole);
-            if (c == Event && (r.event == QLatin1String("FailedLogon") || r.event.startsWith(QLatin1String("Alert"))
-                               || Threats::isTampering(r.event)))
-                item->setForeground(Theme::kRed);
-            m_model->setItem(row, c, item);
-        }
-    }
-    m_proxy->setSourceModel(m_model);
+    m_model->setLines(&m_lines);
     fillServers();
     header->restoreState(headerState);
     m_view->setUpdatesEnabled(true);
@@ -662,23 +755,23 @@ void AccessLogPage::fillServers()
     const int index = m_server->findData(chosen);
     m_server->setCurrentIndex(index < 0 ? 0 : index);
     m_server->blockSignals(false);
-    m_proxy->setServer(m_server->currentData().toString());
+    m_model->setServer(m_server->currentData().toString());
 }
 
 void AccessLogPage::applyPeriod()
 {
     const int hours = kPeriodHours[qBound(0, m_period->currentIndex(), 4)];
-    m_proxy->setSince(hours == 0 ? QString()
+    // To the minute, so the clock moving on does not refilter the list every time the page is shown.
+    m_model->setSince(hours == 0 ? QString()
                                  : QDateTime::currentDateTimeUtc().addSecs(-qint64(hours) * 3600)
-                                       .toString(QStringLiteral("yyyy-MM-ddTHH:mm:ss")));
-    updateCount();
+                                       .toString(QStringLiteral("yyyy-MM-ddTHH:mm:00")));
 }
 
 void AccessLogPage::updateCount()
 {
-    m_count->setText(m_model->rowCount() == 0
+    m_count->setText(m_lines.isEmpty()
                          ? tr("Nothing recorded yet. Activity appears here after your servers have been checked.")
-                         : tr("Showing %1 of %2").arg(m_proxy->rowCount()).arg(m_model->rowCount()));
+                         : tr("Showing %1 of %2").arg(m_model->rowCount()).arg(m_lines.size()));
 }
 
 // The rows shown now, in the order shown, for a report.
@@ -697,12 +790,12 @@ void AccessLogPage::exportCsv()
     f.write("\xEF\xBB\xBF"); // so Excel reads it as UTF-8
     QStringList header;
     for (int c = 0; c < ColumnCount; ++c)
-        header << csvField(m_model->headerData(c, Qt::Horizontal).toString());
+        header << csvField(m_model->headerData(c, Qt::Horizontal, Qt::DisplayRole).toString());
     f.write(header.join(QLatin1Char(',')).toUtf8() + "\r\n");
-    for (int row = 0; row < m_proxy->rowCount(); ++row) {
+    for (int row = 0; row < m_model->rowCount(); ++row) {
         QStringList fields;
         for (int c = 0; c < ColumnCount; ++c)
-            fields << csvField(m_proxy->index(row, c).data().toString());
+            fields << csvField(m_model->index(row, c).data().toString());
         f.write(fields.join(QLatin1Char(',')).toUtf8() + "\r\n");
     }
 }

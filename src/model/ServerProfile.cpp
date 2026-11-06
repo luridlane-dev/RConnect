@@ -45,6 +45,8 @@ QJsonObject ServerProfile::toJson() const
     o[QLatin1String("monitor")] = monitor;
     o[QLatin1String("checkSessions")] = checkSessions;
     o[QLatin1String("favorite")] = favorite;
+    if (!group.isEmpty())
+        o[QLatin1String("group")] = group;
     return o;
 }
 
@@ -77,5 +79,6 @@ ServerProfile ServerProfile::fromJson(const QJsonObject &o)
     p.favorite = o.value(QLatin1String("favorite")).toBool(false);
     if (p.name.isEmpty())
         p.name = p.host;
+    p.group = o.value(QLatin1String("group")).toString().trimmed();
     return p;
 }

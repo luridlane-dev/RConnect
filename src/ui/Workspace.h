@@ -60,6 +60,7 @@ private:
     void editServer(const QString &id);
     void removeServer(const QString &id);
     void onSessionState(RdpSession::State state);
+    void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
     void enableAuditing(const QString &id);
     void showAlert(const AccessRecord &alert);
@@ -91,5 +92,4 @@ private:
     QHash<QString, RdpSession *> m_sessions;
     QSet<QString> m_pendingOpens; // waiting for the session check
     bool m_quitting = false;
-    bool m_keepWatching = false; // started minimized: keep checking until the user opens the window
 };

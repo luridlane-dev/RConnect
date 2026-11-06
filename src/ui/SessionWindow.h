@@ -38,6 +38,7 @@ public:
     enum Hotkey { NextTab, PrevTab, ToggleFullscreen, GoToTab };
     void handleHotkey(Hotkey key, int arg = 0);
     void toggleFullscreen();
+    void enterFullscreen();
     void allowClose() { m_allowClose = true; }
 
     QToolButton *serversButton() const;
@@ -88,6 +89,7 @@ private:
     QHash<QString, RdpSession *> m_sessions;
     std::function<QString(const QString &)> m_notes;
     bool m_allowClose = false;
+    bool m_leavingFull = false; // a window is being taken out of full screen; not a maximise
     QTimer m_pulse;
     static inline QList<SessionWindow *> s_all;
 };

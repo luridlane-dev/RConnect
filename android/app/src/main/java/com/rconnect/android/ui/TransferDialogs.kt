@@ -39,6 +39,13 @@ import java.util.Locale
 
 enum class Transfer { Import, Export }
 
+// Notepad and PowerShell on Windows may save as UTF-16; read that as well as UTF-8.
+private fun decodeText(bytes: ByteArray): String = when {
+    bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+    bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+    else -> String(bytes, Charsets.UTF_8)
+}
+
 private sealed interface Step {
     data object Choose : Step
     data object Paste : Step
@@ -62,7 +69,7 @@ fun TransferHost(vm: AppViewModel, transfer: Transfer, onDone: () -> Unit) {
     fun finishRead(result: ServerFile.Read, text: String) {
         when (result) {
             is ServerFile.Read.Ok -> {
-                val (added, skipped) = vm.addServers(result.servers)
+                val (added, skipped) = vm.addServers(result.servers, result.unusable)
                 say(resources.getString(R.string.import_result, added, skipped))
                 onDone()
             }
@@ -80,7 +87,7 @@ fun TransferHost(vm: AppViewModel, transfer: Transfer, onDone: () -> Unit) {
 
     val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) { onDone(); return@rememberLauncherForActivityResult }
-        val text = runCatching { context.contentResolver.openInputStream(uri)?.use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
+        val text = runCatching { context.contentResolver.openInputStream(uri)?.use { decodeText(it.readBytes()) } }.getOrNull()
         if (text == null) { say(resources.getString(R.string.import_unreadable)); onDone() } else finishRead(ServerFile.read(text), text)
     }
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->

@@ -2,6 +2,7 @@
 
 #include "ContactsDialog.h"
 #include "ServerDelegate.h"
+#include "ServerSectionModel.h"
 #include "Theme.h"
 #include "core/Contacts.h"
 #include "model/ServerStore.h"
@@ -20,12 +21,14 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSet>
+#include <QInputDialog>
+#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QVBoxLayout>
 
-// Filters by search text and availability. Favourites come first, then by name with numbers in
-// natural order ("srv2" before "srv10").
+// Filters by search text and availability. Sorted by group (named groups by name, then the servers without
+// one), favourites first inside a group, then by name with numbers in natural order ("srv2" before "srv10").
 class ServerProxy : public QSortFilterProxyModel {
 public:
     enum Mode { All, Favorites, Available, InUse, Offline };
@@ -78,6 +81,12 @@ protected:
 
     bool lessThan(const QModelIndex &l, const QModelIndex &r) const override
     {
+        const QString lg = l.data(ServerStore::GroupRole).toString(), rg = r.data(ServerStore::GroupRole).toString();
+        if (lg != rg) {
+            if (lg.isEmpty() || rg.isEmpty())
+                return rg.isEmpty(); // the servers without a group come last
+            return m_collator.compare(lg, rg) < 0;
+        }
         const bool lf = l.data(ServerStore::FavoriteRole).toBool(), rf = r.data(ServerStore::FavoriteRole).toBool();
         if (lf != rf)
             return lf; // favourites first
@@ -114,6 +123,28 @@ QIcon magnifierIcon()
     return QIcon(pm);
 }
 
+// Four squares for the grid, three lines for the list.
+QIcon viewIcon(bool grid)
+{
+    constexpr int size = 14;
+    constexpr qreal dpr = 2.0;
+    QPixmap pm(int(size * dpr), int(size * dpr));
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setPen(Qt::NoPen);
+    p.setBrush(Theme::kLabel);
+    if (grid) {
+        for (int y : {1, 8})
+            for (int x : {1, 8})
+                p.drawRect(x, y, 5, 5);
+    } else {
+        for (int y : {2, 6, 10})
+            p.drawRect(1, y, 12, 2);
+    }
+    return QIcon(pm);
+}
+
 constexpr int kColumnGap = ServerPanel::kInset; // the view adds this around every card
 
 } // namespace
@@ -146,7 +177,8 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
 
     m_import = new QPushButton(this);
     m_import->setCursor(Qt::PointingHandCursor);
-    m_import->setMinimumHeight(36);
+    m_import->setMinimumHeight(32);
+    m_import->hide(); // importing lives in the settings window
     connect(m_import, &QPushButton::clicked, this, &ServerPanel::importRequested);
 
     auto *head = new QHBoxLayout;
@@ -165,7 +197,8 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     segLay->setSpacing(2);
     m_filters = new QButtonGroup(this);
     m_filters->setExclusive(true);
-    for (int mode : {ServerProxy::All, ServerProxy::Favorites, ServerProxy::Available, ServerProxy::InUse, ServerProxy::Offline}) {
+    for (int mode : {ServerProxy::All, ServerProxy::Favorites, ServerProxy::Available, ServerProxy::InUse,
+                     ServerProxy::Offline}) {
         auto *b = new QPushButton(segmented);
         b->setObjectName(QStringLiteral("segment"));
         b->setCheckable(true);
@@ -178,22 +211,51 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
         m_proxy->setMode(ServerProxy::Mode(id));
         updateEmptyState();
     });
+    // Grid or list
+    auto *views = new QFrame(this);
+    views->setObjectName(QStringLiteral("segmented"));
+    auto *viewLay = new QHBoxLayout(views);
+    viewLay->setContentsMargins(2, 2, 2, 2);
+    viewLay->setSpacing(2);
+    m_viewGroup = new QButtonGroup(this);
+    m_viewGroup->setExclusive(true);
+    const bool listMode = QSettings().value(QStringLiteral("ui/listView"), false).toBool();
+    for (int id : {0, 1}) {
+        auto *b = new QPushButton(views);
+        b->setObjectName(QStringLiteral("segment"));
+        b->setCheckable(true);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setIcon(viewIcon(id == 0));
+        b->setIconSize(QSize(14, 14));
+        b->setFixedWidth(34);
+        b->setChecked((id == 1) == listMode);
+        m_viewGroup->addButton(b, id);
+        viewLay->addWidget(b);
+    }
+    connect(m_viewGroup, &QButtonGroup::idClicked, this, [this](int id) { setListMode(id == 1); });
+    connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
+        for (int id : {0, 1})
+            m_viewGroup->button(id)->setIcon(viewIcon(id == 0));
+    });
     auto *filterRow = new QHBoxLayout;
     filterRow->setContentsMargins(kInset, 0, m_rightInset, 0);
     m_filterLayout = filterRow;
     filterRow->addWidget(segmented);
     filterRow->addStretch();
+    filterRow->addWidget(views);
 
+    m_sections = new ServerSectionModel(m_proxy, this);
     m_list = new CardView(this);
-    m_list->setModel(m_proxy);
+    m_list->setModel(m_sections);
     m_delegate = new ServerDelegate(m_list);
+    m_delegate->setListMode(listMode);
     m_list->setItemDelegate(m_delegate);
     m_list->setViewMode(QListView::IconMode);
     m_list->setFlow(QListView::LeftToRight);
     m_list->setWrapping(true);
     m_list->setResizeMode(QListView::Adjust);
     m_list->setMovement(QListView::Static);
-    m_list->setSpacing(kColumnGap);
+    m_list->setSpacing(listMode ? 0 : kColumnGap); // rows of the list touch: they are one table
     m_list->setUniformItemSizes(false); // the card width follows the window
     m_list->setMouseTracking(true);
     m_list->setSelectionMode(QAbstractItemView::NoSelection);
@@ -207,7 +269,10 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     m_list->setFrameShape(QFrame::NoFrame);
     m_list->viewport()->installEventFilter(this);
     connect(m_list, &QListView::clicked, this, [this](const QModelIndex &i) {
-        emit openRequested(i.data(ServerStore::IdRole).toString());
+        if (i.data(ServerSectionModel::HeaderRole).toBool()) // a group header folds and unfolds its group
+            m_sections->toggleCollapsed(i.data(ServerSectionModel::SectionGroupRole).toString());
+        else
+            emit openRequested(i.data(ServerStore::IdRole).toString());
     });
     connect(m_list, &QWidget::customContextMenuRequested, this, &ServerPanel::showContextMenu);
 
@@ -242,6 +307,18 @@ QString ServerPanel::summary(const ServerStore *store)
         .arg(c.online - c.busy)
         .arg(c.busy)
         .arg(c.offline);
+}
+
+void ServerPanel::setListMode(bool list)
+{
+    if (list == m_delegate->listMode())
+        return;
+    QSettings().setValue(QStringLiteral("ui/listView"), list);
+    m_delegate->setListMode(list);
+    m_list->setSpacing(list ? 0 : kColumnGap);
+    m_columns = -1; // forces a new layout with the other item size
+    fitCards();
+    m_list->viewport()->update();
 }
 
 void ServerPanel::retranslate()
@@ -286,18 +363,23 @@ void ServerPanel::updateEmptyState()
 void ServerPanel::fitCards()
 {
     const int room = m_list->viewport()->width() - m_list->verticalScrollBar()->width() - 2;
-    const int columns = qMax(1, (room - kColumnGap) / (ServerDelegate::kMinCardWidth + kColumnGap));
-    const int card = qMax(ServerDelegate::kMinCardWidth, (room - (columns + 1) * kColumnGap) / columns);
+    const bool list = m_delegate->listMode();
+    const int gap = list ? 0 : kColumnGap;
+    const int columns = list ? 1 : qMax(1, (room - gap) / (ServerDelegate::kMinCardWidth + gap));
+    m_delegate->setColumns(columns, gap);
+    const int card = qMax(ServerDelegate::kMinCardWidth, (room - (columns + 1) * gap) / columns);
 
-    const int inset = qMax<int>(kInset, m_list->width() - columns * (card + kColumnGap));
+    // A row of the list keeps kInset free on both sides inside its item, so the table ends where the search field does.
+    const int inset = qMax<int>(kInset, m_list->width() - columns * (card + gap) + (list ? kInset : 0));
     if (inset != m_rightInset) {
         m_rightInset = inset;
         m_headLayout->setContentsMargins(kInset, 0, inset, 0);
         m_filterLayout->setContentsMargins(kInset, 0, inset, 0);
         emit rightInsetChanged(inset);
     }
-    if (card == m_delegate->cardWidth())
+    if (card == m_delegate->cardWidth() && columns == m_columns)
         return;
+    m_columns = columns;
     m_delegate->setCardWidth(card);
     static_cast<CardView *>(m_list)->relayout();
     if (!m_fitted) {
@@ -313,8 +395,8 @@ bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
         // The star toggles the favourite; the click does not open the server.
         const auto *me = static_cast<QMouseEvent *>(e);
         const QModelIndex i = m_list->indexAt(me->pos());
-        if (me->button() == Qt::LeftButton && i.isValid()
-            && ServerDelegate::starRect(m_list->visualRect(i)).contains(me->pos())) {
+        if (me->button() == Qt::LeftButton && i.isValid() && !i.data(ServerSectionModel::HeaderRole).toBool()
+            && m_delegate->starRect(m_list->visualRect(i)).contains(me->pos())) {
             m_store->setFavorite(i.data(ServerStore::IdRole).toString(), !i.data(ServerStore::FavoriteRole).toBool());
             return true;
         }
@@ -365,7 +447,7 @@ void ServerPanel::openFirstMatch()
 void ServerPanel::showContextMenu(const QPoint &pos)
 {
     const QModelIndex i = m_list->indexAt(pos);
-    if (!i.isValid())
+    if (!i.isValid() || i.data(ServerSectionModel::HeaderRole).toBool())
         return;
     const QString id = i.data(ServerStore::IdRole).toString();
 
@@ -375,6 +457,24 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     menu.addAction(favorite ? tr("Remove from favourites") : tr("Add to favourites"), this,
                    [this, id, favorite] { m_store->setFavorite(id, !favorite); });
     menu.addAction(tr("Check status now"), this, [this, id] { emit refreshRequested(id); });
+
+    QMenu *group = menu.addMenu(tr("Group"));
+    const QString current = i.data(ServerStore::GroupRole).toString();
+    for (const QString &name : m_store->groups()) {
+        QAction *a = group->addAction(name, this, [this, id, name] { m_store->setGroup(id, name); });
+        a->setCheckable(true);
+        a->setChecked(name == current);
+    }
+    if (!group->isEmpty())
+        group->addSeparator();
+    group->addAction(tr("New group…"), this, [this, id] {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("New group"), tr("Group name"), QLineEdit::Normal, {}, &ok);
+        if (ok && !name.trimmed().isEmpty())
+            m_store->setGroup(id, name);
+    });
+    if (!current.isEmpty())
+        group->addAction(tr("No group"), this, [this, id] { m_store->setGroup(id, {}); });
 
     // Whoever is connected: name them with one click. Own sessions (this PC) are left out.
     const QString thisPc = qEnvironmentVariable("COMPUTERNAME");

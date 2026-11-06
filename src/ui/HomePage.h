@@ -38,7 +38,7 @@ protected:
 private:
     void retranslate();
     void updateSummary();
-    void showSettingsMenu();
+    void showSettings();
     void showAbout();
     void movePill(bool animate);
     void applyPages();
@@ -50,15 +50,9 @@ private:
     AccessLogPage *m_log;
     QStackedWidget *m_pages;
     QButtonGroup *m_nav;
-    QLabel *m_brandSubtitle;
-    QLabel *m_operatorCaption;
     QLabel *m_title;
-    QLabel *m_summary;
     QPushButton *m_settings;
     QHBoxLayout *m_brandLayout = nullptr;
-    QHBoxLayout *m_tiles = nullptr;
-    QLabel *m_tileValue[4] = {};
-    QLabel *m_tileCaption[4] = {};
     QFrame *m_navPill = nullptr;       // the highlight behind the current page's button
     QPropertyAnimation *m_pillAnim = nullptr;
     bool m_shown = false;

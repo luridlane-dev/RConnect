@@ -1,7 +1,6 @@
 #include "ServerEditDialog.h"
 #include "Theme.h"
 
-#include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -11,17 +10,10 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QRandomGenerator>
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include <climits>
-
 namespace {
-
-const QStringList kPalette = {QStringLiteral("#0a84ff"), QStringLiteral("#30d158"), QStringLiteral("#ff9f0a"),
-                              QStringLiteral("#ff453a"), QStringLiteral("#bf5af2"), QStringLiteral("#40c8e0"),
-                              QStringLiteral("#8e8e93"), QStringLiteral("#ac8e68")};
 
 const char *const kResolutions[] = {"1920x1080", "2560x1440", "1600x900", "1366x768"};
 
@@ -45,17 +37,22 @@ QLabel *hint(const QString &text)
 
 } // namespace
 
-ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, const QStringList &usedColors,
-                                   QWidget *parent)
+ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, const QStringList &groups, QWidget *parent)
     : QDialog(parent)
     , m_initial(initial)
-    , m_usedColors(usedColors)
 {
     setWindowTitle(isNew ? tr("Add Server") : tr("Edit Server"));
 
     m_name = new QLineEdit(initial.name);
     m_name->setPlaceholderText(tr("e.g. Office server"));
     // Custom ports are typed as "host:port", like in mstsc.
+    // An existing group, or a new name typed in.
+    m_group = new QComboBox;
+    m_group->setEditable(true);
+    m_group->setInsertPolicy(QComboBox::NoInsert);
+    m_group->addItems(groups);
+    m_group->setCurrentText(initial.group);
+    m_group->lineEdit()->setPlaceholderText(tr("None"));
     m_host = new QLineEdit(initial.port == 3389 ? initial.host
                                                 : QStringLiteral("%1:%2").arg(initial.host).arg(initial.port));
     m_host->setPlaceholderText(tr("IP address or host name"));
@@ -67,31 +64,6 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     connect(m_savePassword, &QCheckBox::toggled, m_password, &QWidget::setEnabled);
     m_password->setEnabled(initial.savePassword);
 
-    m_colors = new QButtonGroup(this);
-    auto *colorRow = new QHBoxLayout;
-    colorRow->setSpacing(6);
-    for (int i = 0; i < kPalette.size(); ++i) {
-        auto *b = new QToolButton;
-        b->setCheckable(true);
-        b->setFixedSize(26, 26);
-        b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet(QStringLiteral(
-            "QToolButton { background: %1; border: 3px solid transparent; border-radius: 0; padding: 0; }"
-            "QToolButton:hover { border-color: rgba(128, 128, 128, 0.55); }"
-            "QToolButton:checked { border-color: %2; }").arg(kPalette[i], Theme::kLabel.name()));
-        m_colors->addButton(b, i);
-        colorRow->addWidget(b);
-        if (!initial.color.isEmpty() && kPalette[i].compare(initial.color, Qt::CaseInsensitive) == 0)
-            b->setChecked(true);
-    }
-    colorRow->addSpacing(6);
-    if (!m_colors->checkedButton()) {
-        QLabel *autoLabel = hint(tr("Automatic"));
-        colorRow->addWidget(autoLabel);
-        connect(m_colors, &QButtonGroup::idClicked, autoLabel, &QWidget::hide);
-    }
-    colorRow->addStretch();
-
     m_notes = new QPlainTextEdit(initial.notes);
     m_notes->setPlaceholderText(tr("e.g. Check the nightly backup every morning"));
     m_notes->setTabChangesFocus(true);
@@ -99,11 +71,11 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
 
     auto *basic = makeForm();
     basic->addRow(tr("Name"), m_name);
+    basic->addRow(tr("Group"), m_group);
     basic->addRow(tr("Server"), m_host);
     basic->addRow(tr("User name"), m_user);
     basic->addRow(tr("Password"), m_password);
     basic->addRow(QString(), m_savePassword);
-    basic->addRow(tr("Colour"), colorRow);
     basic->addRow(tr("Notes"), m_notes);
     basic->addRow(QString(), hint(tr("Notes are stored encrypted, like the password.")));
 
@@ -184,23 +156,6 @@ ServerEditDialog::ServerEditDialog(const ServerProfile &initial, bool isNew, con
     Theme::darkTitleBar(this);
 }
 
-QString ServerEditDialog::pickColor() const
-{
-    // Random pick among the least used colours.
-    int fewest = INT_MAX;
-    QStringList candidates;
-    for (const QString &c : kPalette) {
-        const int uses = int(m_usedColors.count(c));
-        if (uses < fewest) {
-            fewest = uses;
-            candidates.clear();
-        }
-        if (uses == fewest)
-            candidates << c;
-    }
-    return candidates.at(int(QRandomGenerator::global()->bounded(qsizetype(candidates.size()))));
-}
-
 ServerProfile ServerEditDialog::profile() const
 {
     ServerProfile p = m_initial;
@@ -216,13 +171,10 @@ ServerProfile ServerEditDialog::profile() const
         }
     }
     p.name = m_name->text().trimmed().isEmpty() ? p.host : m_name->text().trimmed();
+    p.group = m_group->currentText().trimmed();
     p.user = m_user->text().trimmed();
     p.savePassword = m_savePassword->isChecked();
     p.password = p.savePassword ? m_password->text() : QString();
-    if (m_colors->checkedId() >= 0)
-        p.color = kPalette.at(m_colors->checkedId());
-    else if (p.color.isEmpty())
-        p.color = pickColor();
     p.notes = m_notes->toPlainText().trimmed();
     p.domain = m_domain->text().trimmed();
     p.colorDepth = m_depth->currentData().toInt();

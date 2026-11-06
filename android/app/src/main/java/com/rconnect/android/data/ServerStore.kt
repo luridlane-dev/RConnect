@@ -21,6 +21,10 @@ data class ServerEntry(
     val user: String,
     val password: String,
     val group: String = "",
+    /** Remote Desktop port. The phone only talks WinRM, but the number goes back into an export unchanged. */
+    val port: Int = 3389,
+    /** Fields of an imported file the phone does not use (colour, notes, ...), kept as JSON so an export gives them back. */
+    val extra: String = "",
 ) {
     val title get() = name.ifBlank { host }
 }
@@ -76,21 +80,27 @@ class ClientNames(context: Context) {
 class ServerStore(context: Context) {
     private val prefs = context.getSharedPreferences("servers", Context.MODE_PRIVATE)
 
-    fun load(): List<ServerEntry> = try {
-        val array = JSONArray(prefs.getString("list", "[]"))
-        (0 until array.length()).map {
-            val o = array.getJSONObject(it)
-            ServerEntry(o.getString("id"), o.optString("name"), o.getString("host"), o.optString("user"),
-                Vault.decrypt(o.optString("password")), o.optString("group"))
+    // One damaged entry must not take the whole list with it: the next save would write the shortened list back.
+    fun load(): List<ServerEntry> {
+        val array = try { JSONArray(prefs.getString("list", "[]")) } catch (e: Exception) { return emptyList() }
+        return (0 until array.length()).mapNotNull {
+            try {
+                val o = array.getJSONObject(it)
+                ServerEntry(o.getString("id"), o.optString("name"), o.getString("host"), o.optString("user"),
+                    Vault.decrypt(o.optString("password")), o.optString("group"),
+                    o.optInt("port", 3389).takeIf { p -> p in 1..65535 } ?: 3389, o.optString("extra"))
+            } catch (e: Exception) {
+                null
+            }
         }
-    } catch (e: Exception) {
-        emptyList()
     }
 
     fun save(servers: List<ServerEntry>) {
         val array = JSONArray()
         for (s in servers) array.put(JSONObject().put("id", s.id).put("name", s.name).put("host", s.host)
-            .put("user", s.user).put("password", Vault.encrypt(s.password)).put("group", s.group))
-        prefs.edit().putString("list", array.toString()).apply()
+            .put("user", s.user).put("password", Vault.encrypt(s.password)).put("group", s.group)
+            .put("port", s.port).put("extra", s.extra))
+        // commit(), not apply(): the list is written before the app can be killed, e.g. right after an import.
+        prefs.edit().putString("list", array.toString()).commit()
     }
 }

@@ -37,23 +37,30 @@ bool s_settingsRead = false; // the settings are read when the first window is m
 
 QIcon homeIcon()
 {
-    constexpr qreal dpr = 2.0;
-    QPixmap pm(int(16 * dpr), int(16 * dpr));
-    pm.setDevicePixelRatio(dpr);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(Theme::kIconLine, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    QPainterPath house;
-    house.moveTo(2, 8);
-    house.lineTo(8, 2.5);
-    house.lineTo(14, 8);
-    house.moveTo(3.5, 7);
-    house.lineTo(3.5, 13.5);
-    house.lineTo(12.5, 13.5);
-    house.lineTo(12.5, 7);
-    p.drawPath(house);
-    return QIcon(pm);
+    // Drawn in the line colour, and in white while the home tab is the one in front (it is filled with the accent).
+    auto draw = [](const QColor &colour) {
+        constexpr qreal dpr = 2.0;
+        QPixmap pm(int(16 * dpr), int(16 * dpr));
+        pm.setDevicePixelRatio(dpr);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(colour, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        QPainterPath house;
+        house.moveTo(2, 8);
+        house.lineTo(8, 2.5);
+        house.lineTo(14, 8);
+        house.moveTo(3.5, 7);
+        house.lineTo(3.5, 13.5);
+        house.lineTo(12.5, 13.5);
+        house.lineTo(12.5, 7);
+        p.drawPath(house);
+        return pm;
+    };
+    QIcon icon;
+    icon.addPixmap(draw(Theme::kIconLine), QIcon::Normal, QIcon::Off);
+    icon.addPixmap(draw(Qt::white), QIcon::Normal, QIcon::On);
+    return icon;
 }
 
 // The state marker of a tab: a small flat square. Icons are cached by colour, since the marker of a tab that is
@@ -544,12 +551,25 @@ void SessionWindow::handleHotkey(Hotkey key, int arg)
     }
 }
 
+// Full screen always starts from a plain window. From a maximised one Windows keeps the maximised frame and the
+// state flags disagree with what is on screen, so the next toggle did nothing.
+void SessionWindow::enterFullscreen()
+{
+    m_leavingFull = false;
+    if (isMaximized() || isMinimized())
+        showNormal();
+    showFullScreen();
+}
+
 void SessionWindow::toggleFullscreen()
 {
     if (!isFullScreen()) {
-        showFullScreen();
+        enterFullscreen();
         return;
     }
+    // Leaving must not be taken for a maximise (which would send the window straight back into full screen).
+    m_leavingFull = true;
+    QTimer::singleShot(0, this, [this] { m_leavingFull = false; });
     showNormal();
     // The normal geometry may still be the whole screen (e.g. first run): fall back to a window.
     const QRect avail = screen()->availableGeometry();
@@ -565,10 +585,10 @@ void SessionWindow::changeEvent(QEvent *e)
     if (e->type() == QEvent::WindowStateChange) {
         // Full screen is this window's maximised state: the title bar's maximise button, a double click on the
         // title bar, Win+Up and a snap to the top of the screen all go back to full screen.
-        if (isMaximized() && isVisible()) {
+        if (isMaximized() && isVisible() && !m_leavingFull) {
             QTimer::singleShot(0, this, [this] {
-                if (isMaximized())
-                    showFullScreen();
+                if (isMaximized() && !m_leavingFull)
+                    enterFullscreen();
             });
         }
         if (!isMinimized())

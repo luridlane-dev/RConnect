@@ -18,6 +18,8 @@
 //    Disconnected time is never counted.
 //  - Segments of one session that follow each other within kMergeGapSec, from the same IP (and the
 //    same computer name when both are known), form one visit. The gap is not counted.
+//  - A visit without a computer name takes the one name that every named visit from the same IP address
+//    on that server agrees on; if the names differ, it stays unnamed.
 //  - Away (AFK): idle for kAfkMinutes or more. A sample at time t with idle m minutes proves the
 //    stretch [t - m min - 30 s, t] (quser rounds down, so the middle of the minute is used). The
 //    whole stretch counts as away, clipped to the segment start.

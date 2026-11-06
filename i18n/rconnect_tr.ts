@@ -680,8 +680,8 @@
         <translation>Bu kullanıcının sunucuya uzaktan bağlanma izni yok.</translation>
     </message>
     <message>
-        <source>The server closed the connection. Another computer may have connected.</source>
-        <translation>Sunucu bağlantıyı kapattı. Başka bir bilgisayar bağlanmış olabilir.</translation>
+        <source>The server closed the connection without saying why.</source>
+        <translation>Sunucu nedenini söylemeden bağlantıyı kapattı.</translation>
     </message>
     <message>
         <source>The server name could not be resolved (DNS). Is the address correct?</source>
@@ -743,8 +743,36 @@
         <translation>%1 ms</translation>
     </message>
     <message>
+        <source>ADDRESS</source>
+        <translation>ADRES</translation>
+    </message>
+    <message>
+        <source>STATUS</source>
+        <translation>DURUM</translation>
+    </message>
+    <message>
+        <source>LATENCY</source>
+        <translation>GECİKME</translation>
+    </message>
+    <message>
         <source>Favourite</source>
         <translation>Favori</translation>
+    </message>
+    <message>
+        <source>OTHER</source>
+        <translation>DİĞER</translation>
+    </message>
+    <message>
+        <source>%1 available</source>
+        <translation>%1 müsait</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Diğer</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>Bağlan</translation>
     </message>
 </context>
 <context>
@@ -766,10 +794,6 @@
         <translation>Şifreyi kaydet (bu Windows hesabına özel şifrelenir)</translation>
     </message>
     <message>
-        <source>Automatic</source>
-        <translation>Otomatik</translation>
-    </message>
-    <message>
         <source>Name</source>
         <translation>Ad</translation>
     </message>
@@ -784,10 +808,6 @@
     <message>
         <source>Password</source>
         <translation>Şifre</translation>
-    </message>
-    <message>
-        <source>Colour</source>
-        <translation>Renk</translation>
     </message>
     <message>
         <source>Notes</source>
@@ -877,9 +897,29 @@
         <source>Cancel</source>
         <translation>İptal</translation>
     </message>
+    <message>
+        <source>None</source>
+        <translation>Yok</translation>
+    </message>
+    <message>
+        <source>Group</source>
+        <translation>Grup</translation>
+    </message>
 </context>
 <context>
     <name>ServerPanel</name>
+    <message>
+        <source>Rename group…</source>
+        <translation>Grubu yeniden adlandır…</translation>
+    </message>
+    <message>
+        <source>Rename group</source>
+        <translation>Grubu yeniden adlandır</translation>
+    </message>
+    <message>
+        <source>Remove group (keeps the servers)</source>
+        <translation>Grubu kaldır (sunucular kalır)</translation>
+    </message>
     <message>
         <source>1 server</source>
         <translation>1 sunucu</translation>
@@ -974,6 +1014,30 @@ Use “+ Add server” to get started.</source>
         <source>Edit contact “%1”…</source>
         <translation>“%1” kişisini düzenle…</translation>
     </message>
+    <message>
+        <source>None</source>
+        <translation>Yok</translation>
+    </message>
+    <message>
+        <source>Group</source>
+        <translation>Grup</translation>
+    </message>
+    <message>
+        <source>New group…</source>
+        <translation>Yeni grup…</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <translation>Yeni grup</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <translation>Grup adı</translation>
+    </message>
+    <message>
+        <source>No group</source>
+        <translation>Grup yok</translation>
+    </message>
 </context>
 <context>
     <name>ServerStatus</name>
@@ -1010,12 +1074,12 @@ Use “+ Add server” to get started.</source>
         <translation>Çevrimdışı</translation>
     </message>
     <message>
-        <source>Free</source>
-        <translation>Boş</translation>
+        <source>Available</source>
+        <translation>Müsait</translation>
     </message>
     <message>
-        <source>Online</source>
-        <translation>Çevrimiçi</translation>
+        <source>Reachable</source>
+        <translation>Bağlanabilir</translation>
     </message>
     <message>
         <source>Could not check who is connected: %1</source>
@@ -1046,16 +1110,20 @@ Use “+ Add server” to get started.</source>
         <translation>Siz bağlısınız</translation>
     </message>
     <message>
-        <source>Using it now</source>
-        <translation>Şu an kullanıyor</translation>
+        <source>Active</source>
+        <translation>şu an aktif</translation>
     </message>
     <message>
-        <source>Not used for %1 min</source>
-        <translation>%1 dk kullanmıyor</translation>
+        <source>Idle %1 min</source>
+        <translation>%1 dk'dır hareketsiz</translation>
     </message>
     <message>
-        <source>Not used for %1 h</source>
-        <translation>%1 sa kullanmıyor</translation>
+        <source>Idle %1 h</source>
+        <translation>%1 saattir hareketsiz</translation>
+    </message>
+    <message>
+        <source>The server answers, but who is connected could not be read.</source>
+        <translation>Sunucu yanıt veriyor ama kimin bağlı olduğu okunamadı.</translation>
     </message>
 </context>
 <context>
@@ -1498,8 +1566,24 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
         <translation>Bu dosya okunamadı.</translation>
     </message>
     <message>
-        <source>%1 servers imported, %2 already in the list.</source>
-        <translation>%1 sunucu içe aktarıldı, %2 zaten listede.</translation>
+        <source>%1 servers imported, %2 already in the list or without an address.</source>
+        <translation>%1 sunucu içe aktarıldı, %2 zaten listede ya da adresi yok.</translation>
+    </message>
+    <message>
+        <source>Checked just now. Connected: %1</source>
+        <translation>Az önce kontrol edildi. Bağlı olan: %1</translation>
+    </message>
+    <message>
+        <source>Disconnected by the server</source>
+        <translation>Sunucu tarafından kesildi</translation>
+    </message>
+    <message>
+        <source>Checked just now: nobody else is connected. The server ended this connection (a time limit, a restart or a network drop can do this).</source>
+        <translation>Az önce kontrol edildi: başka kimse bağlı değil. Bağlantıyı sunucu sonlandırdı (süre sınırı, yeniden başlatma veya ağ kopması olabilir).</translation>
+    </message>
+    <message>
+        <source>Checked just now: nobody else is connected.</source>
+        <translation>Az önce kontrol edildi: başka kimse bağlı değil.</translation>
     </message>
     <message>
         <source>%1 servers imported.</source>
@@ -1808,6 +1892,161 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
     <message>
         <source>Enter a nickname and a computer name or an account.</source>
         <translation>Bir takma ad ve bir bilgisayar adı veya hesap girin.</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsDialog</name>
+    <message>
+        <source>Settings</source>
+        <translation>Ayarlar</translation>
+    </message>
+    <message>
+        <source>GENERAL</source>
+        <translation>GENEL</translation>
+    </message>
+    <message>
+        <source>PAGES</source>
+        <translation>SAYFALAR</translation>
+    </message>
+    <message>
+        <source>LOGGING</source>
+        <translation>KAYIT</translation>
+    </message>
+    <message>
+        <source>SERVERS AND CONTACTS</source>
+        <translation>SUNUCULAR VE KİŞİLER</translation>
+    </message>
+    <message>
+        <source>UPDATES</source>
+        <translation>GÜNCELLEMELER</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Kapat</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Dil</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Görünüm</translation>
+    </message>
+    <message>
+        <source>Window buttons in full screen</source>
+        <translation>Tam ekranda pencere düğmeleri</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Koyu</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Açık</translation>
+    </message>
+    <message>
+        <source>Windows style</source>
+        <translation>Windows stili</translation>
+    </message>
+    <message>
+        <source>macOS style</source>
+        <translation>macOS stili</translation>
+    </message>
+    <message>
+        <source>Start with Windows</source>
+        <translation>Windows ile başlat</translation>
+    </message>
+    <message>
+        <source>Time on servers</source>
+        <translation>Sunucuda geçen süre</translation>
+    </message>
+    <message>
+        <source>Activity history</source>
+        <translation>Etkinlik geçmişi</translation>
+    </message>
+    <message>
+        <source>Record server access events</source>
+        <translation>Sunucu erişim olaylarını kaydet</translation>
+    </message>
+    <message>
+        <source>Reads the servers' own logs for sign-ins, failed attempts and usage times. Off by default.</source>
+        <translation>Sunucuların kendi günlüklerinden girişleri, başarısız denemeleri ve kullanım sürelerini okur. Varsayılan olarak kapalıdır.</translation>
+    </message>
+    <message>
+        <source>Detailed logging</source>
+        <translation>Ayrıntılı kayıt</translation>
+    </message>
+    <message>
+        <source>Also records connection details in the log file, and changing, removing and importing servers and closing connections in Activity history.</source>
+        <translation>Bağlantı ayrıntılarını günlük dosyasına; sunucu değiştirme, silme, içe aktarma ve bağlantı kapatmayı da Etkinlik geçmişine kaydeder.</translation>
+    </message>
+    <message>
+        <source>Open log file</source>
+        <translation>Günlük dosyasını aç</translation>
+    </message>
+    <message>
+        <source>Open log folder</source>
+        <translation>Günlük klasörünü aç</translation>
+    </message>
+    <message>
+        <source>Contacts…</source>
+        <translation>Rehber…</translation>
+    </message>
+    <message>
+        <source>Import servers…</source>
+        <translation>Sunucuları içe aktar…</translation>
+    </message>
+    <message>
+        <source>Export servers…</source>
+        <translation>Sunucuları dışa aktar…</translation>
+    </message>
+    <message>
+        <source>Check for updates automatically</source>
+        <translation>Güncellemeleri otomatik denetle</translation>
+    </message>
+    <message>
+        <source>Check for updates…</source>
+        <translation>Güncellemeleri denetle…</translation>
+    </message>
+    <message>
+        <source>About RConnect</source>
+        <translation>RConnect hakkında</translation>
+    </message>
+    <message>
+        <source>Who's connected</source>
+        <translation>Kimler bağlı</translation>
+    </message>
+    <message>
+        <source>GROUPS</source>
+        <translation>GRUPLAR</translation>
+    </message>
+    <message>
+        <source>A group appears when a server is put in it: right-click a server, then Group.</source>
+        <translation>Bir gruba sunucu koyulunca grup görünür: sunucuya sağ tıklayıp Grup'u seçin.</translation>
+    </message>
+    <message>
+        <source>No groups yet.</source>
+        <translation>Henüz grup yok.</translation>
+    </message>
+    <message>
+        <source>Rename…</source>
+        <translation>Yeniden adlandır…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Kaldır</translation>
+    </message>
+    <message>
+        <source>Rename group</source>
+        <translation>Grubu yeniden adlandır</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <translation>Grup adı</translation>
+    </message>
+    <message>
+        <source>Everyone who signs in to or out of a server is always recorded.</source>
+        <translation>Sunucuya giren ve çıkan herkes her zaman kaydedilir.</translation>
     </message>
 </context>
 </TS>

@@ -25,6 +25,7 @@ struct ServerProfile {
     bool ignoreCertWarnings = true;
     bool monitor = true;       // port check once a minute
     bool favorite = false;     // listed first
+    QString group;             // the list is sectioned by it; empty = none
     bool checkSessions = true; // who is connected, over WinRM with the saved password
 
     bool isValid() const { return !host.trimmed().isEmpty(); }

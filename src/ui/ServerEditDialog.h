@@ -4,7 +4,6 @@
 #include <QDialog>
 #include <QStringList>
 
-class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
@@ -15,23 +14,21 @@ class QWidget;
 class ServerEditDialog : public QDialog {
     Q_OBJECT
 public:
-    ServerEditDialog(const ServerProfile &initial, bool isNew, const QStringList &usedColors,
-                     QWidget *parent = nullptr);
+    // `groups` are the names already in use, offered in the Group box.
+    ServerEditDialog(const ServerProfile &initial, bool isNew, const QStringList &groups, QWidget *parent = nullptr);
 
     ServerProfile profile() const;
 
 private:
     void accept() override;
-    QString pickColor() const;
 
     ServerProfile m_initial;
-    QStringList m_usedColors;
     QLineEdit *m_name;
+    QComboBox *m_group;
     QLineEdit *m_host;
     QLineEdit *m_user;
     QLineEdit *m_password;
     QCheckBox *m_savePassword;
-    QButtonGroup *m_colors;
     QPlainTextEdit *m_notes;
     QToolButton *m_advancedToggle;
     QWidget *m_advanced;

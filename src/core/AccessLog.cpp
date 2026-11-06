@@ -310,21 +310,14 @@ bool write(const QByteArray &lines)
 
 } // namespace
 
-namespace {
-QAtomicInt g_serverEvents(-1);
-}
-
+// Everyone who signs in to or out of a server is recorded. There is no switch for it.
 bool AccessLog::serverEventsEnabled()
 {
-    if (g_serverEvents.loadRelaxed() < 0)
-        g_serverEvents.storeRelaxed(QSettings().value(QStringLiteral("log/serverEvents"), false).toBool() ? 1 : 0);
-    return g_serverEvents.loadRelaxed() == 1;
+    return true;
 }
 
-void AccessLog::setServerEventsEnabled(bool on)
+void AccessLog::setServerEventsEnabled(bool)
 {
-    g_serverEvents.storeRelaxed(on ? 1 : 0);
-    QSettings().setValue(QStringLiteral("log/serverEvents"), on);
 }
 
 QString AccessLog::path()

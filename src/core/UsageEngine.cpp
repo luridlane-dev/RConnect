@@ -364,6 +364,33 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
         }
     }
 
+    // A visit with no measurement has only the IP address. When every named visit from that address on that server
+    // agrees on one computer name, the unnamed ones are that computer too, so one person is not split in two rows
+    // (one with the name, one without). Two different names behind one address (a shared line) fill nothing.
+    {
+        QHash<QString, QString> nameOf; // "server|address" -> the one name, or empty when they disagree
+        for (const Visit &v : std::as_const(report.visits)) {
+            if (v.client.isEmpty() || v.address.isEmpty())
+                continue;
+            const QString key = v.serverId + QLatin1Char('|') + v.address;
+            if (!nameOf.contains(key))
+                nameOf.insert(key, v.client);
+            else if (nameOf.value(key).compare(v.client, Qt::CaseInsensitive) != 0)
+                nameOf[key] = QString();
+        }
+        for (Visit &v : report.visits) {
+            if (!v.client.isEmpty() || v.address.isEmpty())
+                continue;
+            const QString name = nameOf.value(v.serverId + QLatin1Char('|') + v.address);
+            if (name.isEmpty())
+                continue;
+            v.client = name;
+            for (Segment &seg : v.segments)
+                if (seg.client.isEmpty())
+                    seg.client = name;
+        }
+    }
+
     // Merge close connections into visits
     {
         std::sort(report.visits.begin(), report.visits.end(), [](const Visit &x, const Visit &y) {

@@ -15,6 +15,7 @@ struct Result {
     Status status = Status::Invalid;
     QList<ServerProfile> servers;
     QString error; // only for Invalid
+    int unusable = 0; // entries in the file without an address
 };
 
 Result load(const QString &path, const QString &passphrase = {});

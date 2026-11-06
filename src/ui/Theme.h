@@ -27,8 +27,7 @@ ThemeNotifier *notifier();
 // Native title bar in the colour of the current mode (Windows 10 1809+ / 11).
 void darkTitleBar(QWidget *window);
 
-// Colours; they change with the mode. Painted surfaces are translucent so the window's soft
-// gradient shows through them, like frosted glass.
+// Colours for hand-painted widgets; they change with the mode (see Scheme in Theme.cpp).
 inline QColor kBackground(0x00, 0x00, 0x00);
 inline QColor kCard(0x0c, 0x0c, 0x0c);
 inline QColor kCardHover(0x16, 0x16, 0x16);
@@ -45,11 +44,14 @@ inline QColor kOrange(0xff, 0x9f, 0x0a);
 inline QColor kRed(0xff, 0x45, 0x3a);
 inline QColor kBusy(0xff, 0x5a, 0x4d); // a server somebody is using: stands out from every other state
 inline QColor kTabPill(255, 255, 255, 28);
+inline QColor kTabActive(0x22, 0x22, 0x22); // the tab in front, and the start page button while it is shown
 inline QColor kBarOff(255, 255, 255, 46);
 inline QColor kPopupFill(0x14, 0x14, 0x17);
 inline QColor kPopupBorder(0x2a, 0x2a, 0x2f);
 inline QColor kIconLine(0xd1, 0xd1, 0xd6);
+inline QColor kIconTile(0x4f, 0x5d, 0x6b); // the square behind a server's monitor icon
+inline QColor kHeaderFill(0x2e, 0x33, 0x3b); // the bar that opens a group of servers
 
-// Segoe UI Variable on Windows 11, Segoe UI before.
+// Segoe UI, drawn without hinting.
 QFont font(int pixelSize, QFont::Weight weight = QFont::Normal);
 }

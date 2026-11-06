@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QRegularExpression>
+#include <QThread>
 #include <QUuid>
 #include <QXmlStreamReader>
 
@@ -965,17 +966,40 @@ const QStringList &WinRm::eventSources()
     return sources;
 }
 
+namespace {
+
+// A lost connection or a hiccup of the server's remote management service is tried once more, at once: one dropped
+// packet must not show as "could not read who is connected" and clear the list of sessions. Only fast failures are
+// repeated (a slow one already used the time), and a refused sign-in never is: repeated wrong passwords lock accounts.
+template <typename Attempt>
+SessionQuery withOneRetry(int timeoutMs, Attempt attempt)
+{
+    QElapsedTimer clock;
+    clock.start();
+    SessionQuery q = attempt();
+    const bool transient = q.result == SessionQuery::Unreachable || q.result == SessionQuery::Failed;
+    if (!transient || clock.elapsed() > timeoutMs / 3)
+        return q;
+    QThread::msleep(400);
+    return attempt();
+}
+
+} // namespace
+
 SessionQuery WinRm::querySessions(const QString &host, const QString &user, const QString &domain,
                                   const QString &password, int timeoutMs,
                                   const QHash<QString, EventCursor> *cursors)
 {
-    return Client(host.trimmed(), timeoutMs)
-        .run(user, domain, password, sessionCommand(cursors),
-             cursors ? Client::SessionsAndEvents : Client::Sessions);
+    return withOneRetry(timeoutMs, [&] {
+        return Client(host.trimmed(), timeoutMs)
+            .run(user, domain, password, sessionCommand(cursors),
+                 cursors ? Client::SessionsAndEvents : Client::Sessions);
+    });
 }
 
 SessionQuery WinRm::runCommand(const QString &host, const QString &user, const QString &domain,
                                const QString &password, int timeoutMs, const QString &command)
 {
+    // A command may change something on the server (messages, auditing): it is not repeated.
     return Client(host.trimmed(), timeoutMs).run(user, domain, password, command, Client::Raw);
 }

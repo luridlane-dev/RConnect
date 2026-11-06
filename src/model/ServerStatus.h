@@ -33,7 +33,7 @@ inline QColor statusColor(const ServerStatus &s)
         if (s.occupancy == ServerStatus::Busy)
             return Theme::kBusy;
         return s.mine ? Theme::kBlue : Theme::kGreen;
-    case ServerStatus::Offline:  return Theme::kRed;
+    case ServerStatus::Offline:  return Theme::kLabelTertiary;
     default:                     return Theme::kLabelSecondary;
     }
 }
@@ -93,17 +93,17 @@ inline QString statusBadge(const ServerStatus &s)
     }
     if (s.mine)
         return QCoreApplication::translate("ServerStatus", "You are connected");
-    return s.occupancy == ServerStatus::Free ? QCoreApplication::translate("ServerStatus", "Free")
-                                             : QCoreApplication::translate("ServerStatus", "Online");
+    return s.occupancy == ServerStatus::Free ? QCoreApplication::translate("ServerStatus", "Available")
+                                             : QCoreApplication::translate("ServerStatus", "Reachable");
 }
 
 // For the second badge of a busy card: whether the person is at the computer, in plain words.
 inline QString idleShort(int minutes)
 {
     if (minutes < 1)
-        return QCoreApplication::translate("ServerStatus", "Using it now");
-    return minutes < 60 ? QCoreApplication::translate("ServerStatus", "Not used for %1 min").arg(minutes)
-                        : QCoreApplication::translate("ServerStatus", "Not used for %1 h").arg(minutes / 60);
+        return QCoreApplication::translate("ServerStatus", "Active");
+    return minutes < 60 ? QCoreApplication::translate("ServerStatus", "Idle %1 min").arg(minutes)
+                        : QCoreApplication::translate("ServerStatus", "Idle %1 h").arg(minutes / 60);
 }
 
 inline QString statusToolTip(const ServerStatus &s)
@@ -114,6 +114,8 @@ inline QString statusToolTip(const ServerStatus &s)
     if (s.latencyMs >= 0)
         parts << QCoreApplication::translate("ServerStatus", "Connection: %1 · %2 ms (average %3 ms)")
                      .arg(qualityText(signalBars(s))).arg(s.latencyMs).arg(s.avgLatencyMs);
+    if (s.occupancy == ServerStatus::OccupancyUnknown && !s.mine)
+        parts << QCoreApplication::translate("ServerStatus", "The server answers, but who is connected could not be read.");
     if (s.occupancy == ServerStatus::OccupancyError) {
         parts << QCoreApplication::translate("ServerStatus", "Could not check who is connected: %1")
                      .arg(s.occupancyError);

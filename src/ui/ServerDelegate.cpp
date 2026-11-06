@@ -1,54 +1,86 @@
 #include "ServerDelegate.h"
 #include "Theme.h"
 #include "core/GeoIp.h"
+#include "ServerPanel.h"
+#include "ServerSectionModel.h"
 #include "model/ServerStore.h"
 
 #include <QAbstractItemView>
+#include <QCoreApplication>
 #include <QHelpEvent>
-#include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmapCache>
+#include <QPolygonF>
 #include <QToolTip>
 
 #include <cmath>
 
 namespace {
 
-constexpr int kPad = 14;
-constexpr int kIconSize = 48;
+constexpr int kPad = 12;
+constexpr int kDot = 8;
 constexpr int kFlagWidth = 16;
 constexpr int kFlagHeight = 11;
-constexpr int kBarWidth = 3;
-constexpr int kBarGap = 2;
-constexpr int kBarCount = 4;
-constexpr int kBarsWidth = kBarCount * kBarWidth + (kBarCount - 1) * kBarGap;
-constexpr int kBarsHeight = 13;
-constexpr int kBadgeHeight = 20;
+constexpr int kButtonWidth = 76;
+constexpr int kButtonHeight = 24;
+constexpr int kSide = ServerPanel::kInset; // a row stays this far from the left and right edge of its column
 
-// Every rectangle of a card, so painting and tooltips agree.
+// A row is drawn inside its item, between the side margins; a card fills its item.
+QRect inner(const QRect &item, bool list)
+{
+    return list ? item.adjusted(kSide, 0, -kSide, 0) : item;
+}
+
+// Every rectangle of an item, so painting and tooltips agree.
 struct Geometry {
-    QRect card, icon, name, pill, star, status, flag, host, latency, bars;
+    QRect dot, name, pill, star, latency, flag, host, status, button;
 };
 
-Geometry geometry(const QRect &card, bool hasFlag)
+Geometry cardGeometry(const QRect &card, bool hasFlag)
 {
     Geometry g;
-    g.card = card;
-    g.icon = QRect(card.left() + kPad, card.center().y() - kIconSize / 2 + 1, kIconSize, kIconSize);
-    const int left = g.icon.right() + 1 + 12;
+    const int left = card.left() + kPad;
     const int right = card.right() + 1 - kPad;
-    const int top = card.top() + 13;
+    const int top = card.top() + 10;
+    const int bottom = card.top() + 33;
 
+    g.dot = QRect(left, top + 5, kDot, kDot);
+    const int textLeft = left + kDot + 8;
     g.star = QRect(right - 16, top, 16, 18);
-    g.name = QRect(left, top, right - 22 - left, 18);
-    g.pill = QRect(g.star.left() - 6 - 42, top, 42, 18);
-    g.status = QRect(left, top + 21, right - left, kBadgeHeight);
-    const int hostLeft = left + (hasFlag ? kFlagWidth + 6 : 0);
-    g.flag = QRect(left, top + 46 + (14 - kFlagHeight) / 2, kFlagWidth, kFlagHeight);
-    g.bars = QRect(right - kBarsWidth, top + 46 + (14 - kBarsHeight) / 2 + 1, kBarsWidth, kBarsHeight);
-    g.latency = QRect(g.bars.left() - 6 - 52, top + 46, 52, 14);
-    g.host = QRect(hostLeft, top + 46, g.latency.left() - 6 - hostLeft, 14);
+    g.latency = QRect(g.star.left() - 4 - 44, top, 44, 18);
+    g.name = QRect(textLeft, top, g.latency.left() - 6 - textLeft, 18);
+    g.pill = QRect(g.name.right() + 1 - 38, top, 38, 18);
+
+    const int hostLeft = textLeft + (hasFlag ? kFlagWidth + 6 : 0);
+    g.flag = QRect(textLeft, bottom + (16 - kFlagHeight) / 2, kFlagWidth, kFlagHeight);
+    const int hostRight = hostLeft + qMin((right - hostLeft) * 46 / 100, 100);
+    g.host = QRect(hostLeft, bottom, hostRight - hostLeft, 16);
+    g.status = QRect(hostRight + 8, bottom, right - hostRight - 8, 16);
+    return g;
+}
+
+Geometry rowGeometry(const QRect &row, bool hasFlag)
+{
+    Geometry g;
+    const int left = row.left() + kPad;
+    const int right = row.right() + 1 - kPad;
+    const int mid = row.center().y();
+
+    g.button = QRect(right - kButtonWidth, mid - kButtonHeight / 2, kButtonWidth, kButtonHeight);
+    g.star = QRect(g.button.left() - 10 - 16, mid - 9, 16, 18);
+    g.latency = QRect(g.star.left() - 8 - 52, mid - 9, 52, 18);
+    g.dot = QRect(left, mid - kDot / 2, kDot, kDot);
+    const int textLeft = left + kDot + 10;
+    const int room = g.latency.left() - 12 - textLeft;
+    const int nameWidth = room * 38 / 100;
+    const int hostWidth = room * 30 / 100;
+    g.name = QRect(textLeft, mid - 9, nameWidth - 8, 18);
+    g.pill = QRect(g.name.right() - 38 + 1, mid - 9, 38, 18);
+    const int hostLeft = textLeft + nameWidth + (hasFlag ? kFlagWidth + 6 : 0);
+    g.flag = QRect(textLeft + nameWidth, mid - kFlagHeight / 2, kFlagWidth, kFlagHeight);
+    g.host = QRect(hostLeft, mid - 8, textLeft + nameWidth + hostWidth - hostLeft, 16);
+    g.status = QRect(textLeft + nameWidth + hostWidth + 8, mid - 8, g.latency.left() - 12 - (textLeft + nameWidth + hostWidth + 8), 16);
     return g;
 }
 
@@ -70,59 +102,50 @@ QPixmap flagPixmap(const QString &code, qreal dpr)
     return pm;
 }
 
-QColor barColor(int bars)
+void drawStar(QPainter *p, const QRect &box, bool filled)
 {
-    return bars >= 3 ? Theme::kGreen : (bars == 2 ? Theme::kOrange : Theme::kRed);
-}
-
-// A flat status label in `color`: optional square marker, then text. Returns the width used.
-int drawBadge(QPainter *p, const QRect &avail, const QColor &color, const QString &text, bool dot)
-{
-    const QFont font = Theme::font(11, QFont::DemiBold);
-    const QFontMetrics fm(font);
-    constexpr int padLeft = 0, padRight = 0, dotSize = 6, dotGap = 6;
-    const bool dotOnly = text.isEmpty();
-    const int reserved = padLeft + padRight + (dot ? dotSize + dotGap : 0);
-    const QString shown = fm.elidedText(text, Qt::ElideRight, qMax(0, avail.width() - reserved));
-    const int width = dotOnly ? 24 : reserved + fm.horizontalAdvance(shown);
-    const QRect r(avail.left(), avail.top(), qMin(width, avail.width()), kBadgeHeight);
-
-    p->setPen(Qt::NoPen);
-    if (dot) {
-        const int dotX = dotOnly ? r.center().x() - dotSize / 2 : r.left() + padLeft;
-        p->setBrush(color);
-        p->drawRect(QRect(dotX, r.center().y() - dotSize / 2 + 1, dotSize, dotSize));
+    const QPointF c = QRectF(box).center();
+    QPainterPath star;
+    for (int k = 0; k < 10; ++k) {
+        const qreal r = k % 2 ? 3.2 : 7.2;
+        const qreal a = -M_PI / 2 + k * M_PI / 5;
+        const QPointF pt(c.x() + r * std::cos(a), c.y() + 0.6 + r * std::sin(a));
+        if (k == 0)
+            star.moveTo(pt);
+        else
+            star.lineTo(pt);
     }
-    if (!dotOnly) {
-        p->setFont(font);
-        p->setPen(color);
-        p->drawText(QRect(r.left() + padLeft + (dot ? dotSize + dotGap : 0), r.top(), r.width(), r.height()),
-                    Qt::AlignVCenter | Qt::AlignLeft, shown);
-    }
-    return r.width();
+    star.closeSubpath();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    p->setBrush(filled ? QBrush(Theme::kOrange) : Qt::NoBrush);
+    p->setPen(QPen(filled ? Theme::kOrange : Theme::kLabelTertiary, 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p->drawPath(star);
+    p->setRenderHint(QPainter::Antialiasing, false);
 }
 
 } // namespace
 
-QRect ServerDelegate::starRect(const QRect &itemRect)
+QRect ServerDelegate::starRect(const QRect &itemRect) const
 {
-    return geometry(itemRect.adjusted(0, 0, -1, -1), false).star.adjusted(-6, -6, 6, 6);
+    const QRect r = inner(itemRect, m_list).adjusted(0, 0, -1, -1);
+    return (m_list ? rowGeometry(r, false) : cardGeometry(r, false)).star.adjusted(-6, -6, 6, 6);
 }
 
 bool ServerDelegate::helpEvent(QHelpEvent *event, QAbstractItemView *view, const QStyleOptionViewItem &option,
                                const QModelIndex &index)
 {
-    if (event->type() != QEvent::ToolTip) {
+    if (event->type() != QEvent::ToolTip || index.data(ServerSectionModel::HeaderRole).toBool()) {
         QToolTip::hideText();
         return true;
     }
     const QString code = index.data(ServerStore::CountryRole).toString();
-    const Geometry g = geometry(option.rect.adjusted(0, 0, -1, -1), !code.isEmpty());
+    const QRect r = inner(option.rect, m_list).adjusted(0, 0, -1, -1);
+    const Geometry g = m_list ? rowGeometry(r, !code.isEmpty()) : cardGeometry(r, !code.isEmpty());
     const QPoint pos = event->pos();
     QString text;
     if (!code.isEmpty() && g.flag.adjusted(-3, -3, 3, 3).contains(pos))
         text = GeoIp::countryName(code);
-    else if (g.status.united(g.latency).united(g.bars).adjusted(-3, -3, 3, 3).contains(pos))
+    else if (g.status.united(g.latency).united(g.dot).adjusted(-3, -3, 3, 3).contains(pos))
         text = index.data(ServerStore::StatusToolTipRole).toString();
     if (text.isEmpty() && g.star.adjusted(-6, -6, 6, 6).contains(pos))
         text = QCoreApplication::translate("ServerDelegate", "Favourite");
@@ -134,157 +157,223 @@ bool ServerDelegate::helpEvent(QHelpEvent *event, QAbstractItemView *view, const
     return true;
 }
 
-QSize ServerDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const
+QSize ServerDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &index) const
 {
-    return QSize(m_cardWidth, kCardHeight);
+    if (index.data(ServerSectionModel::HeaderRole).toBool())
+        return QSize(m_columns * m_cardWidth + (m_columns - 1) * m_gap, kHeaderHeight);
+    return QSize(m_cardWidth, m_list ? kRowHeight : kCardHeight);
+}
+
+void ServerDelegate::paintHeader(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &index) const
+{
+    p->save();
+    p->setRenderHint(QPainter::TextAntialiasing);
+
+    const QString group = index.data(ServerSectionModel::SectionGroupRole).toString();
+    const bool collapsed = index.data(ServerSectionModel::SectionCollapsedRole).toBool();
+    const int count = index.data(ServerSectionModel::SectionCountRole).toInt();
+    const bool hover = opt.state & QStyle::State_MouseOver;
+
+    // The bar that heads a group: square, tinted, boxed on all sides. Rows hang under it as one table.
+    const QRect item = inner(opt.rect, m_list).adjusted(0, 0, -1, -1);
+    const QRect bar(item.left(), item.bottom() - 28, item.width(), 28);
+    const int mid = bar.center().y();
+    p->fillRect(bar, Theme::kHeaderFill);
+    if (hover)
+        p->fillRect(bar, Theme::kSeparator);
+    p->setPen(Theme::kSeparatorStrong);
+    p->setBrush(Qt::NoBrush);
+    p->drawRect(bar);
+
+    // Arrow: points right while the group is folded
+    const qreal ax = bar.left() + 14;
+    QPolygonF arrow;
+    if (collapsed)
+        arrow << QPointF(ax - 2, mid - 4) << QPointF(ax + 2.5, mid) << QPointF(ax - 2, mid + 4);
+    else
+        arrow << QPointF(ax - 4, mid - 2) << QPointF(ax + 4, mid - 2) << QPointF(ax, mid + 2.5);
+    p->setRenderHint(QPainter::Antialiasing, true);
+    p->setPen(Qt::NoPen);
+    p->setBrush(Theme::kLabelSecondary);
+    p->drawPolygon(arrow);
+    p->setRenderHint(QPainter::Antialiasing, false);
+
+    const QFont titleFont = Theme::font(12, QFont::Bold);
+    p->setFont(titleFont);
+    p->setPen(Theme::kLabel);
+    const QString title = (group.isEmpty() ? QCoreApplication::translate("ServerDelegate", "Other") : group).toUpper();
+    const int titleWidth = qMin(QFontMetrics(titleFont).horizontalAdvance(title) + 6, bar.width() / 3);
+    int x = bar.left() + 28;
+    p->drawText(QRect(x, mid - 10, titleWidth + 2, 20), Qt::AlignVCenter | Qt::AlignLeft,
+                QFontMetrics(titleFont).elidedText(title, Qt::ElideRight, titleWidth));
+    x += titleWidth + 12;
+
+    p->setFont(Theme::font(11));
+    p->setPen(Theme::kLabelSecondary);
+    p->drawText(QRect(x, mid - 10, 60, 20), Qt::AlignVCenter | Qt::AlignLeft, QString::number(count));
+
+    p->restore();
 }
 
 void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &index) const
 {
+    if (index.data(ServerSectionModel::HeaderRole).toBool()) {
+        paintHeader(p, opt, index);
+        return;
+    }
     p->save();
-    p->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing | QPainter::SmoothPixmapTransform);
+    p->setRenderHint(QPainter::TextAntialiasing);
 
     const bool hover = opt.state & QStyle::State_MouseOver;
     const bool open = m_open.contains(index.data(ServerStore::IdRole).toString());
     const QString code = index.data(ServerStore::CountryRole).toString();
-    const QRect cardRect = opt.rect.adjusted(0, 0, -1, -1);
-    const Geometry g = geometry(cardRect, !code.isEmpty());
+    const QRect rect = inner(opt.rect, m_list).adjusted(0, 0, -1, -1);
+    const Geometry g = m_list ? rowGeometry(rect, !code.isEmpty()) : cardGeometry(rect, !code.isEmpty());
 
-    // Card
-    // The card hints at what the server is doing without shouting: a faint warm wash when someone is on it, a
-    // fainter green when it is free, dimmed when it does not answer.
-    const int stateNow = index.data(ServerStore::StatusRole).toInt();
-    const bool busyCard = stateNow == ServerStatus::Online && index.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy;
-    const bool freeCard = stateNow == ServerStatus::Online && index.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Free;
-    const bool offlineCard = stateNow == ServerStatus::Offline;
-    const QRectF flat = QRectF(cardRect).adjusted(0.5, 0.5, -0.5, -0.5);
-    p->fillRect(flat, hover ? Theme::kCardHover : Theme::kCard);
-    if (busyCard || freeCard) {
-        QColor wash = busyCard ? Theme::kBusy : Theme::kGreen;
-        wash.setAlpha((busyCard ? 34 : 9) + (hover ? 6 : 0));
-        p->fillRect(flat, wash);
-    }
-    p->setBrush(Qt::NoBrush);
-    QColor border = open ? Theme::kBlue : (hover ? Theme::kSeparatorStrong : Theme::kSeparator);
-    if (busyCard && !open)
-        border = Theme::kBusy.darker(hover ? 100 : 130);
-    p->setPen(QPen(border, 1.0));
-    p->drawRect(flat);
-    if (busyCard)
-        p->fillRect(QRectF(flat.left(), flat.top(), 4, flat.height()), Theme::kBusy);
-    if (offlineCard)
-        p->setOpacity(0.55);
+    const int state = index.data(ServerStore::StatusRole).toInt();
+    const bool offline = state == ServerStatus::Offline;
+    const bool online = state == ServerStatus::Online;
+    const bool busy = (online && index.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy);
 
-    // Icon: the server colour, faded, as a flat square with a monitor on it
-    const QColor chosen = QColor(index.data(ServerStore::ColorRole).toString()).toHsl();
-    const QColor base = QColor::fromHsl(qMax(0, chosen.hue()), chosen.saturation() * 40 / 100,
-                                        qBound(70, chosen.lightness() * 75 / 100, 140));
-    p->setPen(Qt::NoPen);
-    p->setBrush(base);
-    p->drawRect(g.icon);
-    const QPointF c = g.icon.center() + QPointF(0.5, 0.5);
-    const QRectF screen(c.x() - 13, c.y() - 13, 26, 18);
-    p->setBrush(Qt::NoBrush);
-    p->setPen(QPen(QColor(255, 255, 255, 225), 1.8, Qt::SolidLine, Qt::FlatCap, Qt::MiterJoin));
-    p->drawRect(screen);
-    p->drawLine(QPointF(c.x(), screen.bottom() + 1), QPointF(c.x(), screen.bottom() + 5));
-    p->drawLine(QPointF(c.x() - 6, screen.bottom() + 6), QPointF(c.x() + 6, screen.bottom() + 6));
-
-    // Favourite star: always there when set, otherwise only while the pointer is on the card
-    const bool favorite = index.data(ServerStore::FavoriteRole).toBool();
-    if (favorite || hover) {
-        const QPointF c = QRectF(g.star).center();
-        QPainterPath star;
-        for (int k = 0; k < 10; ++k) {
-            const qreal r = k % 2 ? 3.4 : 7.6;
-            const qreal a = -M_PI / 2 + k * M_PI / 5;
-            const QPointF pt(c.x() + r * std::cos(a), c.y() + 0.6 + r * std::sin(a));
-            if (k == 0)
-                star.moveTo(pt);
-            else
-                star.lineTo(pt);
+    // Surface. A row is a line of the group's table: boxed at the sides, divided from the next one, with the
+    // last one closing the box. A card is a flat tile with a thin outline.
+    const QColor fill = hover ? Theme::kCardHover : Theme::kCard;
+    // A server somebody is on is washed with its colour from the left, fading out to the right.
+    auto wash = [&](const QRect &area) {
+        QLinearGradient grad(area.left(), 0, area.right(), 0);
+        QColor strong = Theme::kBusy, soft = Theme::kBusy;
+        strong.setAlpha(Theme::mode() == Theme::Dark ? 84 : 72);
+        soft.setAlpha(0);
+        grad.setColorAt(0, strong);
+        grad.setColorAt(0.7, QColor(soft.red(), soft.green(), soft.blue(), strong.alpha() / 5));
+        grad.setColorAt(1, soft);
+        p->fillRect(area, grad);
+    };
+    if (m_list) {
+        const QModelIndex next = index.sibling(index.row() + 1, 0);
+        const bool last = !next.isValid() || next.data(ServerSectionModel::HeaderRole).toBool();
+        p->fillRect(rect, fill);
+        if (busy)
+            wash(rect.adjusted(1, 0, 0, 0));
+        p->setPen(Theme::kSeparatorStrong);
+        p->drawLine(rect.left(), rect.top(), rect.left(), rect.bottom());
+        p->drawLine(rect.right(), rect.top(), rect.right(), rect.bottom());
+        p->setPen(last ? Theme::kSeparatorStrong : Theme::kSeparator);
+        p->drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom());
+        if (open) {
+            QColor tint = Theme::kBlue;
+            tint.setAlpha(24);
+            p->fillRect(rect.adjusted(1, 0, 0, -1), tint);
+            p->fillRect(QRect(rect.left(), rect.top(), 3, rect.height()), Theme::kBlue);
         }
-        star.closeSubpath();
-        p->setBrush(favorite ? QBrush(Theme::kOrange) : Qt::NoBrush);
-        p->setPen(QPen(favorite ? Theme::kOrange : Theme::kLabelTertiary, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        p->drawPath(star);
+    } else {
+        p->setRenderHint(QPainter::Antialiasing, true);
+        p->setBrush(fill);
+        p->setPen(QPen(open ? Theme::kBlue : (hover ? Theme::kLabelTertiary : Theme::kSeparatorStrong), 1));
+        p->drawRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+        if (busy) {
+            QPainterPath clip;
+            clip.addRoundedRect(QRectF(rect).adjusted(1, 1, -1, -1), 2.5, 2.5);
+            p->save();
+            p->setClipPath(clip);
+            wash(rect);
+            p->restore();
+        }
+        p->setRenderHint(QPainter::Antialiasing, false);
+        if (open)
+            p->fillRect(QRect(rect.left() + 1, rect.top() + 3, 3, rect.height() - 5), Theme::kBlue);
     }
+    if (offline)
+        p->setOpacity(0.6);
 
-    // Name, and a pill while the server is open in a tab
-    const QFont nameFont = Theme::font(14, QFont::DemiBold);
+    // Status marker
+    const QColor statusColor = index.data(ServerStore::StatusColorRole).value<QColor>();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    p->setPen(Qt::NoPen);
+    p->setBrush(statusColor);
+    p->drawEllipse(g.dot);
+    p->setRenderHint(QPainter::Antialiasing, false);
+
+    // Name, and the mark of a server that is open in a tab
+    const QFont nameFont = Theme::font(13, QFont::DemiBold);
     p->setFont(nameFont);
     p->setPen(Theme::kLabel);
-    const int nameWidth = g.name.width() - (open ? g.pill.width() + 8 : 0);
+    const int nameWidth = g.name.width() - (open ? g.pill.width() + 4 : 0);
     p->drawText(QRect(g.name.left(), g.name.top(), nameWidth, g.name.height()), Qt::AlignVCenter | Qt::AlignLeft,
                 QFontMetrics(nameFont).elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, nameWidth));
     if (open) {
-        QColor fill = Theme::kBlue;
-        fill.setAlpha(44);
-        p->setPen(Qt::NoPen);
-        p->setBrush(fill);
-        p->drawRect(g.pill);
-        QFont f = Theme::font(10, QFont::DemiBold);
-        f.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
-        p->setFont(f);
+        p->setFont(Theme::font(10, QFont::DemiBold));
         p->setPen(Theme::kBlueText);
-        p->drawText(g.pill, Qt::AlignCenter, QCoreApplication::translate("ServerDelegate", "OPEN"));
-    }
-
-    // Status badge; when someone is connected: their computer, and whether they are active or idle
-    const QColor statusColor = index.data(ServerStore::StatusColorRole).value<QColor>();
-    const bool busy = index.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy;
-    const bool online = index.data(ServerStore::StatusRole).toInt() == ServerStatus::Online;
-    int x = g.status.left();
-    const int badgeLimit = g.status.right() + 1;
-    if (busy) {
-        // The person's name in a badge, and how long they have been idle as plain text. Both are measured and
-        // elided, so a long computer name never runs out of the card.
-        const int idle = index.data(ServerStore::OwnerIdleRole).toInt();
-        const QFont idleFont = Theme::font(11, idle < 1 ? QFont::DemiBold : QFont::Normal);
-        const QFontMetrics idleMetrics(idleFont);
-        const QString idleLabel = idleShort(idle);
-        const int idleWidth = qMin(idleMetrics.horizontalAdvance(idleLabel), (badgeLimit - x) * 2 / 5);
-        const int badgeWidth = qMax(60, badgeLimit - x - idleWidth - 8);
-        x += drawBadge(p, QRect(x, g.status.top(), badgeWidth, kBadgeHeight), statusColor,
-                       index.data(ServerStore::StatusBadgeRole).toString(), true) + 8;
-        if (badgeLimit - x > 20) {
-            p->setFont(idleFont);
-            p->setPen(idle < 1 ? Theme::kGreen : Theme::kLabelSecondary);
-            p->drawText(QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight), Qt::AlignVCenter | Qt::AlignLeft,
-                        idleMetrics.elidedText(idleLabel, Qt::ElideRight, badgeLimit - x));
-        }
-    } else {
-        drawBadge(p, QRect(x, g.status.top(), badgeLimit - x, kBadgeHeight), statusColor,
-                  index.data(ServerStore::StatusBadgeRole).toString(), online);
+        p->drawText(g.pill, Qt::AlignCenter,
+                    QCoreApplication::translate("ServerDelegate", "OPEN"));
     }
 
     // Address with the country flag
     const QPixmap flag = flagPixmap(code, p->device()->devicePixelRatioF());
     if (!flag.isNull())
         p->drawPixmap(g.flag.topLeft(), flag);
-    const QFont hostFont = Theme::font(11);
-    p->setFont(hostFont);
-    p->setPen(Theme::kLabelTertiary);
+    const QFont textFont = Theme::font(12);
+    p->setFont(textFont);
+    p->setPen(Theme::kLabelSecondary);
+    const QFontMetrics textMetrics(textFont);
     p->drawText(g.host, Qt::AlignVCenter | Qt::AlignLeft,
-                QFontMetrics(hostFont).elidedText(index.data(ServerStore::HostRole).toString(), Qt::ElideRight,
-                                                  g.host.width()));
+                textMetrics.elidedText(index.data(ServerStore::HostRole).toString(), Qt::ElideRight, g.host.width()));
 
-    // Connection quality: connect time and signal bars
-    const int bars = index.data(ServerStore::SignalRole).toInt();
-    if (bars > 0) {
-        const int latency = index.data(ServerStore::LatencyRole).toInt();
-        if (latency >= 0) {
-            p->setPen(Theme::kLabelSecondary);
-            p->drawText(g.latency, Qt::AlignVCenter | Qt::AlignRight,
-                        QCoreApplication::translate("ServerDelegate", "%1 ms").arg(latency));
-        }
-        p->setPen(Qt::NoPen);
-        for (int i = 0; i < kBarCount; ++i) {
-            const int h = 4 + i * 3;
-            const QRect bar(g.bars.left() + i * (kBarWidth + kBarGap), g.bars.bottom() + 1 - h, kBarWidth, h);
-            p->setBrush(i < bars ? barColor(bars) : Theme::kBarOff);
-            p->drawRect(bar);
-        }
+    // Status in words. For a server in use the person comes first, in bold and the plain text colour, and then
+    // whether they are at the computer.
+    const QString badge = index.data(ServerStore::StatusBadgeRole).toString();
+    if (busy) {
+        QString detail;
+        const int idle = index.data(ServerStore::OwnerIdleRole).toInt();
+        if (idle >= 0)
+            detail = QStringLiteral("  ·  ") + idleShort(idle);
+        const QFont whoFont = Theme::font(12, QFont::Bold);
+        const QFontMetrics whoMetrics(whoFont);
+        const int whoWidth = qMin(whoMetrics.horizontalAdvance(badge) + 6, g.status.width());
+        const QString who = whoMetrics.elidedText(badge, Qt::ElideRight, whoWidth);
+        const int detailWidth = qMax(0, g.status.width() - whoWidth);
+        const QString rest = textMetrics.elidedText(detail, Qt::ElideRight, detailWidth);
+        const int total = whoWidth + textMetrics.horizontalAdvance(rest);
+        const int x = m_list ? g.status.left() : g.status.right() + 1 - total;
+        p->setFont(whoFont);
+        p->setPen(Theme::kLabel);
+        p->drawText(QRect(x, g.status.top(), whoWidth, g.status.height()), Qt::AlignVCenter | Qt::AlignLeft, who);
+        p->setFont(textFont);
+        p->setPen(Theme::kLabelSecondary);
+        p->drawText(QRect(x + whoWidth, g.status.top(), g.status.width() - whoWidth, g.status.height()),
+                    Qt::AlignVCenter | Qt::AlignLeft, rest);
+    } else {
+        p->setPen(offline ? Theme::kLabelTertiary : Theme::kLabelSecondary);
+        p->drawText(g.status, Qt::AlignVCenter | (m_list ? Qt::AlignLeft : Qt::AlignRight),
+                    textMetrics.elidedText(badge, Qt::ElideRight, g.status.width()));
+    }
+
+    // Connect time
+    const int latency = index.data(ServerStore::LatencyRole).toInt();
+    if (online && latency >= 0) {
+        p->setFont(Theme::font(11));
+        p->setPen(Theme::kLabelTertiary);
+        p->drawText(g.latency, Qt::AlignVCenter | Qt::AlignRight,
+                    QCoreApplication::translate("ServerDelegate", "%1 ms").arg(latency));
+    }
+
+    // Favourite star: always there when set, otherwise only while the pointer is on the item
+    const bool favorite = index.data(ServerStore::FavoriteRole).toBool();
+    if (favorite || hover)
+        drawStar(p, g.star, favorite);
+
+    // Connect button of a row
+    if (m_list) {
+        p->setOpacity(1.0);
+        p->setRenderHint(QPainter::Antialiasing, true);
+        p->setRenderHint(QPainter::Antialiasing, true);
+        p->setBrush(hover ? Theme::kBlue : Theme::kBackground);
+        p->setPen(QPen(hover ? Theme::kBlue : Theme::kLabelTertiary, 1));
+        p->drawRoundedRect(QRectF(g.button).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+        p->setRenderHint(QPainter::Antialiasing, false);
+        p->setFont(Theme::font(12, QFont::DemiBold));
+        p->setPen(hover ? QColor(Qt::white) : Theme::kLabel);
+        p->drawText(g.button, Qt::AlignCenter, QCoreApplication::translate("ServerDelegate", "Connect"));
     }
 
     p->restore();

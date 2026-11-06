@@ -35,6 +35,8 @@ public:
     void shutdown();
     // Gives the keyboard to the control's inner window; only then Win and Alt+Tab go to the server.
     void focusRemote();
+    // After the connection ended: what the server said about who is connected. An empty title keeps the default.
+    void setServerView(const QString &title, const QString &message);
 
 signals:
     void stateChanged(RdpSession::State state);
@@ -86,6 +88,7 @@ private:
     bool m_controlMissing = false;
     int m_lastReason = 0;
     int m_lastExtReason = 0;
+    QString m_noteTitle, m_noteMessage; // see setServerView()
     int m_retryAttempt = 0; // automatic reconnects since the last good connection
     QTimer m_retryTimer;
     QSize m_syncedSize; // last size sent to the server

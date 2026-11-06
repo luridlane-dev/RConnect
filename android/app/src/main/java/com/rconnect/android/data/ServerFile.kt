@@ -18,7 +18,8 @@ import javax.crypto.spec.SecretKeySpec
  */
 object ServerFile {
     sealed class Read {
-        data class Ok(val servers: List<ServerEntry>) : Read()
+        /** [unusable]: entries the phone cannot use (no address or no account name). */
+        data class Ok(val servers: List<ServerEntry>, val unusable: Int = 0) : Read()
         data object NeedPassphrase : Read()
         data object WrongPassphrase : Read()
         data object Invalid : Read()
@@ -31,7 +32,8 @@ object ServerFile {
 
     fun read(text: String, passphrase: String = ""): Read {
         val root = try {
-            val trimmed = text.trim()
+            // Editors on Windows put a byte order mark in front; it is not whitespace, so trim() keeps it.
+            val trimmed = text.trimStart(Char(0xFEFF)).trim()
             if (trimmed.startsWith("[")) JSONObject().put("Content", JSONObject().put("Connections", JSONArray(trimmed)))
             else JSONObject(trimmed)
         } catch (e: Exception) {
@@ -48,7 +50,7 @@ object ServerFile {
         val connections = bundle.optJSONArray("Connections") ?: return Read.Invalid
         val secrets = bundle.optJSONObject("Secrets") ?: JSONObject()
         val servers = (0 until connections.length()).mapNotNull { toEntry(connections.optJSONObject(it) ?: return@mapNotNull null, secrets) }
-        return Read.Ok(servers)
+        return Read.Ok(servers, connections.length() - servers.size)
     }
 
     fun write(servers: List<ServerEntry>, passphrase: String): String {
@@ -56,8 +58,12 @@ object ServerFile {
         val secrets = JSONObject()
         for (s in servers) {
             val (domain, user) = if (s.user.contains('\\')) s.user.substringBefore('\\') to s.user.substringAfter('\\') else "" to s.user
-            connections.put(JSONObject().put("Id", s.id).put("Name", s.name).put("Address", s.host).put("Port", 3389)
-                .put("UserName", user).put("Domain", domain).put("Group", s.group))
+            // What the file had that the phone does not use goes back in; the phone's own fields win.
+            val c = runCatching { JSONObject(s.extra) }.getOrDefault(JSONObject())
+            c.put("Id", s.id).put("Name", s.title).put("Address", s.host).put("Port", s.port)
+                .put("UserName", user).put("Domain", domain)
+            if (s.group.isNotEmpty()) c.put("Group", s.group) else c.remove("Group")
+            connections.put(c)
             if (passphrase.isNotEmpty() && s.password.isNotEmpty()) secrets.put(s.id, s.password)
         }
         val bundle = JSONObject().put("Connections", connections)
@@ -85,6 +91,8 @@ object ServerFile {
         val user = c.optString("UserName").trim()
         if (host.isEmpty() || user.isEmpty()) return null
         val domain = c.optString("Domain").trim()
+        val extra = JSONObject(c.toString())
+        for (known in OWN_FIELDS) extra.remove(known)
         return ServerEntry(
             id = UUID.randomUUID().toString(),
             name = c.optString("Name").trim().takeIf { it != host }.orEmpty(),
@@ -92,8 +100,13 @@ object ServerFile {
             user = if (domain.isNotEmpty()) "$domain\\$user" else user,
             password = secrets.optString(c.optString("Id")),
             group = c.optString("Group").trim(),
+            port = c.optInt("Port", 3389).takeIf { it in 1..65535 } ?: 3389,
+            extra = if (extra.length() == 0) "" else extra.toString(),
         )
     }
+
+    // The fields the phone keeps itself; everything else in an entry is carried in ServerEntry.extra.
+    private val OWN_FIELDS = listOf("Id", "Name", "Address", "Port", "UserName", "Domain", "Group")
 
     private fun derive(passphrase: String, salt: ByteArray, iterations: Int, algorithm: String): ByteArray =
         SecretKeyFactory.getInstance(algorithm).generateSecret(PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)).encoded

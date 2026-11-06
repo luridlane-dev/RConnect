@@ -12,7 +12,6 @@ public:
     enum Role {
         IdRole = Qt::UserRole + 1,
         HostRole,
-        ColorRole,
         StatusRole, // ServerStatus::State
         StatusBadgeRole, // short text of the status badge
         UserRole_, // domain\user
@@ -25,6 +24,7 @@ public:
         SignalRole,    // 0..4
         OwnerIdleRole, // minutes the connected user has been idle, -1 if nobody
         FavoriteRole,  // bool
+        GroupRole,     // group name, empty if none
     };
 
     explicit ServerStore(QObject *parent = nullptr);
@@ -53,10 +53,14 @@ public:
     void setStatus(const QString &id, const ServerStatus &s);
 
     Counts counts() const;
-    QStringList usedColors() const;
     void setCountry(const QString &id, const QString &host, const QString &country);
     void setFavorite(const QString &id, bool favorite);
     int favoriteCount() const;
+    void setGroup(const QString &id, const QString &group);
+    // Gives every server of a group another name, or no group at all when `to` is empty.
+    void renameGroup(const QString &from, const QString &to);
+    // The group names in use, sorted.
+    QStringList groups() const;
     // The nicknames in the contacts changed: the cards show other text.
     void refreshDisplay();
 

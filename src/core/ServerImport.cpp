@@ -10,6 +10,7 @@
 #include <QSqlDatabase>
 #include <QSaveFile>
 #include <QSqlQuery>
+#include <QStringConverter>
 #include <QStringList>
 #include <QUuid>
 
@@ -167,6 +168,8 @@ QJsonObject toExportJson(const ServerProfile &p)
     c[QStringLiteral("Domain")] = p.domain;
     c[QStringLiteral("Color")] = p.color;
     c[QStringLiteral("IsFavorite")] = p.favorite;
+    if (!p.group.isEmpty())
+        c[QStringLiteral("Group")] = p.group;
     c[QStringLiteral("ColorDepth")] = p.colorDepth;
     c[QStringLiteral("RedirectClipboard")] = p.clipboard;
     c[QStringLiteral("RedirectDrives")] = p.drives;
@@ -237,14 +240,18 @@ ServerProfile toProfile(const QJsonObject &c, const QJsonObject &secrets)
     p.name = field(c, "Name").toString().trimmed();
     if (p.name.isEmpty())
         p.name = p.host;
-    p.port = field(c, "Port").toInt(3389);
-    p.user = field(c, "UserName").toString();
-    p.domain = field(c, "Domain").toString();
+    // The port may be a number or text ("3389"); anything outside 1-65535 is not a port.
+    const QJsonValue port = field(c, "Port");
+    const int portNumber = port.isString() ? port.toString().trimmed().toInt() : port.toInt(3389);
+    p.port = portNumber >= 1 && portNumber <= 65535 ? portNumber : 3389;
+    p.user = field(c, "UserName").toString().trimmed();
+    p.domain = field(c, "Domain").toString().trimmed();
     p.password = secrets.value(field(c, "Id").toString()).toString();
     p.savePassword = !p.password.isEmpty();
     const QColor color(field(c, "Color").toString());
     p.color = color.isValid() ? color.name() : QString();
     p.favorite = field(c, "IsFavorite").toBool(false);
+    p.group = field(c, "Group").toString().trimmed();
 
     const int depth = field(c, "ColorDepth").toInt(32);
     p.colorDepth = (depth == 16 || depth == 24 || depth == 32) ? depth : 32;
@@ -346,8 +353,15 @@ Result load(const QString &path, const QString &passphrase)
         r.error = f.errorString();
         return r;
     }
-    const QByteArray content = f.readAll();
+    QByteArray content = f.readAll();
     f.close();
+    // A file saved by Notepad or PowerShell can start with a byte order mark (or be UTF-16); the JSON parser cannot read either.
+    if (content.startsWith("\xEF\xBB\xBF")) {
+        content.remove(0, 3);
+    } else if (content.startsWith("\xFF\xFE") || content.startsWith("\xFE\xFF")) {
+        QStringDecoder decoder(content.startsWith("\xFF\xFE") ? QStringConverter::Utf16LE : QStringConverter::Utf16BE);
+        content = QString(decoder(content.mid(2))).toUtf8();
+    }
 
     QJsonArray connections;
     QJsonObject secrets;
@@ -361,6 +375,8 @@ Result load(const QString &path, const QString &passphrase)
             const ServerProfile p = toProfile(v.toObject(), secrets);
             if (p.isValid())
                 r.servers.append(p);
+            else
+                ++r.unusable;
         }
         r.status = Status::Ok;
         return r;
@@ -406,6 +422,8 @@ Result load(const QString &path, const QString &passphrase)
         const ServerProfile p = toProfile(v.toObject(), secrets);
         if (p.isValid())
             r.servers.append(p);
+        else
+            ++r.unusable;
     }
     r.status = Status::Ok;
     return r;

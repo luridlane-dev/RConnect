@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
@@ -81,7 +82,6 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     case Qt::DisplayRole:  return p.name;
     case IdRole:           return p.id;
     case HostRole:         return p.port == 3389 ? p.host : QStringLiteral("%1:%2").arg(p.host).arg(p.port);
-    case ColorRole:        return p.color;
     case StatusRole:       return int(st.state);
     case StatusBadgeRole:  return statusBadge(st);
     case UserRole_:        return p.displayUser();
@@ -99,12 +99,16 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     case SignalRole:       return signalBars(st);
     case OwnerIdleRole:    return st.others.isEmpty() ? -1 : st.others.first().idleMinutes;
     case FavoriteRole:     return p.favorite;
+    case GroupRole:        return p.group;
     default:               return {};
     }
 }
 
 void ServerStore::load()
 {
+    // A missing list comes back from the backup before anything older is looked at.
+    if (!QFile::exists(filePath()) && QFile::exists(filePath() + QStringLiteral(".bak")))
+        QFile::copy(filePath() + QStringLiteral(".bak"), filePath());
     // One-time copy from the app's old names.
     if (!QFile::exists(filePath())) {
         const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
@@ -142,6 +146,12 @@ bool ServerStore::save() const
     root[QLatin1String("version")] = 1;
     root[QLatin1String("servers")] = arr;
 
+    // The last good list stays next to the file, so a lost or damaged servers.json can be recovered.
+    const QString backup = filePath() + QStringLiteral(".bak");
+    if (QFile::exists(filePath()) && QFileInfo(filePath()).size() > 0) {
+        QFile::remove(backup);
+        QFile::copy(filePath(), backup);
+    }
     QSaveFile f(filePath());
     if (!f.open(QIODevice::WriteOnly))
         return false;
@@ -245,14 +255,6 @@ void ServerStore::setCountry(const QString &id, const QString &host, const QStri
     scheduleSave();
 }
 
-QStringList ServerStore::usedColors() const
-{
-    QStringList colors;
-    for (const ServerProfile &p : m_profiles)
-        colors << p.color.toLower();
-    return colors;
-}
-
 void ServerStore::setFavorite(const QString &id, bool favorite)
 {
     const int i = indexOfId(id);
@@ -270,4 +272,42 @@ int ServerStore::favoriteCount() const
     for (const ServerProfile &p : m_profiles)
         n += p.favorite;
     return n;
+}
+
+void ServerStore::setGroup(const QString &id, const QString &group)
+{
+    const int i = indexOfId(id);
+    const QString name = group.trimmed();
+    if (i < 0 || m_profiles[i].group == name)
+        return;
+    m_profiles[i].group = name;
+    emit dataChanged(index(i), index(i));
+    scheduleSave();
+}
+
+void ServerStore::renameGroup(const QString &from, const QString &to)
+{
+    const QString name = to.trimmed();
+    if (from.isEmpty() || name == from)
+        return;
+    bool changed = false;
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        if (m_profiles[i].group != from)
+            continue;
+        m_profiles[i].group = name;
+        emit dataChanged(index(i), index(i));
+        changed = true;
+    }
+    if (changed)
+        scheduleSave();
+}
+
+QStringList ServerStore::groups() const
+{
+    QStringList names;
+    for (const ServerProfile &p : m_profiles)
+        if (!p.group.isEmpty() && !names.contains(p.group, Qt::CaseSensitive))
+            names << p.group;
+    names.sort(Qt::CaseInsensitive);
+    return names;
 }

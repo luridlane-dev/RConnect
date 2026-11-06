@@ -138,7 +138,7 @@ void AnimatedTabBar::slideTo(int index)
 
 void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
-    // A flat highlight slides behind the selected tab, under the tab text.
+    // A flat block slides behind the selected tab, under the tab text.
     const int idx = currentIndex();
     if (idx >= 0 && m_selectionVisible) {
         const QRectF target = tabRect(idx);
@@ -149,13 +149,8 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(Qt::NoPen);
-        p.setBrush(Theme::kTabPill);
-        p.drawRect(m_current.adjusted(2, 4, -2, -4));
-        // An accent line under it, so the active tab is clear at a glance.
-        p.setBrush(Theme::kBlue);
-        p.drawRect(QRectF(m_current.left() + 2, m_current.bottom() - 6, m_current.width() - 4, 2));
+        // The tab in front is a lighter block with an accent line along its bottom edge.
+        p.fillRect(m_current, Theme::kBlue);
     }
 
     QTabBar::paintEvent(e);

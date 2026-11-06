@@ -10,6 +10,7 @@ class QListView;
 class QPushButton;
 class ServerDelegate;
 class ServerProxy;
+class ServerSectionModel;
 class ServerStore;
 
 // Search, filter and the grid of server cards. Built for lists of a hundred servers.
@@ -50,6 +51,7 @@ protected:
 private:
     void retranslate();
     void showContextMenu(const QPoint &pos);
+    void setListMode(bool list);
     void updateCounts();
     void updateEmptyState();
     void fitCards();
@@ -57,6 +59,8 @@ private:
 
     ServerStore *m_store;
     ServerProxy *m_proxy;
+    ServerSectionModel *m_sections;
+    QButtonGroup *m_viewGroup = nullptr;
     QLineEdit *m_search;
     QPushButton *m_add;
     QPushButton *m_import;
@@ -67,5 +71,6 @@ private:
     QHBoxLayout *m_headLayout = nullptr;
     QHBoxLayout *m_filterLayout = nullptr;
     int m_rightInset = kInset;
+    int m_columns = 0;
     bool m_fitted = false;
 };

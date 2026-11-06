@@ -147,16 +147,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun exportContacts(): String = ContactJson.write(_contacts.value)
 
     /** Adds servers read from a file; returns how many were added and how many were already in the list. */
-    fun addServers(list: List<ServerEntry>): Pair<Int, Int> {
-        fun key(s: ServerEntry) = s.host.lowercase() + "|" + s.user.lowercase()
+    /**
+     * Adds what is not in the list yet. Returns how many were added and how many were left out: already there, or
+     * [unusable] in the file. A server that is already there but has no saved password takes the file's password.
+     */
+    fun addServers(list: List<ServerEntry>, unusable: Int = 0): Pair<Int, Int> {
+        fun key(s: ServerEntry) = s.host.trim().lowercase() + "|" + s.user.trim().lowercase()
         val known = _servers.value.map(::key).toMutableSet()
-        val fresh = list.filter { known.add(key(it)) }
-        if (fresh.isNotEmpty()) {
-            _servers.update { it + fresh }
+        val fresh = ArrayList<ServerEntry>()
+        val filled = HashMap<String, String>() // key -> password
+        for (s in list) {
+            if (known.add(key(s))) fresh += s
+            else if (s.password.isNotEmpty()) filled.putIfAbsent(key(s), s.password)
+        }
+        var changed = fresh.isNotEmpty()
+        val current = _servers.value.map {
+            val pw = filled[key(it)]
+            if (it.password.isEmpty() && pw != null) { changed = true; it.copy(password = pw) } else it
+        }
+        if (changed) {
+            _servers.value = current + fresh
             store.save(_servers.value)
             for (s in fresh) refresh(s.id)
+            for (s in current) if (filled.containsKey(key(s))) refresh(s.id, true)
         }
-        return fresh.size to (list.size - fresh.size)
+        return fresh.size to (list.size - fresh.size + unusable)
     }
 
     fun exportServers(passphrase: String): String = ServerFile.write(_servers.value, passphrase)
@@ -209,7 +224,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 setState(id) {
                     // Without the event log the connect time is not known: keep the one learned earlier for the same session.
                     val sessions = snapshot.sessions.map { s ->
-                        val before = it.sessions?.firstOrNull { o -> o.id == s.id && o.logonUtcMs == s.logonUtcMs }
+                        val before = it.sessions?.firstOrNull { o ->
+                            o.id == s.id && o.user.equals(s.user, true) &&
+                                (o.logonUtcMs == s.logonUtcMs || o.logonUtcMs == 0L || s.logonUtcMs == 0L)
+                        }
                         if (s.connectedUtcMs == 0L && before != null) s.copy(connectedUtcMs = before.connectedUtcMs) else s
                     }
                     ServerState(sessions, if (withEvents) snapshot.events else it.events, System.currentTimeMillis())

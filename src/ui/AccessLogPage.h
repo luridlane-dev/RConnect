@@ -5,13 +5,12 @@
 #include <QStringList>
 #include <QWidget>
 
-class AccessProxy;
+class AccessTableModel;
 class QComboBox;
 class QFrame;
 class QLabel;
 class QLineEdit;
 class QPushButton;
-class QStandardItemModel;
 class QTableView;
 class QTimer;
 
@@ -49,9 +48,8 @@ private:
     void applyPeriod();
     void exportCsv();
 
-    QStandardItemModel *m_model;
+    AccessTableModel *m_model;
     QTableView *m_view;
-    AccessProxy *m_proxy;
     QLabel *m_title;
     QLabel *m_subtitle;
     QLineEdit *m_filter;

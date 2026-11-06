@@ -597,6 +597,8 @@ void RdpSession::start()
 {
     m_closing = false;
     m_everConnected = false;
+    m_noteTitle.clear();
+    m_noteMessage.clear();
     m_lastReason = m_lastExtReason = 0;
     m_lastPolled = -1;
     m_lastHeartbeat = 0;
@@ -627,6 +629,14 @@ void RdpSession::start()
         log(QStringLiteral("Connect() returned"));
         m_poll.start();
     });
+}
+
+void RdpSession::setServerView(const QString &title, const QString &message)
+{
+    m_noteTitle = title;
+    m_noteMessage = message;
+    if (m_state == Replaced || m_state == Disconnected || m_state == Failed)
+        showOverlay();
 }
 
 void RdpSession::reconnect()
@@ -765,14 +775,22 @@ void RdpSession::showOverlay()
                                                : tr("Reaching the server…"),
                             false, tr("Cancel"), SessionOverlay::Busy);
     } else if (m_state == Replaced) {
-        m_overlay->setTexts(tr("Another computer connected"),
-                            tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")
-                                .arg(m_profile.name),
+        // The server said another connection took over; once it has been asked who is connected, that answer wins.
+        m_overlay->setTexts(m_noteTitle.isEmpty() ? tr("Another computer connected") : m_noteTitle,
+                            !m_noteTitle.isEmpty()
+                                ? m_noteMessage
+                                : tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")
+                                          .arg(m_profile.name)
+                                      + (m_noteMessage.isEmpty() ? QString() : QStringLiteral("\n\n") + m_noteMessage),
                             true, closeTab, SessionOverlay::Warning);
     } else {
-        m_overlay->setTexts(m_everConnected ? tr("Connection ended") : tr("Could not connect"),
-                            describe(m_lastReason, m_lastExtReason), true, closeTab,
-                            SessionOverlay::Error);
+        const QString text = describe(m_lastReason, m_lastExtReason);
+        m_overlay->setTexts(m_noteTitle.isEmpty() ? (m_everConnected ? tr("Connection ended") : tr("Could not connect"))
+                                                  : m_noteTitle,
+                            m_noteMessage.isEmpty() ? text
+                            : text.isEmpty()        ? m_noteMessage
+                                                    : text + QStringLiteral("\n\n") + m_noteMessage,
+                            true, closeTab, SessionOverlay::Error);
     }
     m_overlay->show();
     m_overlay->raise();
@@ -795,8 +813,8 @@ QString RdpSession::describe(int reason, int ext) const
         break;
     }
     if (reason == 0 && ext == 0) {
-        return m_everConnected ? tr("The server closed the connection. Another computer may have connected.")
-                               : QString();
+        // No reason given: do not guess who did it. Workspace asks the server and fills in who is connected.
+        return m_everConnected ? tr("The server closed the connection without saying why.") : QString();
     }
     switch (reason) {
     case 260:  return tr("The server name could not be resolved (DNS). Is the address correct?");
