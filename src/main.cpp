@@ -1,5 +1,6 @@
 #include "core/Autostart.h"
 #include "core/Language.h"
+#include "core/Priority.h"
 #include "core/UsageDiag.h"
 #include "model/ServerStore.h"
 #include "ui/Theme.h"
@@ -55,20 +56,6 @@ int usageDiagnostics(int argc, char *argv[], const QString &outFile)
     return 0;
 }
 
-// While another program has the focus (a game, say), RConnect gives way to it: lower priority and Windows'
-// efficiency mode (EcoQoS), which also moves it off the fast cores of a hybrid CPU. The session still runs,
-// a little slower; the program in front no longer stutters because of it.
-void yieldToForeground(bool yield)
-{
-    const HANDLE self = GetCurrentProcess();
-    SetPriorityClass(self, yield ? BELOW_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
-    PROCESS_POWER_THROTTLING_STATE state = {};
-    state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-    state.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-    state.StateMask = yield ? PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0;
-    SetProcessInformation(self, ProcessPowerThrottling, &state, sizeof(state));
-}
-
 } // namespace
 
 int main(int argc, char *argv[])
@@ -110,7 +97,7 @@ int main(int argc, char *argv[])
     Autostart::refresh();
 
     QObject::connect(&app, &QGuiApplication::applicationStateChanged, &app,
-                     [](Qt::ApplicationState s) { yieldToForeground(s != Qt::ApplicationActive); });
+                     [](Qt::ApplicationState s) { Priority::setApplicationActive(s == Qt::ApplicationActive); });
 
     const bool autostarted = QCoreApplication::arguments().contains(QStringLiteral("--autostart"));
     Workspace workspace(windowMarker);

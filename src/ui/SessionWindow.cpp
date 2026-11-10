@@ -37,7 +37,7 @@ bool s_settingsRead = false; // the settings are read when the first window is m
 
 QIcon homeIcon()
 {
-    // Drawn in the line colour, and in white while the home tab is the one in front (it is filled with the accent).
+    // Drawn in the line colour, and in the brighter text colour while the home tab is the one in front.
     auto draw = [](const QColor &colour) {
         constexpr qreal dpr = 2.0;
         QPixmap pm(int(16 * dpr), int(16 * dpr));
@@ -59,7 +59,7 @@ QIcon homeIcon()
     };
     QIcon icon;
     icon.addPixmap(draw(Theme::kIconLine), QIcon::Normal, QIcon::Off);
-    icon.addPixmap(draw(Qt::white), QIcon::Normal, QIcon::On);
+    icon.addPixmap(draw(Theme::kLabel), QIcon::Normal, QIcon::On);
     return icon;
 }
 
@@ -160,7 +160,7 @@ SessionWindow::SessionWindow(QWidget *home, QWidget *parent)
     m_homeTab = new QToolButton(m_topBar);
     m_homeTab->setObjectName(QStringLiteral("homeTab"));
     m_homeTab->setIcon(homeIcon());
-    m_homeTab->setIconSize(QSize(16, 16));
+    m_homeTab->setIconSize(QSize(14, 14));
     m_homeTab->setToolButtonStyle(Qt::ToolButtonIconOnly);
     m_homeTab->setCheckable(true);
     m_homeTab->setChecked(true);
@@ -202,7 +202,7 @@ SessionWindow::SessionWindow(QWidget *home, QWidget *parent)
         auto *b = new QToolButton(m_winBox);
         b->setObjectName(i == 2 ? QStringLiteral("winClose") : QStringLiteral("winButton"));
         b->setText(QString::fromUtf8(glyphs[i]));
-        b->setFixedSize(46, AnimatedTabBar::kHeight);
+        b->setFixedSize(40, AnimatedTabBar::kHeight);
         b->setCursor(Qt::PointingHandCursor);
         winLay->addWidget(b);
         m_winButtons << b;
@@ -290,13 +290,13 @@ void SessionWindow::addSession(RdpSession *s, int index)
     m_tabBar->setTabData(idx, id);
     // The tab bar puts its button flush with the tab edge: the holder adds the right padding.
     auto *holder = new QWidget(m_tabBar);
-    holder->setFixedSize(30, 20);
+    holder->setFixedSize(24, 18);
     auto *close = new QToolButton(holder);
     close->setObjectName(QStringLiteral("tabClose"));
     close->setText(QStringLiteral("×"));
     close->setToolTip(tr("Close tab (Ctrl+W)"));
     close->setCursor(Qt::PointingHandCursor);
-    close->setFixedSize(18, 18);
+    close->setFixedSize(16, 16);
     close->move(0, 0);
     connect(close, &QToolButton::clicked, this, [this, id] { emit closeTabRequested(id); });
     m_tabBar->setTabButton(idx, QTabBar::RightSide, holder);

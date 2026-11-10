@@ -33,8 +33,10 @@ add_executable(RConnect WIN32
     src/core/Autostart.h         src/core/Autostart.cpp
     src/core/Contacts.h          src/core/Contacts.cpp
     src/core/GeoIp.h             src/core/GeoIp.cpp
+    src/core/HostNames.h         src/core/HostNames.cpp
     src/core/Language.h          src/core/Language.cpp
     src/core/Log.h               src/core/Log.cpp
+    src/core/Priority.h          src/core/Priority.cpp
     src/core/Secrets.h           src/core/Secrets.cpp
     src/core/ServerImport.h      src/core/ServerImport.cpp
     src/core/StatusMonitor.h     src/core/StatusMonitor.cpp
@@ -44,6 +46,7 @@ add_executable(RConnect WIN32
     src/core/UsageEngine.h       src/core/UsageEngine.cpp
     src/core/UsageLog.h          src/core/UsageLog.cpp
     src/core/WinRm.h             src/core/WinRm.cpp
+    src/core/WtsQuery.h          src/core/WtsQuery.cpp
     src/model/ServerProfile.h    src/model/ServerProfile.cpp
     src/model/ServerStatus.h
     src/model/ServerStore.h      src/model/ServerStore.cpp
@@ -71,7 +74,7 @@ target_compile_definitions(RConnect PRIVATE
     RCONNECT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(RConnect PRIVATE
     Qt6::Widgets Qt6::AxContainer Qt6::Sql Qt6::Network
-    bcrypt crypt32 dwmapi ole32 oleaut32 secur32 ws2_32)
+    bcrypt crypt32 dwmapi mpr ole32 oleaut32 secur32 wtsapi32 ws2_32)
 
 if(MSVC)
     target_compile_options(RConnect PRIVATE /utf-8 /W3 /MP)

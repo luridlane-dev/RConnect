@@ -60,6 +60,7 @@ struct SessionQuery {
     int eventsSkipped = 0;     // events of the logs that could not be read
     qint64 serverNowUtcMs = 0; // the server's own clock at the check (ms since epoch, UTC); 0 if unknown
     QByteArray output;         // raw standard output of runCommand()
+    bool viaWts = false;       // the sessions come from Windows' own query (WtsQuery), so there are no events
     QString error;
 };
 

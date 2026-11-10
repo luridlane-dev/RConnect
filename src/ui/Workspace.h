@@ -60,6 +60,7 @@ private:
     void editServer(const QString &id);
     void removeServer(const QString &id);
     void onSessionState(RdpSession::State state);
+    void updateLiveSessions();
     void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
     void enableAuditing(const QString &id);

@@ -399,6 +399,22 @@
         <source>Add to contacts…</source>
         <translation>Rehbere ekle…</translation>
     </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 ve %2 tane daha</translation>
+    </message>
+    <message>
+        <source>Computers</source>
+        <translation>Bilgisayarlar</translation>
+    </message>
+    <message>
+        <source>Name of the address</source>
+        <translation>Adresin adı</translation>
+    </message>
+    <message>
+        <source>Reasons</source>
+        <translation>Nedenler</translation>
+    </message>
 </context>
 <context>
     <name>AnimatedTabBar</name>
@@ -1082,6 +1098,10 @@ Use “+ Add server” to get started.</source>
         <translation>Bağlanabilir</translation>
     </message>
     <message>
+        <source>Can't see who is in</source>
+        <translation>Kimin girdiği görülemiyor</translation>
+    </message>
+    <message>
         <source>Could not check who is connected: %1</source>
         <translation>Kimin bağlı olduğu kontrol edilemedi: %1</translation>
     </message>
@@ -1378,6 +1398,66 @@ Use “+ Add server” to get started.</source>
     <message>
         <source>Still inside</source>
         <translation>Şu an içeride</translation>
+    </message>
+    <message>
+        <source>Who was on which server, when they came in and left, and how long they really worked. If nobody touches the mouse or keyboard for %1 minutes, that time counts as away. Times are in this PC&apos;s time zone (%2).</source>
+        <translation>Kim hangi sunucudaydı, ne zaman girip çıktı ve gerçekte ne kadar çalıştı. %1 dakika boyunca fareye ya da klavyeye kimse dokunmazsa o süre &quot;uzakta&quot; sayılır. Saatler bu bilgisayarın saat dilimine göredir (%2).</translation>
+    </message>
+    <message>
+        <source>Who</source>
+        <translation>Kim</translation>
+    </message>
+    <message>
+        <source>Came in</source>
+        <translation>Girdi</translation>
+    </message>
+    <message>
+        <source>Left</source>
+        <translation>Çıktı</translation>
+    </message>
+    <message>
+        <source>Time connected</source>
+        <translation>Bağlı kaldı</translation>
+    </message>
+    <message>
+        <source>Working</source>
+        <translation>Çalıştı</translation>
+    </message>
+    <message>
+        <source>Away</source>
+        <translation>Uzakta</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>Bilinmiyor</translation>
+    </message>
+    <message>
+        <source>Unknown computer</source>
+        <translation>Bilinmeyen bilgisayar</translation>
+    </message>
+    <message>
+        <source>Address: %1
+Accounts used: %2
+Times in: %3</source>
+        <translation>Adres: %1
+Kullanılan hesaplar: %2
+Giriş sayısı: %3</translation>
+    </message>
+    <message>
+        <source>Time in %1</source>
+        <translation>%1. giriş</translation>
+    </message>
+    <message>
+        <source>In total %1 on servers: %2 working, %3 away, %4 unknown.</source>
+        <translation>Toplam %1 sunucularda: %2 çalıştı, %3 uzakta, %4 bilinmiyor.</translation>
+    </message>
+    <message>
+        <source>In total %1 on servers: %2 working, %3 away.</source>
+        <translation>Toplam %1 sunucularda: %2 çalıştı, %3 uzakta.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Came in and left.&lt;/b&gt; The server writes down every time someone signs in, disconnects or signs out, so these times are exact. If the same computer comes back within %1 minutes it counts as one stay.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Working and away.&lt;/b&gt; RConnect asks each server about every 2 minutes how long the person has not touched the mouse or keyboard. After %2 minutes without any touch, that time counts as away.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Unknown.&lt;/b&gt; Working or away can only be told while RConnect is open and can reach the server. For the rest the total is still right, but the split is not guessed. Keep RConnect running (Settings &gt; Start with Windows) to measure all day.&lt;/p&gt;&lt;p&gt;Away time can be off by up to 2 minutes. Computer names come from the server at the time of the visit.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Girdi ve çıktı.&lt;/b&gt; Sunucu, birinin her girişini, bağlantı kopmasını ve çıkışını kaydeder; bu saatler kesindir. Aynı bilgisayar %1 dakika içinde geri gelirse tek kalış sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Çalıştı ve uzakta.&lt;/b&gt; RConnect her sunucuya yaklaşık 2 dakikada bir kişinin fareye ya da klavyeye ne zamandır dokunmadığını sorar. %2 dakika boyunca hiç dokunulmazsa o süre uzakta sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Bilinmiyor.&lt;/b&gt; Çalıştı/uzakta ayrımı yalnızca RConnect açıkken ve sunucuya ulaşabiliyorken yapılabilir. Kalan süre için toplam yine doğrudur ama ayrım tahmin edilmez. Gün boyu ölçmek için RConnect&apos;i açık tutun (Ayarlar &gt; Windows ile başlat).&lt;/p&gt;&lt;p&gt;Uzakta süresi en fazla 2 dakika şaşabilir. Bilgisayar adları ziyaret sırasında sunucudan alınır.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2047,6 +2127,29 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
     <message>
         <source>Everyone who signs in to or out of a server is always recorded.</source>
         <translation>Sunucuya giren ve çıkan herkes her zaman kaydedilir.</translation>
+    </message>
+</context>
+<context>
+    <name>WtsQuery</name>
+    <message>
+        <source>The server does not answer Windows&apos; session query either.</source>
+        <translation>Sunucu Windows&apos;un oturum sorgusuna da yanıt vermiyor.</translation>
+    </message>
+    <message>
+        <source>The file-sharing port (445) of the server is closed.</source>
+        <translation>Sunucunun dosya paylaşımı bağlantı noktası (445) kapalı.</translation>
+    </message>
+    <message>
+        <source>Windows refused the sign-in: %1</source>
+        <translation>Windows girişi reddetti: %1</translation>
+    </message>
+    <message>
+        <source>Could not open the server: %1</source>
+        <translation>Sunucu açılamadı: %1</translation>
+    </message>
+    <message>
+        <source>Could not list the sessions: %1</source>
+        <translation>Oturumlar listelenemedi: %1</translation>
     </message>
 </context>
 </TS>

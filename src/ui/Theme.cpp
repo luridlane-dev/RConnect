@@ -21,16 +21,16 @@ QMainWindow, QDialog, QMessageBox { background: @bg@; }
 
 QWidget#topBar { background: @topBar@; border-bottom: 1px solid @border@; }
 QToolButton#menuButton {
-    background: transparent; border: none; border-radius: 3px; color: @text2@; padding: 0 0 4px 0; margin: 6px 4px; font-size: 18px;
+    background: transparent; border: none; border-radius: 3px; color: @text2@; padding: 0 0 3px 0; margin: 3px 2px; font-size: 16px;
 }
 QToolButton#menuButton:hover { background: @hover@; color: @text@; }
 QToolButton#menuButton:pressed { background: @press@; }
 QToolButton#homeTab {
-    background: transparent; border: none; border-radius: 3px; padding: 0; margin: 6px 4px 6px 6px;
-    min-width: 34px; max-width: 34px;
+    background: transparent; border: none; border-radius: 3px; padding: 0; margin: 3px 2px 3px 4px;
+    min-width: 28px; max-width: 28px;
 }
 QToolButton#homeTab:hover { background: @hover@; }
-QToolButton#homeTab:checked { background: @accent@; }
+QToolButton#homeTab:checked { background: @tabActive@; }
 QToolButton#winButton {
     background: transparent; border: none; border-radius: 0; color: @text2@; padding: 0; font-size: 13px;
 }
@@ -146,13 +146,13 @@ QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
 
 QTabBar { background: transparent; }
 QTabBar::tab {
-    background: transparent; color: @text2@; padding: 0 10px 0 22px; margin: 0; border: none;
-    min-width: 90px; max-width: 200px;
+    background: transparent; color: @text2@; padding: 0 4px 0 20px; margin: 0; border: none; font-size: 12px;
+    min-width: 80px; max-width: 180px;
 }
 QTabBar::tab:hover { color: @text@; background: @hoverSoft@; }
-QTabBar::tab:selected { color: #ffffff; background: transparent; font-weight: 600; }
+QTabBar::tab:selected { color: @text@; background: transparent; font-weight: 600; }
 QToolButton#tabClose {
-    background: transparent; border: none; border-radius: 3px; color: @text2@; font-size: 14px; padding: 0; margin: 0;
+    background: transparent; border: none; border-radius: 3px; color: @text2@; font-size: 13px; padding: 0; margin: 0;
 }
 QToolButton#tabClose:hover { background: @hover@; color: @text@; }
 QToolButton#tabClose:pressed { background: @press@; }
@@ -178,7 +178,7 @@ struct Scheme {
     QColor text, text2, text3;
     QColor hover, hoverSoft, press, tabPill, tabActive, segTrack, segOn, scroll, scrollHover;
     QColor accent, accentHover, accentPress, accentText;
-    QColor green, orange, red, busy;
+    QColor green, orange, red, busy, busyText;
     QColor overlay, overlayText, overlayText2;
     QColor cardHover, cardPressed, separator, separatorStrong, barOff, iconLine, iconTile;
     QColor headFill;
@@ -216,7 +216,8 @@ Scheme darkScheme()
     c.green = QColor(0x70, 0xa1, 0x86);
     c.orange = QColor(0xc4, 0xa0, 0x66);
     c.red = QColor(0xc4, 0x7a, 0x72);
-    c.busy = QColor(0xc9, 0x9a, 0x5e);
+    c.busy = QColor(0xd2, 0x6a, 0x60);
+    c.busyText = QColor(0xf0, 0x8c, 0x82);
     c.overlay = c.bg;
     c.overlayText = c.text;
     c.overlayText2 = c.text2;
@@ -250,7 +251,8 @@ Scheme lightScheme()
     c.green = QColor(0x55, 0x8c, 0x6c);
     c.orange = QColor(0xa9, 0x80, 0x46);
     c.red = QColor(0xb0, 0x66, 0x5e);
-    c.busy = QColor(0xb4, 0x82, 0x44);
+    c.busy = QColor(0xc2, 0x48, 0x3c);
+    c.busyText = QColor(0xb0, 0x28, 0x1e);
     c.cardHover = QColor(0xee, 0xf3, 0xf9);
     c.separator = QColor(0, 0, 0, 22);
     c.separatorStrong = QColor(0, 0, 0, 46);
@@ -314,6 +316,7 @@ void setColours(const Scheme &c)
     kOrange = c.orange;
     kRed = c.red;
     kBusy = c.busy;
+    kBusyText = c.busyText;
     kTabPill = c.tabPill;
     kTabActive = c.tabActive;
     kBarOff = c.barOff;

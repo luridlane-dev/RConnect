@@ -24,7 +24,7 @@
 
 namespace {
 
-enum Column { Name, Computer, Address, Entries, FirstIn, LastOut, Total, Active, Away, Unknown, ColumnCount };
+enum Column { Name, Server, FirstIn, LastOut, Total, Active, Away, Unknown, ColumnCount };
 enum Range { Today, Yesterday, Week, Month, Everything };
 constexpr int kKeyRole = Qt::UserRole + 1;
 
@@ -125,7 +125,7 @@ UsagePage::UsagePage(QWidget *parent)
     m_view->header()->setStretchLastSection(true);
     m_view->header()->setHighlightSections(false);
     m_view->header()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    const int widths[ColumnCount] = {230, 160, 140, 80, 150, 140, 140, 110, 120, 110};
+    const int widths[ColumnCount] = {300, 170, 150, 150, 130, 110, 110, 110};
     for (int c = 0; c < ColumnCount; ++c)
         m_view->setColumnWidth(c, widths[c]);
 
@@ -151,12 +151,11 @@ UsagePage::UsagePage(QWidget *parent)
 void UsagePage::retranslate()
 {
     m_title->setText(tr("Time on servers"));
-    m_subtitle->setText(tr("Who came in from which computer, when they came in and left, and how long they really "
-                           "worked. Times come from the servers' own logs and are shown in this PC's time zone (%1). "
-                           "Time away from the computer (no mouse or keyboard for %2 minutes or more) is counted as "
-                           "away, not as active.")
-                            .arg(QString::fromLatin1(QTimeZone::systemTimeZoneId()))
-                            .arg(UsageEngine::kAfkMinutes));
+    m_subtitle->setText(tr("Who was on which server, when they came in and left, and how long they really worked. "
+                           "If nobody touches the mouse or keyboard for %1 minutes, that time counts as away. "
+                           "Times are in this PC's time zone (%2).")
+                            .arg(UsageEngine::kAfkMinutes)
+                            .arg(QString::fromLatin1(QTimeZone::systemTimeZoneId())));
     m_refresh->setText(tr("Refresh"));
     m_rebuild->setText(tr("Recalculate from log"));
     m_rebuild->setToolTip(tr("Reads the sign-in and sign-out events from the access log again and recalculates every day."));
@@ -167,9 +166,8 @@ void UsagePage::retranslate()
     m_range->addItems({tr("Today"), tr("Yesterday"), tr("Last 7 days"), tr("Last 30 days"), tr("All time")});
     m_range->setCurrentIndex(keep < 0 ? Today : keep);
     m_range->blockSignals(false);
-    m_model->setHorizontalHeaderLabels({tr("Server"), tr("Computer"), tr("IP address"), tr("Visits"),
-                                        tr("First in"), tr("Last out"), tr("Time on server"), tr("Active time"),
-                                        tr("Away time (AFK)"), tr("Not measured")});
+    m_model->setHorizontalHeaderLabels({tr("Who"), tr("Server"), tr("Came in"), tr("Left"), tr("Time connected"),
+                                        tr("Working"), tr("Away"), tr("Unknown")});
     reload();
 }
 
@@ -210,23 +208,14 @@ void UsagePage::explain()
     QMessageBox box(QMessageBox::Information, tr("How is this calculated?"), QString(), QMessageBox::Ok, this);
     box.setTextFormat(Qt::RichText);
     box.setText(
-        tr("<p><b>Where the times come from.</b> From the server's own session log (Windows events: signed in, "
-           "disconnected, reconnected, signed out). Those times are exact. All times are saved in UTC and shown in "
-           "this PC's time zone; a day ends at this PC's midnight.</p>"
-           "<p><b>Visit.</b> From connecting to disconnecting. Time while disconnected is never counted. If the "
-           "same computer (same IP address) comes back within %1 minutes, it is one visit and the short break "
-           "is not counted.</p>"
-           "<p><b>Away (AFK).</b> RConnect asks every server about every 2 minutes how long the person has not "
-           "touched the mouse or keyboard. If that is %2 minutes or more, the whole stretch is away, from the "
-           "last touch on, and it is not active time.</p>"
-           "<p><b>Not measured.</b> Signing in and out is always exact, because the server writes it down. "
-           "Whether the person was active or away is only measured while RConnect is open and can reach the "
-           "server. For the time it was not, the total stays correct but the split is not known, and it is never "
-           "guessed. Keep RConnect running (Settings > Start with Windows) to measure all day.</p>"
-           "<p><b>Accuracy.</b> Entering and leaving: exact to the second. Away time: the server reports whole "
-           "minutes and RConnect asks about every 2 minutes, so each away stretch can be off by up to 2 minutes "
-           "(usually too short rather than too long). Computer names come from the server at the time of the "
-           "visit; if no measurement was made during a visit, only the IP address is known.</p>")
+        tr("<p><b>Came in and left.</b> The server writes down every time someone signs in, disconnects or signs "
+           "out, so these times are exact. If the same computer comes back within %1 minutes it counts as one stay.</p>"
+           "<p><b>Working and away.</b> RConnect asks each server about every 2 minutes how long the person has not "
+           "touched the mouse or keyboard. After %2 minutes without any touch, that time counts as away.</p>"
+           "<p><b>Unknown.</b> Working or away can only be told while RConnect is open and can reach the server. "
+           "For the rest the total is still right, but the split is not guessed. Keep RConnect running (Settings > "
+           "Start with Windows) to measure all day.</p>"
+           "<p>Away time can be off by up to 2 minutes. Computer names come from the server at the time of the visit.</p>")
             .arg(UsageEngine::kMergeGapSec / 60)
             .arg(UsageEngine::kAfkMinutes));
     box.exec();
@@ -268,11 +257,9 @@ void UsagePage::reload()
     QList<QStandardItem *> dayRow;
     QDate currentDay;
     qint64 dayTotal = 0, dayActive = 0, dayAfk = 0, dayUnknown = 0;
-    int dayEntries = 0;
     auto finishDay = [&] {
         if (!dayItem)
             return;
-        dayRow.at(Entries)->setText(QString::number(dayEntries));
         dayRow.at(Total)->setText(duration(dayTotal));
         dayRow.at(Active)->setText(duration(dayActive));
         dayRow.at(Away)->setText(duration(dayAfk));
@@ -287,7 +274,6 @@ void UsagePage::reload()
             finishDay();
             currentDay = g.day;
             dayTotal = dayActive = dayAfk = dayUnknown = 0;
-            dayEntries = 0;
             dayRow = rowOf(QStringList(int(ColumnCount), QString()));
             dayRow.at(Name)->setText(dayText(g.day));
             dayRow.at(Name)->setData(QStringLiteral("D|") + g.day.toString(Qt::ISODate), kKeyRole);
@@ -305,7 +291,6 @@ void UsagePage::reload()
         dayActive += g.activeMs;
         dayAfk += g.afkMs;
         dayUnknown += g.unknownMs;
-        dayEntries += g.entries;
 
         QString firstIn = clock(g.firstIn);
         QString lastOut = clock(g.lastOut);
@@ -321,23 +306,23 @@ void UsagePage::reload()
         else if (latest && latest->intoNextDay)
             lastOut = tr("Midnight (goes on)");
 
+        // The person first: the nickname or computer name, else the address.
+        const QString who = !g.client.isEmpty() ? Contacts::instance().label(g.client, {})
+                            : !g.address.isEmpty() ? g.address
+                                                    : tr("Unknown computer");
         const QList<QStandardItem *> parent = rowOf(
-            {g.server, g.client.isEmpty()
-                           ? dash
-                           : Contacts::instance().label(g.client, {}),
-             g.address.isEmpty() ? dash : g.address,
-             QString::number(g.entries), firstIn, lastOut, duration(g.totalMs()), duration(g.activeMs),
+            {who, g.server, firstIn, lastOut, duration(g.totalMs()), duration(g.activeMs),
              duration(g.afkMs), g.unknownMs > 0 ? duration(g.unknownMs) : dash});
         const QString key = QStringLiteral("G|") + g.day.toString(Qt::ISODate) + QLatin1Char('|') + g.serverId
                             + QLatin1Char('|') + g.client + QLatin1Char('|') + g.address;
         parent.at(Name)->setData(key, kKeyRole);
-        parent.at(Name)->setToolTip(tr("Accounts used: %1").arg(g.users.join(QStringLiteral(", "))));
+        parent.at(Name)->setToolTip(tr("Address: %1\nAccounts used: %2\nTimes in: %3")
+                                        .arg(g.address.isEmpty() ? dash : g.address, g.users.join(QStringLiteral(", ")))
+                                        .arg(g.entries));
         QFont bold = parent.at(Name)->font();
         bold.setBold(true);
         parent.at(Name)->setFont(bold);
         parent.at(Total)->setFont(bold);
-        if (g.client.isEmpty())
-            parent.at(Computer)->setForeground(Theme::kLabelSecondary);
         if (g.inside)
             parent.at(LastOut)->setForeground(Theme::kGreen);
         parent.at(Away)->setForeground(Theme::kLabelSecondary);
@@ -362,7 +347,7 @@ void UsagePage::reload()
             const bool exact = v.startKnown() && v.endKnown() && !v.inferred();
             const QString prefix = exact || dv.totalMs() == 0 ? QString() : tr("at least ");
             const QList<QStandardItem *> visit = rowOf(
-                {tr("Visit %1").arg(ordinal), {}, {}, {}, start, end, prefix + duration(dv.totalMs()),
+                {tr("Time in %1").arg(ordinal), {}, start, end, prefix + duration(dv.totalMs()),
                  duration(dv.activeMs), duration(dv.afkMs), dv.unknownMs > 0 ? duration(dv.unknownMs) : dash});
             visit.at(Name)->setToolTip(tr("Account: %1").arg(v.user));
             visit.at(Away)->setForeground(Theme::kLabelSecondary);
@@ -376,7 +361,7 @@ void UsagePage::reload()
                     continue;
                 const bool away = p.kind == UsageEngine::Kind::Afk;
                 const QList<QStandardItem *> part = rowOf(
-                    {away ? tr("Away (AFK)") : tr("Not measured"), {}, {}, {}, clock(p.start, true), clock(p.end, true),
+                    {away ? tr("Away") : tr("Unknown"), {}, clock(p.start, true), clock(p.end, true),
                      duration(p.end - p.start), {}, away ? duration(p.end - p.start) : QString(),
                      away ? QString() : duration(p.end - p.start)});
                 paint(part, away ? Theme::kLabelSecondary : Theme::kOrange);
@@ -404,6 +389,7 @@ void UsagePage::reload()
         }
     }
     m_view->verticalScrollBar()->setValue(scroll);
+    m_view->setColumnHidden(Unknown, unknownMs == 0); // only when something was not measured
 
     // Where the server and its log disagree.
     QStringList warnings;
@@ -427,6 +413,9 @@ void UsagePage::reload()
     m_total->setText(groups == 0
                          ? tr("No visits in this period. Times are recorded while RConnect is open; sign-ins and "
                               "sign-outs are read from the servers' logs.")
-                         : tr("Total: %1 on servers: %2 active, %3 away, %4 not measured.")
-                               .arg(duration(totalMs), duration(activeMs), duration(afkMs), duration(unknownMs)));
+                         : unknownMs > 0
+                             ? tr("In total %1 on servers: %2 working, %3 away, %4 unknown.")
+                                   .arg(duration(totalMs), duration(activeMs), duration(afkMs), duration(unknownMs))
+                             : tr("In total %1 on servers: %2 working, %3 away.")
+                                   .arg(duration(totalMs), duration(activeMs), duration(afkMs)));
 }

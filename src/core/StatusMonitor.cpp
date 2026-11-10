@@ -6,6 +6,7 @@
 #include "Threats.h"
 #include "UsageEngine.h"
 #include "UsageLog.h"
+#include "WtsQuery.h"
 #include "model/ServerStore.h"
 
 #include <QDateTime>
@@ -94,17 +95,30 @@ const QString &localComputerName()
     return name;
 }
 
+// When WinRM does not answer, Windows' own session query is tried: the server then still shows who is in. A refused
+// sign-in is not retried that way (the same account would be refused again).
+SessionQuery orWts(const ServerProfile &p, SessionQuery q)
+{
+    if (q.result == SessionQuery::Ok || q.result == SessionQuery::AuthFailed)
+        return q;
+    SessionQuery fallback = WtsQuery::sessions(p.host, p.user, p.domain, p.password, kSessionTimeoutMs);
+    if (fallback.result != SessionQuery::Ok)
+        return q; // the first reason is the one worth showing
+    fallback.viaWts = true;
+    return fallback;
+}
+
 // Interactive check right before connecting: no events, so it stays quick.
 SessionQuery querySessions(const ServerProfile &p)
 {
-    return WinRm::querySessions(p.host, p.user, p.domain, p.password, kSessionTimeoutMs);
+    return orWts(p, WinRm::querySessions(p.host, p.user, p.domain, p.password, kSessionTimeoutMs));
 }
 
 // Periodic check: also the new events of the server's logs (see AccessLog).
 SessionQuery pollSessions(const ServerProfile &p)
 {
     const QHash<QString, EventCursor> cursors = AccessLog::cursors(p.id);
-    return WinRm::querySessions(p.host, p.user, p.domain, p.password, kPollSessionTimeoutMs, &cursors);
+    return orWts(p, WinRm::querySessions(p.host, p.user, p.domain, p.password, kPollSessionTimeoutMs, &cursors));
 }
 
 } // namespace
@@ -319,11 +333,18 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, bool 
     m_retried.remove(id);
 
     s.state = online ? ServerStatus::Online : ServerStatus::Offline;
-    s.latencyMs = latency;
-    if (online)
-        s.avgLatencyMs = s.avgLatencyMs < 0 ? latency : (s.avgLatencyMs * 3 + latency + 2) / 4;
-    else
+    // A few ms of jitter is not news: the shown values only move when the connection really changed, so a sweep of
+    // checks does not repaint and re-sort the whole list every ten seconds.
+    const auto steady = [](int shown, int now) {
+        return shown >= 0 && qAbs(now - shown) <= qMax(6, shown / 3) ? shown : now;
+    };
+    s.latencyMs = online ? steady(s.latencyMs, latency) : latency;
+    if (online) {
+        const int average = s.avgLatencyMs < 0 ? latency : (s.avgLatencyMs * 3 + latency + 2) / 4;
+        s.avgLatencyMs = steady(s.avgLatencyMs, average);
+    } else {
         s.avgLatencyMs = -1;
+    }
 
     if (!online || !canCheckSessions(m_store->profileById(id))) {
         s.occupancy = ServerStatus::OccupancyUnknown;
@@ -335,7 +356,7 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, bool 
         applySessions(s, q);
         if (q.result == SessionQuery::Ok)
             warnAboutStrangers(id, s);
-        if (q.result == SessionQuery::Ok && withEvents) {
+        if (q.result == SessionQuery::Ok && withEvents && !q.viaWts) {
             m_eventsAt.insert(id, QDateTime::currentMSecsSinceEpoch());
             m_pool.start([channel = m_channel, p = m_store->profileById(id), events = q.events, live = q.sessions,
                           serverNow = q.serverNowUtcMs, skipped = q.eventsSkipped] {

@@ -10,6 +10,7 @@
 #include "core/AccessLog.h"
 #include "core/Contacts.h"
 #include "core/Log.h"
+#include "core/Priority.h"
 #include "core/ServerImport.h"
 #include "core/StatusMonitor.h"
 #include "core/Threats.h"
@@ -327,6 +328,7 @@ void Workspace::endSession(const QString &id)
     RdpSession *s = m_sessions.take(id);
     if (!s)
         return;
+    updateLiveSessions();
     audit(m_store->profileById(id), QStringLiteral("Closed"));
     SessionWindow *w = windowOf(id);
     if (w)
@@ -693,6 +695,16 @@ void Workspace::onSessionState(RdpSession::State state)
         m_monitor->refresh(s->serverId());
     if (state == RdpSession::Replaced || state == RdpSession::Disconnected)
         explainEnd(s);
+    updateLiveSessions();
+}
+
+// With a session open, RConnect is never slowed down in the background (see Priority).
+void Workspace::updateLiveSessions()
+{
+    bool live = false;
+    for (const RdpSession *s : std::as_const(m_sessions))
+        live |= s->state() == RdpSession::Connected || s->state() == RdpSession::Connecting;
+    Priority::setLiveSessions(live);
 }
 
 // The server does not always say why it ended a connection, and "another computer connected" is only what the

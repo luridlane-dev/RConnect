@@ -32,6 +32,8 @@ inline QColor statusColor(const ServerStatus &s)
     case ServerStatus::Online:
         if (s.occupancy == ServerStatus::Busy)
             return Theme::kBusy;
+        if (s.occupancy == ServerStatus::OccupancyError)
+            return Theme::kOrange; // we are blind here: never look like "free"
         return s.mine ? Theme::kBlue : Theme::kGreen;
     case ServerStatus::Offline:  return Theme::kLabelTertiary;
     default:                     return Theme::kLabelSecondary;
@@ -78,10 +80,12 @@ inline QString sessionOwner(const RemoteSession &s)
 // Short text for the status badge on a card. When someone is connected it is their computer.
 inline QString statusBadge(const ServerStatus &s)
 {
+    // Nothing is written while nothing is wrong: a free server, one that is being checked, one that is not
+    // watched. Only an offline server, one nobody can be seen on, and the person using it are worth words.
     switch (s.state) {
     case ServerStatus::Unknown:
-    case ServerStatus::Checking: return QCoreApplication::translate("ServerStatus", "Checking…");
-    case ServerStatus::Disabled: return QCoreApplication::translate("ServerStatus", "Status check off");
+    case ServerStatus::Checking:
+    case ServerStatus::Disabled: return {};
     case ServerStatus::Offline:  return QCoreApplication::translate("ServerStatus", "Offline");
     case ServerStatus::Online:   break;
     }
@@ -91,10 +95,9 @@ inline QString statusBadge(const ServerStatus &s)
             who += QStringLiteral(" +%1").arg(s.others.size() - 1);
         return who; // the second badge on the card says whether they are at the computer
     }
-    if (s.mine)
-        return QCoreApplication::translate("ServerStatus", "You are connected");
-    return s.occupancy == ServerStatus::Free ? QCoreApplication::translate("ServerStatus", "Available")
-                                             : QCoreApplication::translate("ServerStatus", "Reachable");
+    if (s.occupancy == ServerStatus::OccupancyError)
+        return QCoreApplication::translate("ServerStatus", "Can't see who is in");
+    return {};
 }
 
 // For the second badge of a busy card: whether the person is at the computer, in plain words.

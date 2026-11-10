@@ -20,6 +20,8 @@ struct AccessLine {
     QString firstUtc;        // the oldest, for a run of attempts
     int attempts = 1;
     QStringList users;       // accounts tried
+    QStringList clients;     // computer names the attempts came from
+    QStringList reasons;     // why they failed, as the server logged it
 };
 
 // Table of access-log.csv: who logged on, failed to log on, left or was watched, newest first.

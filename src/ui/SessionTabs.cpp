@@ -59,7 +59,7 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
     m_add->setText(QStringLiteral("+"));
     m_add->setToolTip(tr("Servers"));
     m_add->setCursor(Qt::PointingHandCursor);
-    m_add->setFixedSize(kHeight + 6, kHeight);
+    m_add->setFixedSize(kHeight, kHeight);
     connect(m_add, &QToolButton::clicked, this, &AnimatedTabBar::addRequested);
 
     m_anim.setDuration(110);
@@ -149,8 +149,8 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
         QPainter p(this);
-        // The tab in front is a lighter block with an accent line along its bottom edge.
-        p.fillRect(m_current, Theme::kBlue);
+        // The tab in front is only a little lighter than the bar: enough to tell where you are.
+        p.fillRect(m_current, Theme::kTabActive);
     }
 
     QTabBar::paintEvent(e);
@@ -159,7 +159,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
         QPainter p(this);
         const int x = m_dropIndex < count() ? tabRect(m_dropIndex).left()
                                             : (count() > 0 ? tabRect(count() - 1).right() + 1 : 0);
-        p.fillRect(QRect(qMax(0, x - 1), 6, 2, height() - 12), Theme::kBlue);
+        p.fillRect(QRect(qMax(0, x - 1), 4, 2, height() - 8), Theme::kBlue);
     }
 }
 

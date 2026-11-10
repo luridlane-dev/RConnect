@@ -5,6 +5,7 @@
 
 #include "core/AccessLog.h"
 #include "core/Contacts.h"
+#include "core/HostNames.h"
 #include "core/GeoIp.h"
 #include "core/Threats.h"
 
@@ -121,6 +122,18 @@ bool looksLikeIp(const QString &text)
     return ip.match(text).hasMatch();
 }
 
+// Country code of an address, remembered: the table asks for the same few addresses over and over.
+QString countryOfAddress(const QString &address)
+{
+    static QHash<QString, QString> known;
+    const auto it = known.constFind(address);
+    if (it != known.constEnd())
+        return it.value();
+    const QString code = GeoIp::countryOf(address);
+    known.insert(address, code);
+    return code;
+}
+
 QString csvField(QString text)
 {
     // Names come from the network: keep a spreadsheet from running them as a formula.
@@ -168,6 +181,15 @@ public:
         m_built.assign(size_t(lines->size()), false);
         m_refilter.stop();
         refilter();
+    }
+
+    // Names came in for addresses: the texts are made again, without losing the selection.
+    void invalidateCells()
+    {
+        if (!m_lines || m_rows.isEmpty())
+            return;
+        m_built.assign(m_built.size(), false);
+        emit dataChanged(index(0, 0), index(int(m_rows.size()) - 1, ColumnCount - 1), {Qt::DisplayRole});
     }
 
     void setCategory(int category) { change(m_category, category); }
@@ -310,6 +332,22 @@ AccessLogPage::AccessLogPage(QWidget *parent)
             QStringList details;
             if (line.attempts > 1)
                 details << tr("%1 attempts").arg(line.attempts);
+            // Where it came from: the address and its country; for a failed attempt the computer is whatever the
+            // server logged, else (inside the network) the name that address answers to.
+            QString where = r.address;
+            if (looksLikeIp(r.address)) {
+                const QString code = countryOfAddress(r.address);
+                if (!code.isEmpty())
+                    where += QStringLiteral(" · ") + GeoIp::countryName(code);
+            }
+            QString computer = r.client;
+            if (computer.isEmpty() && looksLikeIp(r.address) && HostNames::isLocalAddress(r.address)) {
+                computer = HostNames::cached(r.address);
+                if (computer.isEmpty())
+                    HostNames::request(r.address);
+            }
+            if (line.clients.size() > 1)
+                computer = tr("%1 and %2 more").arg(line.clients.first()).arg(line.clients.size() - 1);
             const QString summary = alertSummary(r);
             if (!summary.isEmpty())
                 details << summary;
@@ -318,8 +356,9 @@ AccessLogPage::AccessLogPage(QWidget *parent)
             // Without the computer name in front: the full account is in the details below.
             const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
             const QString device = r.source == QLatin1String("RCONNECT") ? r.client
-                                                                           : Contacts::instance().label(r.client, r.user);
-            return AccessTableModel::Cells{time, r.server, eventText(r.event), user, r.address, device,
+                                   : line.clients.size() > 1         ? computer
+                                                                      : Contacts::instance().label(computer, r.user);
+            return AccessTableModel::Cells{time, r.server, eventText(r.event), user, where, device,
                                            details.join(QStringLiteral(", ")), r.operatorName};
         },
         this);
@@ -441,6 +480,16 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     lay->addWidget(view, 1);
     lay->addWidget(m_detail);
     lay->addWidget(m_count);
+
+    // A computer name found for an address shows on the lines and in the card.
+    auto *namesTimer = new QTimer(this);
+    namesTimer->setSingleShot(true);
+    namesTimer->setInterval(300); // names come in one by one
+    connect(namesTimer, &QTimer::timeout, this, [this] {
+        m_model->invalidateCells();
+        showDetail();
+    });
+    connect(HostNames::notifier(), &HostNames::Notifier::resolved, namesTimer, qOverload<>(&QTimer::start));
 
     m_timer = new QTimer(this);
     m_timer->setInterval(kRefreshMs);
@@ -628,12 +677,17 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
                         line.firstUtc = r.timeUtc;
                     if (!line.users.contains(shortName(r.user)))
                         line.users << shortName(r.user);
+                    if (!r.client.isEmpty() && !line.clients.contains(r.client))
+                        line.clients << r.client;
+                    if (!r.detail.isEmpty() && !line.reasons.contains(r.detail))
+                        line.reasons << r.detail;
                     continue;
                 }
             }
             growing.insert(key, int(lines.size()));
         }
-        lines.append({r, r.timeUtc, standsFor, {shortName(r.user)}});
+        lines.append({r, r.timeUtc, standsFor, {shortName(r.user)}, r.client.isEmpty() ? QStringList() : QStringList{r.client},
+                      r.detail.isEmpty() ? QStringList() : QStringList{r.detail}});
     }
     return lines;
 }
@@ -715,15 +769,28 @@ void AccessLogPage::showDetail()
         line.users.size() > 1 ? line.users.mid(0, 12).join(QStringLiteral(", ")) + (line.users.size() > 12 ? QStringLiteral(" …") : QString())
                               : r.user);
     QString where = r.address;
+    QString hostName;
     if (looksLikeIp(r.address)) {
-        const QString code = GeoIp::countryOf(r.address);
+        const QString code = countryOfAddress(r.address);
         if (!code.isEmpty())
             where += QStringLiteral(" · ") + GeoIp::countryName(code);
+        hostName = HostNames::cached(r.address);
+        if (hostName.isEmpty())
+            HostNames::request(r.address);
     }
     add(tr("IP address"), where);
     if (r.source != QLatin1String("RCONNECT"))
         add(tr("Nickname"), Contacts::instance().nameFor(r.client, r.user));
-    add(tr("Device"), r.client);
+    add(line.clients.size() > 1 ? tr("Computers") : tr("Device"),
+        line.clients.size() > 1 ? line.clients.mid(0, 8).join(QStringLiteral(", ")) + (line.clients.size() > 8 ? QStringLiteral(" …") : QString())
+                                : r.client);
+    add(tr("Name of the address"), hostName == r.client ? QString() : hostName);
+    if (line.reasons.size() > 1) {
+        QStringList why;
+        for (const QString &reason : line.reasons.mid(0, 6))
+            why << detailText(reason);
+        add(tr("Reasons"), why.join(QStringLiteral(", ")));
+    }
     add(tr("Windows session no."), r.sessionId > 0 ? QString::number(r.sessionId) : QString());
     add(tr("Attempts"), line.attempts > 1 ? QString::number(line.attempts) : QString());
     add(tr("How"), alertSummary(r).isEmpty() ? detailText(r.detail) : alertSummary(r));

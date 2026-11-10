@@ -238,16 +238,12 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     // Surface. A row is a line of the group's table: boxed at the sides, divided from the next one, with the
     // last one closing the box. A card is a flat tile with a thin outline.
     const QColor fill = hover ? Theme::kCardHover : Theme::kCard;
-    // A server somebody is on is washed with its colour from the left, fading out to the right.
+    // A server somebody is on gets a flat, faint tint of the busy colour: it reads on both themes, where a
+    // fading wash turned muddy against the dark card and against the white one.
     auto wash = [&](const QRect &area) {
-        QLinearGradient grad(area.left(), 0, area.right(), 0);
-        QColor strong = Theme::kBusy, soft = Theme::kBusy;
-        strong.setAlpha(Theme::mode() == Theme::Dark ? 84 : 72);
-        soft.setAlpha(0);
-        grad.setColorAt(0, strong);
-        grad.setColorAt(0.7, QColor(soft.red(), soft.green(), soft.blue(), strong.alpha() / 5));
-        grad.setColorAt(1, soft);
-        p->fillRect(area, grad);
+        QColor tint = Theme::kBusy;
+        tint.setAlpha(Theme::mode() == Theme::Dark ? 26 : 20);
+        p->fillRect(area, tint);
     };
     if (m_list) {
         const QModelIndex next = index.sibling(index.row() + 1, 0);
@@ -327,7 +323,7 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
         const int idle = index.data(ServerStore::OwnerIdleRole).toInt();
         if (idle >= 0)
             detail = QStringLiteral("  ·  ") + idleShort(idle);
-        const QFont whoFont = Theme::font(12, QFont::Bold);
+        const QFont whoFont = Theme::font(13, QFont::Bold);
         const QFontMetrics whoMetrics(whoFont);
         const int whoWidth = qMin(whoMetrics.horizontalAdvance(badge) + 6, g.status.width());
         const QString who = whoMetrics.elidedText(badge, Qt::ElideRight, whoWidth);
@@ -336,14 +332,15 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
         const int total = whoWidth + textMetrics.horizontalAdvance(rest);
         const int x = m_list ? g.status.left() : g.status.right() + 1 - total;
         p->setFont(whoFont);
-        p->setPen(Theme::kLabel);
+        p->setPen(Theme::kBusyText); // the person on the server: bold and red, readable on either theme
         p->drawText(QRect(x, g.status.top(), whoWidth, g.status.height()), Qt::AlignVCenter | Qt::AlignLeft, who);
         p->setFont(textFont);
         p->setPen(Theme::kLabelSecondary);
         p->drawText(QRect(x + whoWidth, g.status.top(), g.status.width() - whoWidth, g.status.height()),
                     Qt::AlignVCenter | Qt::AlignLeft, rest);
     } else {
-        p->setPen(offline ? Theme::kLabelTertiary : Theme::kLabelSecondary);
+        const bool blind = online && index.data(ServerStore::OccupancyRole).toInt() == ServerStatus::OccupancyError;
+        p->setPen(blind ? Theme::kOrange : offline ? Theme::kLabelTertiary : Theme::kLabelSecondary);
         p->drawText(g.status, Qt::AlignVCenter | (m_list ? Qt::AlignLeft : Qt::AlignRight),
                     textMetrics.elidedText(badge, Qt::ElideRight, g.status.width()));
     }
