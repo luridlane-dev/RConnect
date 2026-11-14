@@ -90,11 +90,15 @@ QString sessionCommand(const QHash<QString, EventCursor> *cursors)
     return (cursors ? eventCommand(*cursors) : QString())
          // The sign-in time of each session: when its shell (explorer) started, as UTC, so the server's time
          // zone and the language of quser do not matter.
-         + QStringLiteral("quser & echo ##RCSTART## & powershell -NoProfile -NonInteractive -Command "
-                          "\"'NOW ' + [DateTime]::UtcNow.ToString('o'); "
-                          "Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f "
-                          "$_.SessionId, $_.StartTime.ToUniversalTime().ToString('o') }\" 2>nul"
-                          " & echo ##RCONNECT## & for /f \"delims=\" %k in ('reg query HKU') do "
+         + QStringLiteral("quser & echo ##RCSTART## & ")
+         // Starting PowerShell costs the server a second or two, so the sign-in times and the server clock are only
+         // read with the events (once a minute, for the usage samples); the quick check only needs quser.
+         + (cursors ? QStringLiteral("powershell -NoProfile -NonInteractive -Command "
+                                     "\"'NOW ' + [DateTime]::UtcNow.ToString('o'); "
+                                     "Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f "
+                                     "$_.SessionId, $_.StartTime.ToUniversalTime().ToString('o') }\" 2>nul & ")
+                    : QString())
+         + QStringLiteral("echo ##RCONNECT## & for /f \"delims=\" %k in ('reg query HKU') do "
                           "@reg query \"%k\\Volatile Environment\" /s /v CLIENTNAME 2>nul");
 }
 

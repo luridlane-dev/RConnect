@@ -4,6 +4,10 @@
 <context>
     <name>AccessLogPage</name>
     <message>
+        <source>Picture settings changed (60 fps, sharp text)</source>
+        <translation>Görüntü ayarları değiştirildi (60 fps, net yazı)</translation>
+    </message>
+    <message>
         <source>Signed in</source>
         <translation>Oturum açıldı</translation>
     </message>
@@ -925,6 +929,10 @@
 <context>
     <name>ServerPanel</name>
     <message>
+        <source>Smoother, sharper picture…</source>
+        <translation>Daha akıcı ve net görüntü…</translation>
+    </message>
+    <message>
         <source>Rename group…</source>
         <translation>Grubu yeniden adlandır…</translation>
     </message>
@@ -1509,6 +1517,22 @@ Giriş sayısı: %3</translation>
 </context>
 <context>
     <name>Workspace</name>
+    <message>
+        <source>Smoother, sharper picture</source>
+        <translation>Daha akıcı ve net görüntü</translation>
+    </message>
+    <message>
+        <source>Change the picture settings of “%1”?
+
+The server will send up to 60 frames a second instead of 30, and text in full colour so it stays sharp. This changes two settings on the server and uses a little more network. It takes effect after the server restarts.</source>
+        <translation>“%1” sunucusunun görüntü ayarları değiştirilsin mi?
+
+Sunucu saniyede 30 yerine 60 kareye kadar gönderir, yazıları da net kalsın diye tam renkli gönderir. Bu, sunucudaki iki ayarı değiştirir ve biraz daha fazla ağ kullanır. Sunucu yeniden başlatıldıktan sonra geçerli olur.</translation>
+    </message>
+    <message>
+        <source>Done. Restart “%1” once for the new picture settings to take effect.</source>
+        <translation>Tamam. Yeni görüntü ayarlarının geçerli olması için “%1” sunucusunu bir kez yeniden başlatın.</translation>
+    </message>
     <message>
         <source>Yes</source>
         <translation>Evet</translation>

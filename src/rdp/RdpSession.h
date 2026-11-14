@@ -62,6 +62,12 @@ private:
     // A control that has been connected once is never reused: a dropped one can stall on the next Connect().
     void replaceControl();
     bool worthRetrying(bool wasConnected) const;
+    // Schedules the next automatic attempt with a fresh control; false when the retries are used up.
+    bool scheduleRetry();
+    // The attempt went nowhere (Connect() never started, or it hung): retry or show why.
+    void attemptFailed(int reason, bool retry);
+    // Makes the control repaint everything, so no blank surface is left after the overlay goes away.
+    void repaintRemote();
     void applySettings();
     // The control's COM events don't reach Qt, so Connected is polled (0 off, 1 on, 2 connecting).
     void poll();
@@ -94,6 +100,8 @@ private:
     QSize m_syncedSize; // last size sent to the server
     QElapsedTimer m_connectClock;
     qint64 m_lastHeartbeat = 0;
+    qint64 m_connectCalledAt = -1; // m_connectClock time when Connect() returned; -1 before
+    qint64 m_refreshSince = 0;     // m_connectClock time when refresh() asked for the disconnect
     int m_lastPolled = -1;
     QTimer m_poll;
     QTimer m_resizeTimer;

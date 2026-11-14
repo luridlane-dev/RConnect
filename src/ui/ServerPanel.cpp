@@ -495,6 +495,7 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     if (shown > 0)
         menu.addSeparator();
     menu.addAction(tr("Track sign-in attempts…"), this, [this, id] { emit auditRequested(id); });
+    menu.addAction(tr("Smoother, sharper picture…"), this, [this, id] { emit displayTuneRequested(id); });
     menu.addSeparator();
     menu.addAction(tr("Edit…"), this, [this, id] { emit editRequested(id); });
     menu.addAction(tr("Delete…"), this, [this, id] { emit removeRequested(id); });

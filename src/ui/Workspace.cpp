@@ -72,7 +72,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(QPen(Theme::kPopupBorder, 1));
         p.setBrush(Theme::kPopupFill);
-        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
+        p.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
     }
 };
 
@@ -123,6 +123,7 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     connect(m_monitor, &StatusMonitor::unknownPerson, this, &Workspace::showStranger);
     ServerPanel *panel = m_home->panel();
     connect(panel, &ServerPanel::auditRequested, this, &Workspace::enableAuditing);
+    connect(panel, &ServerPanel::displayTuneRequested, this, &Workspace::tuneDisplay);
     connect(panel, &ServerPanel::openRequested, this, [this](const QString &id) { openServer(id, m_main); });
     connect(panel, &ServerPanel::addRequested, this, &Workspace::addServer);
     connect(panel, &ServerPanel::importRequested, this, &Workspace::importServers);
@@ -243,6 +244,12 @@ void Workspace::openServer(const QString &id, SessionWindow *target)
 {
     if (SessionWindow *w = windowOf(id)) {
         w->activateSession(id);
+        // Picking the server again for a tab whose connection ended is a request to connect again.
+        if (RdpSession *s = m_sessions.value(id)) {
+            const RdpSession::State st = s->state();
+            if (st == RdpSession::Disconnected || st == RdpSession::Failed)
+                s->reconnect();
+        }
         return;
     }
     ServerProfile p = m_store->profileById(id);
@@ -490,6 +497,7 @@ void Workspace::showServerPopup(SessionWindow *w)
         connect(panel, &ServerPanel::removeRequested, this, [this, popup](const QString &id) { popup->hide(); removeServer(id); });
         connect(panel, &ServerPanel::refreshRequested, this, [this](const QString &id) { m_monitor->refresh(id, true); });
         connect(panel, &ServerPanel::auditRequested, this, [this, popup](const QString &id) { popup->hide(); enableAuditing(id); });
+        connect(panel, &ServerPanel::displayTuneRequested, this, [this, popup](const QString &id) { popup->hide(); tuneDisplay(id); });
         m_popups.insert(w, popup);
         refreshOpenMarkers();
     }
@@ -788,6 +796,55 @@ void Workspace::enableAuditing(const QString &id)
                                          tr("Sign-in tracking is on for “%1”. New activity will appear in Activity history.").arg(p.name));
             } else {
                 QMessageBox::warning(self->dialogParent(), tr("Track sign-in attempts"),
+                                     tr("Could not change the setting on “%1”: %2").arg(p.name, error));
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+// Windows servers send at most 30 frames a second and, by default, colour-reduced (AVC 4:2:0) pictures, which make
+// small text soft. Two documented server settings lift that: DWMFRAMEINTERVAL=15 (60 fps, Microsoft KB 2885213) and
+// the policy "Prioritize H.264/AVC 444 graphics mode". The local monitor's refresh rate cannot be passed on: the
+// picture changes only as often as the server sends it.
+void Workspace::tuneDisplay(const QString &id)
+{
+    const ServerProfile p = m_store->profileById(id);
+    if (!p.isValid())
+        return;
+    if (!StatusMonitor::canCheckSessions(p)) {
+        QMessageBox::information(dialogParent(), tr("Smoother, sharper picture"),
+                                 tr("To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.")
+                                     .arg(p.name));
+        return;
+    }
+    if (!confirm(dialogParent(), tr("Smoother, sharper picture"),
+                 tr("Change the picture settings of “%1”?\n\nThe server will send up to 60 frames a second instead of 30, "
+                    "and text in full colour so it stays sharp. This changes two settings on the server and uses a "
+                    "little more network. It takes effect after the server restarts.")
+                     .arg(p.name),
+                 false))
+        return;
+
+    QApplication::setOverrideCursor(Qt::BusyCursor);
+    QPointer<Workspace> self(this);
+    QThreadPool::globalInstance()->start([self, p] {
+        const QString command = QStringLiteral(
+            "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\" /v DWMFRAMEINTERVAL "
+            "/t REG_DWORD /d 15 /f && reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\" "
+            "/v AVC444ModePreferred /t REG_DWORD /d 1 /f && echo ##OK## || echo ##FAILED##");
+        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 15000, command);
+        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
+        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
+        QMetaObject::invokeMethod(qApp, [self, p, ok, error] {
+            QApplication::restoreOverrideCursor();
+            if (!self)
+                return;
+            if (ok) {
+                AccessLog::note(p, QStringLiteral("DisplayTuned"), p.displayUser());
+                QMessageBox::information(self->dialogParent(), tr("Smoother, sharper picture"),
+                                         tr("Done. Restart “%1” once for the new picture settings to take effect.").arg(p.name));
+            } else {
+                QMessageBox::warning(self->dialogParent(), tr("Smoother, sharper picture"),
                                      tr("Could not change the setting on “%1”: %2").arg(p.name, error));
             }
         }, Qt::QueuedConnection);

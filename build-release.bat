@@ -7,12 +7,26 @@ rem QT_DIR overrides the Qt path, SIGN_CN the certificate name, SKIP_SIGN=1 buil
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-if not defined QT_DIR set "QT_DIR=C:\Qt\6.11.1\msvc2022_64"
+rem Without QT_DIR the newest C:\Qt\<version>\msvc2022_64 that has Active Qt is used, so a Qt update does not
+rem break the script.
+if not defined QT_DIR (
+    for /f "usebackq delims=" %%q in (`powershell -NoProfile -Command "Get-ChildItem 'C:\Qt' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+(\.\d+)+$' -and (Test-Path (Join-Path $_.FullName 'msvc2022_64\lib\cmake\Qt6AxContainer')) } | Sort-Object { [version]$_.Name } | Select-Object -Last 1 | ForEach-Object { Join-Path $_.FullName 'msvc2022_64' }"`) do set "QT_DIR=%%q"
+)
 if not defined SIGN_CN set "SIGN_CN=Lurid Lane"
+if not defined QT_DIR (
+    echo [error] No Qt with Active Qt was found in C:\Qt. Install Qt 6 for MSVC 2022 with the "Active Qt" add-on,
+    echo         or set QT_DIR to its msvc2022_64 folder.
+    exit /b 1
+)
 if not exist "%QT_DIR%\bin\Qt6Core.dll" (
     echo [error] Qt not found in "%QT_DIR%". Set QT_DIR to your Qt msvc2022_64 folder.
     exit /b 1
 )
+if not exist "%QT_DIR%\lib\cmake\Qt6AxContainer" (
+    echo [error] "%QT_DIR%" has no Active Qt. Add it with the Qt Maintenance Tool ^(Qt ^> your version ^> Additional Libraries ^> Active Qt^).
+    exit /b 1
+)
+echo Qt: %QT_DIR%
 
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (

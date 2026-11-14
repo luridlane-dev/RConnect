@@ -149,7 +149,7 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
         QPainter p(this);
-        // The tab in front is only a little lighter than the bar: enough to tell where you are.
+        // The tab in front: a muted blue block with white text, plainly different from the other tabs.
         p.fillRect(m_current, Theme::kTabActive);
     }
 

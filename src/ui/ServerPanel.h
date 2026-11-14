@@ -43,6 +43,7 @@ signals:
     void removeRequested(const QString &id);
     void refreshRequested(const QString &id);
     void auditRequested(const QString &id);
+    void displayTuneRequested(const QString &id);
 
 protected:
     void changeEvent(QEvent *e) override;

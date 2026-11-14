@@ -20,6 +20,8 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
 #include <QSettings>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -62,8 +64,20 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
     , m_store(store)
 {
     setMinimumWidth(480);
-    auto *page = new QVBoxLayout(this);
-    page->setContentsMargins(20, 14, 20, 16);
+    // The sections scroll; the Close button stays at the bottom. On a short screen the window is never taller than
+    // the screen (see showEvent).
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    m_scroll = new QScrollArea(this);
+    m_scroll->setObjectName(QStringLiteral("settingsScroll"));
+    m_scroll->setWidgetResizable(true);
+    m_scroll->setFrameShape(QFrame::NoFrame);
+    m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_content = new QWidget;
+    m_content->setObjectName(QStringLiteral("settingsContent"));
+    auto *page = new QVBoxLayout(m_content);
+    page->setContentsMargins(20, 14, 20, 8);
     page->setSpacing(6);
 
     // General
@@ -104,7 +118,11 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
     m_groupHint->setObjectName(QStringLiteral("fieldHint"));
     m_groupHint->setWordWrap(true);
     groups->layout()->addWidget(m_groupHint);
-    connect(m_store, &QAbstractItemModel::dataChanged, this, &SettingsDialog::rebuildGroups);
+    // dataChanged also comes with every status check: only a change of the group names rebuilds the rows.
+    connect(m_store, &QAbstractItemModel::dataChanged, this, [this] {
+        if (m_store->groups() != m_shownGroups)
+            rebuildGroups();
+    });
 
     // Pages
     QFrame *pages = block(page, m_headings[1], this);
@@ -185,15 +203,19 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
     updateButtons->addStretch(1);
     static_cast<QVBoxLayout *>(updates->layout())->addLayout(updateButtons);
 
-    page->addSpacing(6);
+    page->addStretch(1);
+    m_scroll->setWidget(m_content);
+    outer->addWidget(m_scroll, 1);
+
     auto *footer = new QHBoxLayout;
+    footer->setContentsMargins(20, 8, 20, 14);
     footer->addStretch(1);
     m_close = new QPushButton(this);
     m_close->setObjectName(QStringLiteral("primaryButton"));
     m_close->setDefault(true);
     connect(m_close, &QPushButton::clicked, this, &QDialog::accept);
     footer->addWidget(m_close);
-    page->addLayout(footer);
+    outer->addLayout(footer);
 
     retranslate();
 }
@@ -249,6 +271,7 @@ void SettingsDialog::rebuildGroups()
         delete item;
     }
     const QStringList names = m_store->groups();
+    m_shownGroups = names;
     if (names.isEmpty()) {
         auto *none = new QLabel(tr("No groups yet."));
         none->setObjectName(QStringLiteral("fieldHint"));
@@ -272,6 +295,25 @@ void SettingsDialog::rebuildGroups()
         connect(remove, &QPushButton::clicked, this, [this, name] { m_store->renameGroup(name, {}); });
         m_groupRows->addLayout(row);
     }
+}
+
+// As tall as the sections need, but never taller than the screen it opens on: the rest scrolls.
+void SettingsDialog::showEvent(QShowEvent *e)
+{
+    QDialog::showEvent(e);
+    if (m_fitted)
+        return;
+    m_fitted = true;
+    const QRect avail = screen()->availableGeometry();
+    const int frame = frameGeometry().height() - geometry().height();
+    const int footer = m_close->sizeHint().height() + 22;
+    const int want = m_content->sizeHint().height() + footer;
+    const int h = qMin(want, avail.height() - frame - 24);
+    const int w = qMax(width(), m_content->sizeHint().width() + 16);
+    resize(w, h);
+    QRect g = geometry();
+    g.moveTop(qBound(avail.top() + frame, g.top(), avail.bottom() - g.height()));
+    setGeometry(g);
 }
 
 void SettingsDialog::changeEvent(QEvent *e)

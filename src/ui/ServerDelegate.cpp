@@ -47,9 +47,10 @@ Geometry cardGeometry(const QRect &card, bool hasFlag)
 
     g.dot = QRect(left, top + 5, kDot, kDot);
     const int textLeft = left + kDot + 8;
-    g.star = QRect(right - 16, top, 16, 18);
-    g.latency = QRect(g.star.left() - 4 - 44, top, 44, 18);
-    g.name = QRect(textLeft, top, g.latency.left() - 6 - textLeft, 18);
+    // The time sits at the right edge whether or not the star is shown; the star goes in front of it.
+    g.latency = QRect(right - 44, top, 44, 18);
+    g.star = QRect(g.latency.left() - 4 - 16, top, 16, 18);
+    g.name = QRect(textLeft, top, g.star.left() - 6 - textLeft, 18);
     g.pill = QRect(g.name.right() + 1 - 38, top, 38, 18);
 
     const int hostLeft = textLeft + (hasFlag ? kFlagWidth + 6 : 0);
@@ -68,11 +69,12 @@ Geometry rowGeometry(const QRect &row, bool hasFlag)
     const int mid = row.center().y();
 
     g.button = QRect(right - kButtonWidth, mid - kButtonHeight / 2, kButtonWidth, kButtonHeight);
-    g.star = QRect(g.button.left() - 10 - 16, mid - 9, 16, 18);
-    g.latency = QRect(g.star.left() - 8 - 52, mid - 9, 52, 18);
+    // The time sits next to the button whether or not the star is shown; the star goes in front of it.
+    g.latency = QRect(g.button.left() - 10 - 52, mid - 9, 52, 18);
+    g.star = QRect(g.latency.left() - 6 - 16, mid - 9, 16, 18);
     g.dot = QRect(left, mid - kDot / 2, kDot, kDot);
     const int textLeft = left + kDot + 10;
-    const int room = g.latency.left() - 12 - textLeft;
+    const int room = g.star.left() - 12 - textLeft;
     const int nameWidth = room * 38 / 100;
     const int hostWidth = room * 30 / 100;
     g.name = QRect(textLeft, mid - 9, nameWidth - 8, 18);
@@ -80,7 +82,7 @@ Geometry rowGeometry(const QRect &row, bool hasFlag)
     const int hostLeft = textLeft + nameWidth + (hasFlag ? kFlagWidth + 6 : 0);
     g.flag = QRect(textLeft + nameWidth, mid - kFlagHeight / 2, kFlagWidth, kFlagHeight);
     g.host = QRect(hostLeft, mid - 8, textLeft + nameWidth + hostWidth - hostLeft, 16);
-    g.status = QRect(textLeft + nameWidth + hostWidth + 8, mid - 8, g.latency.left() - 12 - (textLeft + nameWidth + hostWidth + 8), 16);
+    g.status = QRect(textLeft + nameWidth + hostWidth + 8, mid - 8, g.star.left() - 8 - (textLeft + nameWidth + hostWidth + 8), 16);
     return g;
 }
 
@@ -266,15 +268,9 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
         p->setRenderHint(QPainter::Antialiasing, true);
         p->setBrush(fill);
         p->setPen(QPen(open ? Theme::kBlue : (hover ? Theme::kLabelTertiary : Theme::kSeparatorStrong), 1));
-        p->drawRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
-        if (busy) {
-            QPainterPath clip;
-            clip.addRoundedRect(QRectF(rect).adjusted(1, 1, -1, -1), 2.5, 2.5);
-            p->save();
-            p->setClipPath(clip);
-            wash(rect);
-            p->restore();
-        }
+        p->drawRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5));
+        if (busy)
+            wash(rect.adjusted(1, 1, -1, -1));
         p->setRenderHint(QPainter::Antialiasing, false);
         if (open)
             p->fillRect(QRect(rect.left() + 1, rect.top() + 3, 3, rect.height() - 5), Theme::kBlue);
@@ -362,12 +358,9 @@ void ServerDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const Q
     // Connect button of a row
     if (m_list) {
         p->setOpacity(1.0);
-        p->setRenderHint(QPainter::Antialiasing, true);
-        p->setRenderHint(QPainter::Antialiasing, true);
         p->setBrush(hover ? Theme::kBlue : Theme::kBackground);
         p->setPen(QPen(hover ? Theme::kBlue : Theme::kLabelTertiary, 1));
-        p->drawRoundedRect(QRectF(g.button).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
-        p->setRenderHint(QPainter::Antialiasing, false);
+        p->drawRect(QRectF(g.button).adjusted(0.5, 0.5, -0.5, -0.5));
         p->setFont(Theme::font(12, QFont::DemiBold));
         p->setPen(hover ? QColor(Qt::white) : Theme::kLabel);
         p->drawText(g.button, Qt::AlignCenter, QCoreApplication::translate("ServerDelegate", "Connect"));

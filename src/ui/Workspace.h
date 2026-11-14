@@ -64,6 +64,8 @@ private:
     void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
     void enableAuditing(const QString &id);
+    // Lets the server send up to 60 frames a second and full-colour (sharper) text.
+    void tuneDisplay(const QString &id);
     void showAlert(const AccessRecord &alert);
     void showStranger(const QString &server, const QString &client, const QString &user);
     QSystemTrayIcon *tray();

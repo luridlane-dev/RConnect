@@ -1,10 +1,12 @@
 #pragma once
 #include <QDialog>
+#include <QStringList>
 
 class QCheckBox;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QScrollArea;
 class QVBoxLayout;
 class ServerStore;
 
@@ -23,12 +25,17 @@ signals:
 
 protected:
     void changeEvent(QEvent *e) override;
+    void showEvent(QShowEvent *e) override;
 
 private:
     void retranslate();
     void rebuildGroups();
 
     ServerStore *m_store;
+    QScrollArea *m_scroll = nullptr;
+    QWidget *m_content = nullptr;
+    QStringList m_shownGroups; // what the group rows show; rebuilt only when this changes
+    bool m_fitted = false;
     QVBoxLayout *m_groupRows = nullptr;
     QLabel *m_groupHint = nullptr;
     QLabel *m_headings[6] = {};

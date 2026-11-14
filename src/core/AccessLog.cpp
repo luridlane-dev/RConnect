@@ -334,7 +334,7 @@ const QStringList &AccessLog::events()
         QStringLiteral("UserCreated"),   QStringLiteral("GroupMemberAdded"), QStringLiteral("TaskCreated"),
         QStringLiteral("LogCleared"),    QStringLiteral("ServiceInstalled"),
         QStringLiteral("Connect"),       QStringLiteral("Monitor"),         QStringLiteral("AuditEnable"),
-        QStringLiteral("Message"),
+        QStringLiteral("Message"),       QStringLiteral("DisplayTuned"),
         QStringLiteral("Closed"),        QStringLiteral("ServerAdded"),     QStringLiteral("ServerEdited"),
         QStringLiteral("ServerRemoved"), QStringLiteral("Import"),          QStringLiteral("Update"),
         QStringLiteral("AlertBruteForce"), QStringLiteral("AlertBreakIn"),  QStringLiteral("AlertNewCountry"),

@@ -25,6 +25,7 @@
 #include <QUuid>
 
 #include <cmath>
+#include <iterator>
 
 #include <windows.h>
 #include <objbase.h>
@@ -49,6 +50,13 @@ constexpr int kExtLogonTimeout = 4;
 constexpr int kExtReplacedByOther = 5;
 constexpr int kExtServerDenied = 7;
 constexpr int kExtInsufficientPrivileges = 9;
+
+// Connect() that shows no activity at all after this long failed without telling (its events do not reach Qt).
+constexpr qint64 kStartTimeoutMs = 5000;
+// An attempt that is still "connecting" after this long is given up.
+constexpr qint64 kConnectTimeoutMs = 40000;
+// refresh(): how long to wait for the old connection to report that it closed.
+constexpr qint64 kRefreshWaitMs = 4000;
 
 // Newest installed control first.
 const char *const kControlClsids[] = {
@@ -162,37 +170,23 @@ protected:
         const qreal t = ms / 1000.0;
         const qreal in = qMin(1.0, ms / kAppearMs);
         const qreal ease = 1.0 - std::pow(1.0 - in, 3.0);
-        const qreal pulse = 0.5 + 0.5 * std::sin(t * 2.6);
 
-        QColor tint(0x0a, 0x84, 0xff);
+        // The muted colours of the theme, not bright signal colours.
+        QColor tint = Theme::kBlue;
         if (m_tone == Warning)
-            tint = QColor(0xff, 0x9f, 0x0a);
+            tint = Theme::kOrange;
         else if (m_tone == Error)
-            tint = QColor(0xff, 0x45, 0x3a);
+            tint = Theme::kRed;
 
-        const QPointF c(width() / 2.0, m_title->y() - 12 - kArtHeight / 2.0 + (1.0 - ease) * 14.0);
+        const QPointF c(width() / 2.0, m_title->y() - 12 - kArtHeight / 2.0);
         p.setOpacity(ease);
 
-        // Soft glow behind the icon
-        QColor glow = tint;
-        glow.setAlphaF(m_tone == Busy ? 0.14 + 0.06 * pulse : 0.14);
-        QRadialGradient g(c, 96);
-        g.setColorAt(0, glow);
-        g.setColorAt(1, Qt::transparent);
-        p.setPen(Qt::NoPen);
-        p.setBrush(g);
-        p.drawEllipse(c, 96, 96);
-
-        // App-style icon tile: a monitor on a gradient
-        const qreal scale = (0.9 + 0.1 * ease) * (m_tone == Busy ? 1.0 + 0.015 * pulse : 1.0);
+        // A flat tile with a monitor: no glow, gradient or pulsing.
         p.save();
         p.translate(c);
-        p.scale(scale, scale);
-        const QRectF tile(-34, -34, 68, 68);
-        QLinearGradient tg(tile.topLeft(), tile.bottomLeft());
-        tg.setColorAt(0, tint.lighter(125));
-        tg.setColorAt(1, tint.darker(120));
-        p.setBrush(tg);
+        p.setPen(Qt::NoPen);
+        const QRectF tile(-30, -30, 60, 60);
+        p.setBrush(tint);
         p.drawRect(tile);
         p.setBrush(QColor(255, 255, 255, 46));
         p.setPen(QPen(Qt::white, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
@@ -210,18 +204,12 @@ protected:
             trackColor.setAlpha(40);
             p.setPen(Qt::NoPen);
             p.setBrush(trackColor);
-            p.drawRoundedRect(track, 1.5, 1.5);
-            QPainterPath clip;
-            clip.addRoundedRect(track, 1.5, 1.5);
-            p.setClipPath(clip);
+            p.drawRect(track);
+            p.setClipRect(track);
             const qreal run = std::fmod(t / 1.4, 1.0);
             const qreal slide = run * run * (3.0 - 2.0 * run); // eased
             const qreal x = track.left() - 44 + slide * (track.width() + 88);
-            QLinearGradient light(x, 0, x + 44, 0);
-            light.setColorAt(0, Qt::transparent);
-            light.setColorAt(0.5, tint.lighter(130));
-            light.setColorAt(1, Qt::transparent);
-            p.setBrush(light);
+            p.setBrush(tint);
             p.drawRect(QRectF(x, track.top(), 44, track.height()));
             p.setClipping(false);
         }
@@ -417,7 +405,8 @@ void RdpSession::poll()
                 .arg(m_ax->property("ExtendedDisconnectReason").toInt()));
     }
     if (m_refreshing) {
-        if (c == 0) {
+        // A dead link may never report the disconnect: after a few seconds the new control is started anyway.
+        if (c == 0 || elapsed - m_refreshSince > kRefreshWaitMs) {
             m_refreshing = false;
             m_poll.stop();
             m_resizeTimer.stop();
@@ -426,10 +415,57 @@ void RdpSession::poll()
         }
         return;
     }
-    if (c == 1 && m_state != Connected)
+    if (c == 1 && m_state != Connected) {
         onLoginComplete();
-    else if (c == 0 && m_sawActive && (m_state == Connecting || m_state == Connected))
+    } else if (c == 0 && m_sawActive && (m_state == Connecting || m_state == Connected)) {
         handleDisconnected(0);
+    } else if (m_state == Connecting && m_connectCalledAt >= 0) {
+        // The control's events do not reach Qt, so a Connect() that failed at once (no activity at all) or one that
+        // hangs would otherwise leave the tab on "Reaching the server…" for good.
+        const qint64 since = elapsed - m_connectCalledAt;
+        if (!m_sawActive && since > kStartTimeoutMs) {
+            log(QStringLiteral("Connect() did not start a connection"));
+            attemptFailed(0, true);
+        } else if (c == 2 && since > kConnectTimeoutMs) {
+            log(QStringLiteral("connecting took longer than %1 s; giving up this attempt").arg(kConnectTimeoutMs / 1000));
+            m_ax->dynamicCall("Disconnect()");
+            attemptFailed(264, m_retryAttempt > 0);
+        }
+    }
+}
+
+bool RdpSession::scheduleRetry()
+{
+    static const int delays[] = {1500, 4000, 8000};
+    if (m_retryAttempt >= int(std::size(delays)))
+        return false;
+    const int delay = delays[m_retryAttempt];
+    ++m_retryAttempt;
+    log(QStringLiteral("automatic reconnect %1 in %2 ms").arg(m_retryAttempt).arg(delay));
+    setState(Connecting);
+    showOverlay();
+    m_retryTimer.start(delay);
+    return true;
+}
+
+void RdpSession::attemptFailed(int reason, bool retry)
+{
+    m_poll.stop();
+    m_resizeTimer.stop();
+    m_lastReason = reason;
+    m_lastExtReason = 0;
+    if (retry && scheduleRetry())
+        return;
+    setState(m_everConnected ? Disconnected : Failed);
+    showOverlay();
+}
+
+void RdpSession::repaintRemote()
+{
+    if (m_ax->isNull())
+        return;
+    RedrawWindow(reinterpret_cast<HWND>(m_ax->winId()), nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 bool RdpSession::createControl()
@@ -537,6 +573,9 @@ void RdpSession::applySettings()
         // Off: the control's own retry shows a Windows dialog and holds the control for a long time.
         // RdpSession reconnects with a fresh control instead (see handleDisconnected).
         adv->setProperty("EnableAutoReconnect", false);
+        // A link that died without a word (sleep, Wi-Fi, VPN) is noticed in seconds instead of minutes, so the tab
+        // reconnects instead of showing a frozen picture.
+        adv->setProperty("keepAliveInterval", 10000);
         adv->setProperty("BitmapPeristence", 1);
         adv->setProperty("Compress", 1);
         // No wallpaper, full-window drag, menu animations or cursor shadow.
@@ -602,6 +641,7 @@ void RdpSession::start()
     m_lastReason = m_lastExtReason = 0;
     m_lastPolled = -1;
     m_lastHeartbeat = 0;
+    m_connectCalledAt = -1;
     m_refreshing = false;
     m_retryTimer.stop();
     m_connectClock.start();
@@ -627,6 +667,7 @@ void RdpSession::start()
         log(QStringLiteral("calling Connect()"));
         m_ax->dynamicCall("Connect()");
         log(QStringLiteral("Connect() returned"));
+        m_connectCalledAt = m_connectClock.elapsed();
         m_poll.start();
     });
 }
@@ -655,6 +696,7 @@ void RdpSession::refresh()
     }
     // The server session stays logged in.
     m_refreshing = true;
+    m_refreshSince = m_connectClock.elapsed();
     m_ax->dynamicCall("Disconnect()");
 }
 
@@ -707,6 +749,7 @@ void RdpSession::onLoginComplete()
     m_retryAttempt = 0;
     m_overlay->hide();
     setState(Connected);
+    repaintRemote();
     focusRemote();
     const QSize before = m_syncedSize;
     syncDisplaySize();
@@ -715,6 +758,7 @@ void RdpSession::onLoginComplete()
         QTimer::singleShot(2000, this, [this] {
             m_syncedSize = {};
             syncDisplaySize();
+            repaintRemote();
         });
 }
 
@@ -742,17 +786,9 @@ void RdpSession::handleDisconnected(int reason)
     log(QStringLiteral("disconnected reason=%1 extReason=%2 everConnected=%3")
             .arg(m_lastReason).arg(m_lastExtReason).arg(m_everConnected));
     const bool wasConnected = m_state == Connected;
-    if (worthRetrying(wasConnected)) {
-        // A dropped link: look again shortly with a fresh control, without a dialog.
-        static const int delays[] = {1500, 4000, 8000};
-        const int delay = delays[m_retryAttempt];
-        ++m_retryAttempt;
-        log(QStringLiteral("connection lost; automatic reconnect %1 in %2 ms").arg(m_retryAttempt).arg(delay));
-        setState(Connecting);
-        showOverlay();
-        m_retryTimer.start(delay);
+    // A dropped link: look again shortly with a fresh control, without a dialog.
+    if (worthRetrying(wasConnected) && scheduleRetry())
         return;
-    }
     if (m_lastExtReason == kExtReplacedByOther)
         setState(Replaced);
     else

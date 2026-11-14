@@ -22,9 +22,9 @@
 
 namespace {
 
-// The port is checked this often. Who is connected is asked about every 20 to 60 seconds (see sessionAgeMs()),
+// The port is checked this often. Who is connected is asked about every 6 to 45 seconds (see sessionAgeMs()),
 // the servers' logs once a minute.
-constexpr int kPollIntervalMs = 10000;
+constexpr int kPollIntervalMs = 6000;
 constexpr int kConnectTimeoutMs = 2000;
 // Checks are spread over this window instead of firing at once.
 constexpr int kSpreadMs = 3000;
@@ -33,12 +33,14 @@ constexpr int kSessionTimeoutMs = 8000;
 constexpr int kPollSessionTimeoutMs = 20000;
 // At most this many checks run at once, so a long list never opens hundreds of sockets.
 constexpr int kMaxParallelChecks = 8;
-// WinRM costs a whole sign-in, so it is asked less often than the port: every 20 s for a short list, up to
-// every 60 s for a long one (each check takes a second or two and 8 run at once).
+// The quick session check (quser, no PowerShell) is cheap, so a short list is asked on every round (6 s) and a
+// long one up to every 45 s. Busy/free shows up within seconds instead of within a minute.
 qint64 sessionAgeMs(qsizetype servers)
 {
-    return qBound<qint64>(18000, qint64(servers) * 350, qint64(58000));
+    return qBound<qint64>(5000, qint64(servers) * 300, qint64(45000));
 }
+// Checks somebody is waiting for (a click, the server list opened) jump ahead of the background round.
+constexpr int kForcedPriority = 10;
 // The logs are read (and the usage sampled) once a minute.
 constexpr qint64 kEventsEveryMs = 55000;
 // A single failed port check is retried before a server is shown as offline.
@@ -187,8 +189,12 @@ void StatusMonitor::refreshAllNow()
 
 void StatusMonitor::refresh(const QString &id, bool force)
 {
-    if (m_inFlight.contains(id))
+    if (m_inFlight.contains(id)) {
+        // The answer on its way may be older than the request: ask again as soon as it is in.
+        if (force)
+            m_again.insert(id);
         return;
+    }
     const ServerProfile p = m_store->profileById(id);
     if (!p.isValid())
         return;
@@ -219,7 +225,7 @@ void StatusMonitor::refresh(const QString &id, bool force)
             QMetaObject::invokeMethod(target, [target, id = p.id, latency, ask, withEvents, q] {
                 target->finished(id, latency, ask, withEvents, q);
             }, Qt::QueuedConnection);
-    });
+    }, force ? kForcedPriority : 0);
 }
 
 bool StatusMonitor::canCheckSessions(const ServerProfile &p)
@@ -321,6 +327,8 @@ void StatusMonitor::finished(const QString &id, int latency, bool checked, bool 
     m_inFlight.remove(id);
     if (!m_store->profileById(id).isValid())
         return;
+    if (m_again.remove(id))
+        QTimer::singleShot(0, this, [this, id] { refresh(id, true); });
     ServerStatus s = m_store->status(id);
     const bool online = latency >= 0;
 

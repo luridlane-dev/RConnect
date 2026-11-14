@@ -71,7 +71,7 @@ bool inCategory(const QString &event, int category)
     case Mine:
         return event == QLatin1String("Connect") || event == QLatin1String("Monitor")
             || event == QLatin1String("AuditEnable") || event == QLatin1String("Message")
-            || event == QLatin1String("Closed") || event == QLatin1String("ServerAdded")
+            || event == QLatin1String("DisplayTuned") || event == QLatin1String("Closed") || event == QLatin1String("ServerAdded")
             || event == QLatin1String("ServerEdited") || event == QLatin1String("ServerRemoved")
             || event == QLatin1String("Import") || event == QLatin1String("Update");
     case Alerts:
@@ -524,6 +524,7 @@ QString AccessLogPage::eventText(const QString &event)
     if (is("Connect"))            return tr("Connected with RConnect");
     if (is("Monitor"))            return tr("Screen viewed in RConnect");
     if (is("AuditEnable"))        return tr("Sign-in tracking turned on");
+    if (is("DisplayTuned"))       return tr("Picture settings changed (60 fps, sharp text)");
     if (is("Message"))            return tr("Message sent in RConnect");
     if (is("Closed"))             return tr("Connection closed in RConnect");
     if (is("ServerAdded"))        return tr("Server added in RConnect");

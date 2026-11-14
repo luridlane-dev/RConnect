@@ -53,6 +53,7 @@ private:
     QTimer m_timer;
     QSet<QString> m_inFlight;
     QSet<QString> m_retried;
+    QSet<QString> m_again; // asked for (forced) while a check was already running
     QSet<QString> m_strangers; // "server id|computer" already warned about while still connected
     QHash<QString, qint64> m_eventsAt; // server id -> when its logs were last read (ms since epoch)
     QThreadPool m_pool; // background checks; interactive ones use the global pool
