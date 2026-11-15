@@ -1110,6 +1110,22 @@ Use “+ Add server” to get started.</source>
         <translation>Kimin girdiği görülemiyor</translation>
     </message>
     <message>
+        <source>Management port closed</source>
+        <translation>Yönetim portu kapalı</translation>
+    </message>
+    <message>
+        <source>Admin sign-in refused</source>
+        <translation>Yönetici girişi reddedildi</translation>
+    </message>
+    <message>
+        <source>Who is connected cannot be read: only the remote desktop port answers. The server's remote management ports (5985, 445) are closed to this computer, so nothing can be asked from outside. This is the server's or its host's firewall, not RConnect.</source>
+        <translation>Kimin bağlı olduğu okunamıyor: yalnızca uzak masaüstü portu yanıt veriyor. Sunucunun uzak yönetim portları (5985, 445) bu bilgisayara kapalı, bu yüzden dışarıdan hiçbir şey sorulamıyor. Bu, sunucunun ya da barındırıcısının güvenlik duvarıdır; RConnect'ten kaynaklanmıyor.</translation>
+    </message>
+    <message>
+        <source>Who is connected cannot be read: the server refused the saved account. Save an administrator account of the server (Edit server).</source>
+        <translation>Kimin bağlı olduğu okunamıyor: sunucu kayıtlı hesabı reddetti. Sunucunun bir yönetici hesabını kaydedin (Sunucuyu düzenle).</translation>
+    </message>
+    <message>
         <source>Could not check who is connected: %1</source>
         <translation>Kimin bağlı olduğu kontrol edilemedi: %1</translation>
     </message>

@@ -257,9 +257,11 @@ void StatusMonitor::applySessions(ServerStatus &s, const SessionQuery &q)
     s.all.clear();
     s.mine = false;
     s.occupancyError.clear();
+    s.occupancyResult = SessionQuery::Ok;
     if (q.result != SessionQuery::Ok) {
         s.occupancy = ServerStatus::OccupancyError;
         s.occupancyError = q.error;
+        s.occupancyResult = q.result;
         return;
     }
     s.all = q.sessions;

@@ -19,7 +19,8 @@ struct ServerStatus {
     QList<RemoteSession> all;    // every session on the server, for the live session list
     bool mine = false;           // this PC has a connected session (a tab here, or mstsc)
     QString occupancyError;
-    qint64 checkedAt = 0;        // ms since epoch of the last session check
+    SessionQuery::Result occupancyResult = SessionQuery::Ok; // why occupancy is OccupancyError
+    qint64 checkedAt = 0;       // ms since epoch of the last session check
     int latencyMs = -1;          // last TCP connect time to the RDP port
     int avgLatencyMs = -1;       // smoothed over the last few checks
 
@@ -95,8 +96,14 @@ inline QString statusBadge(const ServerStatus &s)
             who += QStringLiteral(" +%1").arg(s.others.size() - 1);
         return who; // the second badge on the card says whether they are at the computer
     }
-    if (s.occupancy == ServerStatus::OccupancyError)
+    if (s.occupancy == ServerStatus::OccupancyError) {
+        // Say why, in a few words: the server closed its management ports, or refused the saved account.
+        if (s.occupancyResult == SessionQuery::Unreachable)
+            return QCoreApplication::translate("ServerStatus", "Management port closed");
+        if (s.occupancyResult == SessionQuery::AuthFailed)
+            return QCoreApplication::translate("ServerStatus", "Admin sign-in refused");
         return QCoreApplication::translate("ServerStatus", "Can't see who is in");
+    }
     return {};
 }
 
@@ -120,8 +127,18 @@ inline QString statusToolTip(const ServerStatus &s)
     if (s.occupancy == ServerStatus::OccupancyUnknown && !s.mine)
         parts << QCoreApplication::translate("ServerStatus", "The server answers, but who is connected could not be read.");
     if (s.occupancy == ServerStatus::OccupancyError) {
-        parts << QCoreApplication::translate("ServerStatus", "Could not check who is connected: %1")
-                     .arg(s.occupancyError);
+        if (s.occupancyResult == SessionQuery::Unreachable)
+            parts << QCoreApplication::translate("ServerStatus",
+                         "Who is connected cannot be read: only the remote desktop port answers. The server's remote "
+                         "management ports (5985, 445) are closed to this computer, so nothing can be asked from "
+                         "outside. This is the server's or its host's firewall, not RConnect.");
+        else if (s.occupancyResult == SessionQuery::AuthFailed)
+            parts << QCoreApplication::translate("ServerStatus",
+                         "Who is connected cannot be read: the server refused the saved account. Save an administrator "
+                         "account of the server (Edit server).");
+        else
+            parts << QCoreApplication::translate("ServerStatus", "Could not check who is connected: %1")
+                         .arg(s.occupancyError);
     } else if (s.occupancy == ServerStatus::Busy) {
         QStringList lines;
         for (const RemoteSession &r : s.others)
