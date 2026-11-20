@@ -4,6 +4,14 @@
 <context>
     <name>AccessLogPage</name>
     <message>
+        <source>Windows account and policy audit</source>
+        <translation>Windows hesap ve ilke denetimi</translation>
+    </message>
+    <message>
+        <source>Windows audit policy was changed by %1</source>
+        <translation>Windows denetim ilkesini değiştiren hesap: %1</translation>
+    </message>
+    <message>
         <source>Picture settings changed (60 fps, sharp text)</source>
         <translation>Görüntü ayarları değiştirildi (60 fps, net yazı)</translation>
     </message>
@@ -419,6 +427,94 @@
         <source>Reasons</source>
         <translation>Nedenler</translation>
     </message>
+    <message>
+        <source>Fetch from servers</source>
+        <translation>Sunuculardan getir</translation>
+    </message>
+    <message>
+        <source>All sources</source>
+        <translation>Tüm kaynaklar</translation>
+    </message>
+    <message>
+        <source>Windows record number</source>
+        <translation>Windows kayıt numarası</translation>
+    </message>
+    <message>
+        <source>Could not read: %1</source>
+        <translation>Okunamadı: %1</translation>
+    </message>
+    <message>
+        <source>Reading %1 servers</source>
+        <translation>%1 sunucu okunuyor</translation>
+    </message>
+    <message>
+        <source>Missing data on %1 servers</source>
+        <translation>%1 sunucuda veri eksik</translation>
+    </message>
+    <message>
+        <source>Logs read on %1 servers</source>
+        <translation>%1 sunucunun günlüğü okundu</translation>
+    </message>
+    <message>
+        <source>Windows logs are read over WinRM.</source>
+        <translation>Windows günlükleri WinRM üzerinden okunur.</translation>
+    </message>
+    <message>
+        <source>User account enabled</source>
+        <translation>Kullanıcı hesabı etkinleştirildi</translation>
+    </message>
+    <message>
+        <source>User account disabled</source>
+        <translation>Kullanıcı hesabı devre dışı bırakıldı</translation>
+    </message>
+    <message>
+        <source>User account deleted</source>
+        <translation>Kullanıcı hesabı silindi</translation>
+    </message>
+    <message>
+        <source>Password change attempted</source>
+        <translation>Parola değiştirme girişimi</translation>
+    </message>
+    <message>
+        <source>Password reset attempted</source>
+        <translation>Parola sıfırlama girişimi</translation>
+    </message>
+    <message>
+        <source>User account locked</source>
+        <translation>Kullanıcı hesabı kilitlendi</translation>
+    </message>
+    <message>
+        <source>Removed from a privileged group</source>
+        <translation>Yetkili gruptan çıkarıldı</translation>
+    </message>
+    <message>
+        <source>Scheduled task deleted</source>
+        <translation>Zamanlanmış görev silindi</translation>
+    </message>
+    <message>
+        <source>Scheduled task enabled</source>
+        <translation>Zamanlanmış görev etkinleştirildi</translation>
+    </message>
+    <message>
+        <source>Scheduled task disabled</source>
+        <translation>Zamanlanmış görev devre dışı bırakıldı</translation>
+    </message>
+    <message>
+        <source>Scheduled task changed</source>
+        <translation>Zamanlanmış görev değiştirildi</translation>
+    </message>
+    <message>
+        <source>Audit policy changed</source>
+        <translation>Denetim ilkesi değiştirildi</translation>
+    </message>
+    <message>
+        <source>Search activity</source>
+        <translation>Etkinlik ara</translation>
+    </message>
+    <message>
+        <source>Showing %1 of %2 recent rows</source>
+        <translation>Son %2 satırdan %1 tanesi gösteriliyor</translation>
+    </message>
 </context>
 <context>
     <name>AnimatedTabBar</name>
@@ -564,77 +660,6 @@
     <message>
         <source>Pages</source>
         <translation>Sayfalar</translation>
-    </message>
-</context>
-<context>
-    <name>LiveSessionsPage</name>
-    <message>
-        <source>Who&apos;s connected</source>
-        <translation>Kimler bağlı</translation>
-    </message>
-    <message>
-        <source>Refresh</source>
-        <translation>Yenile</translation>
-    </message>
-    <message>
-        <source>Send message…</source>
-        <translation>Mesaj gönder…</translation>
-    </message>
-    <message>
-        <source>Show a message on the screen of the selected person</source>
-        <translation>Seçili kişinin ekranında bir mesaj göster</translation>
-    </message>
-    <message>
-        <source>Server</source>
-        <translation>Sunucu</translation>
-    </message>
-    <message>
-        <source>User</source>
-        <translation>Kullanıcı</translation>
-    </message>
-    <message>
-        <source>Connected from</source>
-        <translation>Bağlandığı bilgisayar</translation>
-    </message>
-    <message>
-        <source>Status</source>
-        <translation>Durum</translation>
-    </message>
-    <message>
-        <source>Active</source>
-        <translation>Etkin</translation>
-    </message>
-    <message>
-        <source>Disconnected</source>
-        <translation>Bağlantısı kesik</translation>
-    </message>
-    <message>
-        <source>No one is connected right now.</source>
-        <translation>Şu an kimse bağlı değil.</translation>
-    </message>
-    <message>
-        <source>%1 sessions on %2 servers</source>
-        <translation>%2 sunucuda %1 oturum</translation>
-    </message>
-    <message>
-        <source>Activity</source>
-        <translation>Durum</translation>
-    </message>
-    <message>
-        <source>Add nickname…</source>
-        <translation>Takma ad ekle…</translation>
-    </message>
-    <message>
-        <source>Edit nickname…</source>
-        <translation>Takma adı düzenle…</translation>
-    </message>
-    <message>
-        <source>Edit contact…</source>
-        <translation>Kişiyi düzenle…</translation>
-    </message>
-    <message>
-        <source>Add to contacts…</source>
-        <translation>Rehbere ekle…</translation>
     </message>
 </context>
 <context>
@@ -929,8 +954,20 @@
 <context>
     <name>ServerPanel</name>
     <message>
-        <source>Smoother, sharper picture…</source>
-        <translation>Daha akıcı ve net görüntü…</translation>
+        <source>Send message…</source>
+        <translation>Mesaj gönder…</translation>
+    </message>
+    <message>
+        <source>%1 · Session %2</source>
+        <translation>%1 · Oturum %2</translation>
+    </message>
+    <message>
+        <source>Grid view</source>
+        <translation>Izgara görünümü</translation>
+    </message>
+    <message>
+        <source>List view</source>
+        <translation>Liste görünümü</translation>
     </message>
     <message>
         <source>Rename group…</source>
@@ -1003,10 +1040,6 @@ Use “+ Add server” to get started.</source>
         <translation>Durumu şimdi denetle</translation>
     </message>
     <message>
-        <source>Track sign-in attempts…</source>
-        <translation>Giriş denemelerini kaydet…</translation>
-    </message>
-    <message>
         <source>Edit…</source>
         <translation>Düzenle…</translation>
     </message>
@@ -1062,9 +1095,45 @@ Use “+ Add server” to get started.</source>
         <source>No group</source>
         <translation>Grup yok</translation>
     </message>
+    <message>
+        <source>Copy connection diagnostics</source>
+        <translation>Bağlantı tanılamasını kopyala</translation>
+    </message>
+    <message>
+        <source>Server %1 (%2)</source>
+        <translation>Sunucu %1 (%2)</translation>
+    </message>
+    <message>
+        <source>Session check at %1</source>
+        <translation>Oturum kontrolü %1</translation>
+    </message>
+    <message>
+        <source>RDP TCP %1 responded in %2 ms.</source>
+        <translation>RDP TCP %1, %2 ms içinde yanıt verdi.</translation>
+    </message>
 </context>
 <context>
     <name>ServerStatus</name>
+    <message>
+        <source>&lt;1 min</source>
+        <translation>&lt;1 dk</translation>
+    </message>
+    <message>
+        <source>%1 min</source>
+        <translation>%1 dk</translation>
+    </message>
+    <message>
+        <source>%1 h %2 min</source>
+        <translation>%1 sa %2 dk</translation>
+    </message>
+    <message>
+        <source>%1 d %2 h</source>
+        <translation>%1 g %2 sa</translation>
+    </message>
+    <message>
+        <source>Connected %1</source>
+        <translation>Bağlı %1</translation>
+    </message>
     <message>
         <source>Connection: %1 · %2 ms (average %3 ms)</source>
         <translation>Bağlantı: %1 · %2 ms (ortalama %3 ms)</translation>
@@ -1106,30 +1175,6 @@ Use “+ Add server” to get started.</source>
         <translation>Bağlanabilir</translation>
     </message>
     <message>
-        <source>Can't see who is in</source>
-        <translation>Kimin girdiği görülemiyor</translation>
-    </message>
-    <message>
-        <source>Management port closed</source>
-        <translation>Yönetim portu kapalı</translation>
-    </message>
-    <message>
-        <source>Admin sign-in refused</source>
-        <translation>Yönetici girişi reddedildi</translation>
-    </message>
-    <message>
-        <source>Who is connected cannot be read: only the remote desktop port answers. The server's remote management ports (5985, 445) are closed to this computer, so nothing can be asked from outside. This is the server's or its host's firewall, not RConnect.</source>
-        <translation>Kimin bağlı olduğu okunamıyor: yalnızca uzak masaüstü portu yanıt veriyor. Sunucunun uzak yönetim portları (5985, 445) bu bilgisayara kapalı, bu yüzden dışarıdan hiçbir şey sorulamıyor. Bu, sunucunun ya da barındırıcısının güvenlik duvarıdır; RConnect'ten kaynaklanmıyor.</translation>
-    </message>
-    <message>
-        <source>Who is connected cannot be read: the server refused the saved account. Save an administrator account of the server (Edit server).</source>
-        <translation>Kimin bağlı olduğu okunamıyor: sunucu kayıtlı hesabı reddetti. Sunucunun bir yönetici hesabını kaydedin (Sunucuyu düzenle).</translation>
-    </message>
-    <message>
-        <source>Could not check who is connected: %1</source>
-        <translation>Kimin bağlı olduğu kontrol edilemedi: %1</translation>
-    </message>
-    <message>
         <source>%1 (user %2), %3</source>
         <translation>%1 (kullanıcı %2), %3</translation>
     </message>
@@ -1155,19 +1200,39 @@ Use “+ Add server” to get started.</source>
     </message>
     <message>
         <source>Active</source>
-        <translation>şu an aktif</translation>
+        <translation>Aktif</translation>
     </message>
     <message>
         <source>Idle %1 min</source>
-        <translation>%1 dk'dır hareketsiz</translation>
+        <translation>Uzakta %1 dk</translation>
     </message>
     <message>
         <source>Idle %1 h</source>
-        <translation>%1 saattir hareketsiz</translation>
+        <translation>Uzakta %1 sa</translation>
     </message>
     <message>
         <source>The server answers, but who is connected could not be read.</source>
         <translation>Sunucu yanıt veriyor ama kimin bağlı olduğu okunamadı.</translation>
+    </message>
+    <message>
+        <source>Activity not measured</source>
+        <translation>Etkinlik ölçülmedi</translation>
+    </message>
+    <message>
+        <source>WinRM connection failed</source>
+        <translation>WinRM bağlantısı kurulamadı</translation>
+    </message>
+    <message>
+        <source>WinRM authentication rejected</source>
+        <translation>WinRM kimlik doğrulamayı reddetti</translation>
+    </message>
+    <message>
+        <source>Session query failed</source>
+        <translation>Oturum sorgusu başarısız</translation>
+    </message>
+    <message>
+        <source>WTS · Skipped after authentication rejection.</source>
+        <translation>WTS · Kimlik doğrulama reddedildiği için denenmedi.</translation>
     </message>
 </context>
 <context>
@@ -1483,6 +1548,114 @@ Giriş sayısı: %3</translation>
         <source>&lt;p&gt;&lt;b&gt;Came in and left.&lt;/b&gt; The server writes down every time someone signs in, disconnects or signs out, so these times are exact. If the same computer comes back within %1 minutes it counts as one stay.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Working and away.&lt;/b&gt; RConnect asks each server about every 2 minutes how long the person has not touched the mouse or keyboard. After %2 minutes without any touch, that time counts as away.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Unknown.&lt;/b&gt; Working or away can only be told while RConnect is open and can reach the server. For the rest the total is still right, but the split is not guessed. Keep RConnect running (Settings &gt; Start with Windows) to measure all day.&lt;/p&gt;&lt;p&gt;Away time can be off by up to 2 minutes. Computer names come from the server at the time of the visit.&lt;/p&gt;</source>
         <translation>&lt;p&gt;&lt;b&gt;Girdi ve çıktı.&lt;/b&gt; Sunucu, birinin her girişini, bağlantı kopmasını ve çıkışını kaydeder; bu saatler kesindir. Aynı bilgisayar %1 dakika içinde geri gelirse tek kalış sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Çalıştı ve uzakta.&lt;/b&gt; RConnect her sunucuya yaklaşık 2 dakikada bir kişinin fareye ya da klavyeye ne zamandır dokunmadığını sorar. %2 dakika boyunca hiç dokunulmazsa o süre uzakta sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Bilinmiyor.&lt;/b&gt; Çalıştı/uzakta ayrımı yalnızca RConnect açıkken ve sunucuya ulaşabiliyorken yapılabilir. Kalan süre için toplam yine doğrudur ama ayrım tahmin edilmez. Gün boyu ölçmek için RConnect&apos;i açık tutun (Ayarlar &gt; Windows ile başlat).&lt;/p&gt;&lt;p&gt;Uzakta süresi en fazla 2 dakika şaşabilir. Bilgisayar adları ziyaret sırasında sunucudan alınır.&lt;/p&gt;</translation>
     </message>
+    <message>
+        <source>%1 h</source>
+        <translation>%1 sa</translation>
+    </message>
+    <message>
+        <source>Daily connection totals by computer and server. Expand a row for individual connections.</source>
+        <translation>Bilgisayara ve sunucuya göre günlük bağlantı süreleri. Bağlantıları tek tek görmek için satırı açın.</translation>
+    </message>
+    <message>
+        <source>Total connected</source>
+        <translation>Toplam bağlı süre</translation>
+    </message>
+    <message>
+        <source>Input estimated</source>
+        <translation>Kullanım tahmini</translation>
+    </message>
+    <message>
+        <source>Idle estimated</source>
+        <translation>Boşta kalma tahmini</translation>
+    </message>
+    <message>
+        <source>Unmeasured</source>
+        <translation>Ölçülemedi</translation>
+    </message>
+    <message>
+        <source>Rebuild totals</source>
+        <translation>Süreleri yeniden hesapla</translation>
+    </message>
+    <message>
+        <source>Rebuilds the report from the Windows session events already saved on this PC.</source>
+        <translation>Bu bilgisayarda kayıtlı Windows oturum olaylarından raporu yeniden oluşturur.</translation>
+    </message>
+    <message>
+        <source>How to read this</source>
+        <translation>Süreler ne anlama geliyor?</translation>
+    </message>
+    <message>
+        <source>First seen</source>
+        <translation>İlk kayıt</translation>
+    </message>
+    <message>
+        <source>Last seen</source>
+        <translation>Son kayıt</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Bağlı süre</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>Kullanım</translation>
+    </message>
+    <message>
+        <source>Idle</source>
+        <translation>Boşta</translation>
+    </message>
+    <message>
+        <source>Input and idle are estimates. Unmeasured time is part of the connected total.</source>
+        <translation>Kullanım ve boşta kalma süreleri tahminidir. Ölçülemeyen süre de bağlı süreye dahildir.</translation>
+    </message>
+    <message>
+        <source>%1 saved Windows session events were used.</source>
+        <translation>%1 kayıtlı Windows oturum olayı kullanıldı.</translation>
+    </message>
+    <message>
+        <source>Could not rebuild totals from the saved records.</source>
+        <translation>Kayıtlardan süreler yeniden hesaplanamadı.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Connected.&lt;/b&gt; Time between connection and disconnection. Short gaps of up to %1 minutes can appear in the same row, while the minutes offline stay out of the total.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Input and idle.&lt;/b&gt; Estimates from keyboard and mouse checks. A period with at least %2 minutes without input counts as idle. Gaps without enough measurements show as unmeasured.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Incomplete records.&lt;/b&gt; A connection without an end event is counted through the last time it was seen. When it was first seen late, the report shows a minimum.&lt;/p&gt;&lt;p&gt;Each connection adds to the total. Two simultaneous one-hour connections add two hours.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Bağlı süre.&lt;/b&gt; Bağlantı açılışı ile kapanışı arasında geçen süre. %1 dakikaya kadar kısa kopmalar aynı satırda gösterilebilir. Kopuk geçen süre toplamdan düşülür.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Kullanım ve boşta.&lt;/b&gt; Klavye ve fare kontrollerinden hesaplanan tahminler. En az %2 dakika girdi gelmezse o aralık boşta sayılır. Yeterli veri yoksa ölçülemedi olarak gösterilir.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Eksik kayıtlar.&lt;/b&gt; Kapanış olayı yoksa son görüldüğü ana kadar süre yazılır. Başlangıç da eksikse süre ilk görüldüğü andan itibaren hesaplanır. Bu satırlarda doğrulanabilen asgari süre gösterilir.&lt;/p&gt;&lt;p&gt;Her bağlantı toplama ayrı eklenir. Aynı anda birer saat açık kalan iki bağlantı toplam iki saat sayılır.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>%1 (carried over)</source>
+        <translation>%1 (önceki günden)</translation>
+    </message>
+    <message>
+        <source>Seen connected</source>
+        <translation>Son kontrolde bağlı</translation>
+    </message>
+    <message>
+        <source>Continues next day</source>
+        <translation>Ertesi güne sarktı</translation>
+    </message>
+    <message>
+        <source>No record</source>
+        <translation>Kayıt yok</translation>
+    </message>
+    <message>
+        <source>At least %1</source>
+        <translation>En az %1</translation>
+    </message>
+    <message>
+        <source>Connection %1</source>
+        <translation>Bağlantı %1</translation>
+    </message>
+    <message>
+        <source>Some connections are missing a start or end record. Their totals are minimums.</source>
+        <translation>Bazı bağlantılarda açılış veya kapanış kaydı eksik. Bu satırlarda doğrulanabilen en az süre gösteriliyor.</translation>
+    </message>
+    <message>
+        <source>No connections recorded for this period.</source>
+        <translation>Bu dönem için bağlantı kaydı bulunamadı.</translation>
+    </message>
+    <message>
+        <source>Times use this PC’s clock. Simultaneous connections count separately.</source>
+        <translation>Saatler bu bilgisayarın saat diliminde. Aynı anda açık bağlantılar ayrı ayrı toplanır.</translation>
+    </message>
 </context>
 <context>
     <name>WinRm</name>
@@ -1530,24 +1703,68 @@ Giriş sayısı: %3</translation>
         <source>The server returned an error (code %1).</source>
         <translation>Sunucu hata döndürdü (kod %1).</translation>
     </message>
+    <message>
+        <source>The socket sent no bytes.</source>
+        <translation>Soket veri gönderemedi.</translation>
+    </message>
+    <message>
+        <source>The peer did not send a valid HTTP status line.</source>
+        <translation>Karşı uç geçerli bir HTTP durum satırı göndermedi.</translation>
+    </message>
+    <message>
+        <source>The peer closed the TCP connection.</source>
+        <translation>Karşı uç TCP bağlantısını kapattı.</translation>
+    </message>
+    <message>
+        <source>TCP connection failed · %1</source>
+        <translation>TCP bağlantısı kurulamadı · %1</translation>
+    </message>
+    <message>
+        <source>NTLM setup failed · %1</source>
+        <translation>NTLM başlatılamadı · %1</translation>
+    </message>
+    <message>
+        <source>NTLM exchange failed · %1</source>
+        <translation>NTLM görüşmesi başarısız · %1</translation>
+    </message>
+    <message>
+        <source>HTTP authentication exchange failed · %1</source>
+        <translation>HTTP kimlik doğrulama görüşmesi başarısız · %1</translation>
+    </message>
+    <message>
+        <source>HTTP %1 received during authentication without a usable Negotiate challenge.</source>
+        <translation>Kimlik doğrulamada HTTP %1 alındı. Kullanılabilir Negotiate isteği gelmedi.</translation>
+    </message>
+    <message>
+        <source>Authentication rejected (HTTP 401).</source>
+        <translation>Kimlik doğrulama reddedildi (HTTP 401).</translation>
+    </message>
+    <message>
+        <source>Could not encrypt the request · %1</source>
+        <translation>İstek şifrelenemedi · %1</translation>
+    </message>
+    <message>
+        <source>WS-Management %1 exchange failed · %2</source>
+        <translation>WS-Management %1 isteği başarısız · %2</translation>
+    </message>
+    <message>
+        <source>WS-Management %1 returned HTTP %2.</source>
+        <translation>WS-Management %1 isteğine HTTP %2 döndü.</translation>
+    </message>
 </context>
 <context>
     <name>Workspace</name>
     <message>
-        <source>Smoother, sharper picture</source>
-        <translation>Daha akıcı ve net görüntü</translation>
+        <source>Checking who is connected…</source>
+        <translation>Kimin bağlı olduğu kontrol ediliyor…</translation>
     </message>
     <message>
-        <source>Change the picture settings of “%1”?
-
-The server will send up to 60 frames a second instead of 30, and text in full colour so it stays sharp. This changes two settings on the server and uses a little more network. It takes effect after the server restarts.</source>
-        <translation>“%1” sunucusunun görüntü ayarları değiştirilsin mi?
-
-Sunucu saniyede 30 yerine 60 kareye kadar gönderir, yazıları da net kalsın diye tam renkli gönderir. Bu, sunucudaki iki ayarı değiştirir ve biraz daha fazla ağ kullanır. Sunucu yeniden başlatıldıktan sonra geçerli olur.</translation>
+        <source>You can connect now if you do not need to wait for the session check.</source>
+        <translation>Oturum kontrolü sürerken bağlantıyı başlatabilirsiniz.</translation>
     </message>
     <message>
-        <source>Done. Restart “%1” once for the new picture settings to take effect.</source>
-        <translation>Tamam. Yeni görüntü ayarlarının geçerli olması için “%1” sunucusunu bir kez yeniden başlatın.</translation>
+        <source>Connect now</source>
+        <translation>Şimdi bağlan</translation>
     </message>
     <message>
         <source>Yes</source>
@@ -1618,14 +1835,6 @@ Sunucu saniyede 30 yerine 60 kareye kadar gönderir, yazıları da net kalsın d
         <translation>“%1” listeden silinsin mi?</translation>
     </message>
     <message>
-        <source>Record sign-in attempts on “%1”?
-
-This changes a security setting on the server, so Windows keeps a record of every sign-in and every failed attempt, and of new accounts, changes to the administrators and new scheduled tasks. They show up in Activity history.</source>
-        <translation>“%1” sunucusunda giriş denemeleri kaydedilsin mi?
-
-Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi ve her başarısız denemeyi, ayrıca yeni hesapları, yöneticilerdeki değişiklikleri ve yeni zamanlanmış görevleri kaydeder. Bunlar Etkinlik geçmişinde görünür.</translation>
-    </message>
-    <message>
         <source>Security alert: %1</source>
         <translation>Güvenlik uyarısı: %1</translation>
     </message>
@@ -1642,28 +1851,36 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
         <translation>Yöneticiden mesaj</translation>
     </message>
     <message>
-        <source>The message was shown to %1.</source>
-        <translation>Mesaj %1 kullanıcısına gösterildi.</translation>
+        <source>Close</source>
+        <translation>Kapat</translation>
     </message>
     <message>
-        <source>Could not send the message on “%1”: %2</source>
-        <translation>“%1” sunucusunda mesaj gönderilemedi: %2</translation>
+        <source>Copy</source>
+        <translation>Kopyala</translation>
     </message>
     <message>
-        <source>Track sign-in attempts</source>
-        <translation>Giriş denemelerini kaydet</translation>
+        <source>This session is no longer connected.</source>
+        <translation>Bu oturumun bağlantısı kesilmiş.</translation>
     </message>
     <message>
-        <source>To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.</source>
-        <translation>Bunun için “%1” sunucusunda kayıtlı yönetici şifresi olmalı ve ayarlarında “Kimin bağlı olduğunu göster” açık olmalı.</translation>
+        <source>Use at most %1 characters.</source>
+        <translation>En fazla %1 karakter kullanabilirsin.</translation>
     </message>
     <message>
-        <source>Sign-in tracking is on for “%1”. New activity will appear in Activity history.</source>
-        <translation>“%1” için giriş takibi açık. Yeni etkinlik, Etkinlik geçmişinde görünür.</translation>
+        <source>The server settings changed. Open the message again.</source>
+        <translation>Sunucu ayarları değişti. Mesaj penceresini yeniden aç.</translation>
     </message>
     <message>
-        <source>Could not change the setting on “%1”: %2</source>
-        <translation>“%1” üzerindeki ayar değiştirilemedi: %2</translation>
+        <source>The message window resources could not be opened.</source>
+        <translation>Mesaj penceresinin dosyaları açılamadı.</translation>
+    </message>
+    <message>
+        <source>Message queued for %1.</source>
+        <translation>%1 için mesaj Windows'a iletildi.</translation>
+    </message>
+    <message>
+        <source>Could not verify that the message was queued on “%1”.</source>
+        <translation>“%1” sunucusunda mesajın Windows'a iletildiği doğrulanamadı.</translation>
     </message>
     <message>
         <source>Import servers</source>
@@ -2017,28 +2234,72 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
 <context>
     <name>SettingsDialog</name>
     <message>
+        <source>Storage</source>
+        <translation>Depolama</translation>
+    </message>
+    <message>
+        <source>Shared Windows Remote Desktop image cache and old RConnect installers.</source>
+        <translation>Windows Uzak Masaüstü ile paylaşılan görüntü önbelleği ve eski RConnect kurulum dosyaları.</translation>
+    </message>
+    <message>
+        <source>Clear cache</source>
+        <translation>Önbelleği temizle</translation>
+    </message>
+    <message>
+        <source>Checking cache…</source>
+        <translation>Önbellek kontrol ediliyor…</translation>
+    </message>
+    <message>
+        <source>Clearing cache…</source>
+        <translation>Önbellek temizleniyor…</translation>
+    </message>
+    <message>
+        <source>Cleared %1.</source>
+        <translation>%1 temizlendi.</translation>
+    </message>
+    <message>
+        <source>%1 on disk</source>
+        <translation>Diskte %1</translation>
+    </message>
+    <message>
+        <source>Cache is empty.</source>
+        <translation>Önbellek boş.</translation>
+    </message>
+    <message>
+        <source>Some files could not be removed.</source>
+        <translation>Bazı dosyalar silinemedi.</translation>
+    </message>
+    <message>
+        <source>A cache folder could not be opened.</source>
+        <translation>Önbellek klasörlerinden biri açılamadı.</translation>
+    </message>
+    <message>
+        <source>Monitoring</source>
+        <translation>İzleme</translation>
+    </message>
+    <message>
         <source>Settings</source>
         <translation>Ayarlar</translation>
     </message>
     <message>
-        <source>GENERAL</source>
-        <translation>GENEL</translation>
+        <source>General</source>
+        <translation>Genel</translation>
     </message>
     <message>
-        <source>PAGES</source>
-        <translation>SAYFALAR</translation>
+        <source>Pages</source>
+        <translation>Sayfalar</translation>
     </message>
     <message>
-        <source>LOGGING</source>
-        <translation>KAYIT</translation>
+        <source>Logging</source>
+        <translation>Kayıt</translation>
     </message>
     <message>
-        <source>SERVERS AND CONTACTS</source>
-        <translation>SUNUCULAR VE KİŞİLER</translation>
+        <source>Servers and contacts</source>
+        <translation>Sunucular ve kişiler</translation>
     </message>
     <message>
-        <source>UPDATES</source>
-        <translation>GÜNCELLEMELER</translation>
+        <source>Updates</source>
+        <translation>Güncellemeler</translation>
     </message>
     <message>
         <source>Close</source>
@@ -2137,8 +2398,8 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
         <translation>Kimler bağlı</translation>
     </message>
     <message>
-        <source>GROUPS</source>
-        <translation>GRUPLAR</translation>
+        <source>Groups</source>
+        <translation>Gruplar</translation>
     </message>
     <message>
         <source>A group appears when a server is put in it: right-click a server, then Group.</source>
@@ -2176,10 +2437,6 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
         <translation>Sunucu Windows&apos;un oturum sorgusuna da yanıt vermiyor.</translation>
     </message>
     <message>
-        <source>The file-sharing port (445) of the server is closed.</source>
-        <translation>Sunucunun dosya paylaşımı bağlantı noktası (445) kapalı.</translation>
-    </message>
-    <message>
         <source>Windows refused the sign-in: %1</source>
         <translation>Windows girişi reddetti: %1</translation>
     </message>
@@ -2190,6 +2447,79 @@ Bu işlem sunucudaki bir güvenlik ayarını değiştirir; Windows her girişi v
     <message>
         <source>Could not list the sessions: %1</source>
         <translation>Oturumlar listelenemedi: %1</translation>
+    </message>
+    <message>
+        <source>Previous result at %1 (retry deferred) · %2</source>
+        <translation>Önceki sonuç %1 (yeniden deneme ertelendi) · %2</translation>
+    </message>
+    <message>
+        <source>TCP connection failed · %1</source>
+        <translation>TCP bağlantısı kurulamadı · %1</translation>
+    </message>
+    <message>
+        <source>SMB IPC$ connection failed · %1</source>
+        <translation>SMB IPC$ bağlantısı kurulamadı · %1</translation>
+    </message>
+    <message>
+        <source>WTSOpenServerExW failed · %1</source>
+        <translation>WTSOpenServerExW başarısız · %1</translation>
+    </message>
+    <message>
+        <source>WTSEnumerateSessionsExW failed · %1</source>
+        <translation>WTSEnumerateSessionsExW başarısız · %1</translation>
+    </message>
+</context>
+<context>
+    <name>StatusMonitor</name>
+    <message>
+        <source>Server monitoring and a saved account are required.</source>
+        <translation>Sunucu izleme açık olmalı ve sunucuda kayıtlı bir hesap bulunmalı.</translation>
+    </message>
+    <message>
+        <source>Server settings changed during the read.</source>
+        <translation>Okuma sırasında sunucu ayarları değişti.</translation>
+    </message>
+    <message>
+        <source>Could not save the activity history.</source>
+        <translation>Etkinlik geçmişi kaydedilemedi.</translation>
+    </message>
+    <message>
+        <source>%1 event records could not be read.</source>
+        <translation>%1 olay kaydı okunamadı.</translation>
+    </message>
+    <message>
+        <source>The server logs could not be read.</source>
+        <translation>Sunucunun günlükleri okunamadı.</translation>
+    </message>
+</context>
+<context>
+    <name>WindowsTcp</name>
+    <message>
+        <source>No TCP response within the local %1 ms deadline.</source>
+        <translation>Yerel %1 ms bekleme süresinde TCP yanıtı gelmedi.</translation>
+    </message>
+    <message>
+        <source>The socket reported a connection failure without an error code.</source>
+        <translation>Windows soketi bağlantı hatası bildirdi. Hata kodu verilmedi.</translation>
+    </message>
+    <message>
+        <source>Address resolution failed · %1</source>
+        <translation>Adres çözümlenemedi · %1</translation>
+    </message>
+    <message>
+        <source>No usable network address found.</source>
+        <translation>Kullanılabilir ağ adresi bulunamadı.</translation>
+    </message>
+</context>
+<context>
+    <name>ServerStore</name>
+    <message>
+        <source>This computer</source>
+        <translation>Bu bilgisayar</translation>
+    </message>
+    <message>
+        <source>This computer · %1</source>
+        <translation>Bu bilgisayar · %1</translation>
     </message>
 </context>
 </TS>

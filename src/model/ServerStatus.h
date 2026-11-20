@@ -19,8 +19,10 @@ struct ServerStatus {
     QList<RemoteSession> all;    // every session on the server, for the live session list
     bool mine = false;           // this PC has a connected session (a tab here, or mstsc)
     QString occupancyError;
+    QString occupancyFallbackError;
     SessionQuery::Result occupancyResult = SessionQuery::Ok; // why occupancy is OccupancyError
     qint64 checkedAt = 0;       // ms since epoch of the last session check
+    qint64 serverNowUtcMs = 0;  // remote clock at the last successful session check
     int latencyMs = -1;          // last TCP connect time to the RDP port
     int avgLatencyMs = -1;       // smoothed over the last few checks
 
@@ -62,6 +64,8 @@ inline QString qualityText(int bars)
 
 inline QString idleText(int minutes)
 {
+    if (minutes < 0)
+        return QCoreApplication::translate("ServerStatus", "Activity not measured");
     if (minutes < 1)
         return QCoreApplication::translate("ServerStatus", "using it right now");
     if (minutes < 60)
@@ -94,26 +98,62 @@ inline QString statusBadge(const ServerStatus &s)
         QString who = sessionOwner(s.others.first());
         if (s.others.size() > 1)
             who += QStringLiteral(" +%1").arg(s.others.size() - 1);
-        return who; // the second badge on the card says whether they are at the computer
+        return who;
     }
     if (s.occupancy == ServerStatus::OccupancyError) {
-        // Say why, in a few words: the server closed its management ports, or refused the saved account.
         if (s.occupancyResult == SessionQuery::Unreachable)
-            return QCoreApplication::translate("ServerStatus", "Management port closed");
+            return QCoreApplication::translate("ServerStatus", "WinRM connection failed");
         if (s.occupancyResult == SessionQuery::AuthFailed)
-            return QCoreApplication::translate("ServerStatus", "Admin sign-in refused");
-        return QCoreApplication::translate("ServerStatus", "Can't see who is in");
+            return QCoreApplication::translate("ServerStatus", "WinRM authentication rejected");
+        return QCoreApplication::translate("ServerStatus", "Session query failed");
     }
     return {};
 }
 
-// For the second badge of a busy card: whether the person is at the computer, in plain words.
+// A short activity label for a busy card.
 inline QString idleShort(int minutes)
 {
     if (minutes < 1)
         return QCoreApplication::translate("ServerStatus", "Active");
     return minutes < 60 ? QCoreApplication::translate("ServerStatus", "Idle %1 min").arg(minutes)
                         : QCoreApplication::translate("ServerStatus", "Idle %1 h").arg(minutes / 60);
+}
+
+inline qint64 connectionMinutes(const ServerStatus &status, const RemoteSession &session)
+{
+    if (!session.connected || session.connectedSinceUtcMs <= 0 || status.serverNowUtcMs < session.connectedSinceUtcMs)
+        return -1;
+    return (status.serverNowUtcMs - session.connectedSinceUtcMs) / 60000;
+}
+
+inline QString connectionDurationText(qint64 minutes)
+{
+    if (minutes < 0)
+        return {};
+    QString duration;
+    if (minutes == 0)
+        duration = QCoreApplication::translate("ServerStatus", "<1 min");
+    else if (minutes < 60)
+        duration = QCoreApplication::translate("ServerStatus", "%1 min").arg(minutes);
+    else if (minutes < 24 * 60)
+        duration = QCoreApplication::translate("ServerStatus", "%1 h %2 min").arg(minutes / 60).arg(minutes % 60);
+    else
+        duration = QCoreApplication::translate("ServerStatus", "%1 d %2 h").arg(minutes / (24 * 60)).arg(minutes / 60 % 24);
+    return QCoreApplication::translate("ServerStatus", "Connected %1").arg(duration);
+}
+
+inline QStringList sessionErrorDetails(const ServerStatus &s)
+{
+    QStringList details;
+    if (s.occupancy != ServerStatus::OccupancyError)
+        return details;
+    if (!s.occupancyError.isEmpty())
+        details << QStringLiteral("WinRM / TCP 5985 · ") + s.occupancyError;
+    if (!s.occupancyFallbackError.isEmpty())
+        details << QStringLiteral("WTS / SMB TCP 445 · ") + s.occupancyFallbackError;
+    else if (s.occupancyResult == SessionQuery::AuthFailed)
+        details << QCoreApplication::translate("ServerStatus", "WTS · Skipped after authentication rejection.");
+    return details;
 }
 
 inline QString statusToolTip(const ServerStatus &s)
@@ -127,23 +167,17 @@ inline QString statusToolTip(const ServerStatus &s)
     if (s.occupancy == ServerStatus::OccupancyUnknown && !s.mine)
         parts << QCoreApplication::translate("ServerStatus", "The server answers, but who is connected could not be read.");
     if (s.occupancy == ServerStatus::OccupancyError) {
-        if (s.occupancyResult == SessionQuery::Unreachable)
-            parts << QCoreApplication::translate("ServerStatus",
-                         "Who is connected cannot be read: only the remote desktop port answers. The server's remote "
-                         "management ports (5985, 445) are closed to this computer, so nothing can be asked from "
-                         "outside. This is the server's or its host's firewall, not RConnect.");
-        else if (s.occupancyResult == SessionQuery::AuthFailed)
-            parts << QCoreApplication::translate("ServerStatus",
-                         "Who is connected cannot be read: the server refused the saved account. Save an administrator "
-                         "account of the server (Edit server).");
-        else
-            parts << QCoreApplication::translate("ServerStatus", "Could not check who is connected: %1")
-                         .arg(s.occupancyError);
+        parts << sessionErrorDetails(s).join(QLatin1Char('\n'));
     } else if (s.occupancy == ServerStatus::Busy) {
         QStringList lines;
-        for (const RemoteSession &r : s.others)
-            lines << QCoreApplication::translate("ServerStatus", "%1 (user %2), %3")
-                         .arg(r.client.isEmpty() ? QStringLiteral("?") : r.client, r.user, idleText(r.idleMinutes));
+        for (const RemoteSession &r : s.others) {
+            QString line = QCoreApplication::translate("ServerStatus", "%1 (user %2), %3")
+                               .arg(r.client.isEmpty() ? QStringLiteral("?") : r.client, r.user, idleText(r.idleMinutes));
+            const QString age = connectionDurationText(connectionMinutes(s, r));
+            if (!age.isEmpty())
+                line += QStringLiteral(" · ") + age;
+            lines << line;
+        }
         parts << QCoreApplication::translate("ServerStatus", "Connected now:") + QLatin1Char('\n')
                      + lines.join(QLatin1Char('\n'));
     }

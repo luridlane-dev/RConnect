@@ -62,7 +62,7 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
     m_add->setFixedSize(kHeight, kHeight);
     connect(m_add, &QToolButton::clicked, this, &AnimatedTabBar::addRequested);
 
-    m_anim.setDuration(110);
+    m_anim.setDuration(175);
     m_anim.setEasingCurve(QEasingCurve::OutCubic);
     m_anim.setStartValue(0.0);
     m_anim.setEndValue(1.0);
@@ -124,6 +124,11 @@ void AnimatedTabBar::setSelectionVisible(bool visible)
     if (m_selectionVisible == visible)
         return;
     m_selectionVisible = visible;
+    if (!visible) {
+        m_anim.stop();
+        m_from = {};
+        m_current = {};
+    }
     update();
 }
 
@@ -138,7 +143,7 @@ void AnimatedTabBar::slideTo(int index)
 
 void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
-    // A flat block slides behind the selected tab, under the tab text.
+    // The selection follows the current tab.
     const int idx = currentIndex();
     if (idx >= 0 && m_selectionVisible) {
         const QRectF target = tabRect(idx);
@@ -149,8 +154,10 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
         QPainter p(this);
-        // The tab in front: a muted blue block with white text, plainly different from the other tabs.
-        p.fillRect(m_current, Theme::kTabActive);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(Theme::kTabActive);
+        p.drawRoundedRect(m_current.adjusted(2, 5, -2, -5), 3, 3);
     }
 
     QTabBar::paintEvent(e);

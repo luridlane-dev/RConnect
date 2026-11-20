@@ -2,6 +2,7 @@
 #include "core/AccessLog.h"
 
 #include <QPair>
+#include <QHash>
 #include <QStringList>
 #include <QWidget>
 
@@ -13,6 +14,7 @@ class QLineEdit;
 class QPushButton;
 class QTableView;
 class QTimer;
+class ServerStore;
 
 // One row of the table: an entry of the file, or the failed attempts of one address in a row.
 struct AccessLine {
@@ -28,12 +30,17 @@ struct AccessLine {
 class AccessLogPage : public QWidget {
     Q_OBJECT
 public:
-    explicit AccessLogPage(QWidget *parent = nullptr);
+    explicit AccessLogPage(ServerStore *store, QWidget *parent = nullptr);
+    void setSyncState(const QString &id, const QString &name, bool running,
+                      const QStringList &failedChannels, const QString &error);
 
     static QString eventText(const QString &event);
     static QString sourceText(const QString &source);
     // A sentence about a security alert or a change on the server; empty for other events.
     static QString alertSummary(const AccessRecord &r);
+
+signals:
+    void syncRequested(const QString &serverId);
 
 protected:
     void showEvent(QShowEvent *e) override;
@@ -49,7 +56,16 @@ private:
     void fillServers();
     void applyPeriod();
     void exportCsv();
+    void updateSyncStatus();
 
+    struct SyncState {
+        QString name;
+        bool running = false;
+        QStringList failedChannels;
+        QString error;
+    };
+    ServerStore *m_store;
+    QHash<QString, SyncState> m_syncStates;
     AccessTableModel *m_model;
     QTableView *m_view;
     QLabel *m_title;
@@ -58,7 +74,9 @@ private:
     QComboBox *m_category;
     QComboBox *m_server;
     QComboBox *m_period;
+    QComboBox *m_source;
     QLabel *m_count;
+    QLabel *m_syncStatus;
     QTimer *m_timer;
     QPushButton *m_refresh;
     QPushButton *m_export;

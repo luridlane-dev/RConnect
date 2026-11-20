@@ -1,5 +1,6 @@
 #include "ServerStore.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -78,28 +79,52 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     static const ServerStatus none;
     const auto found = m_status.constFind(p.id);
     const ServerStatus &st = found == m_status.constEnd() ? none : *found; // no copy: this runs for every painted card
+    const auto local = m_localConnections.constFind(p.id);
+    const bool localConnected = local != m_localConnections.constEnd();
+    const bool own = localConnected || (st.state == ServerStatus::Online && st.mine);
+    const bool freshForConnection = !localConnected || st.checkedAt > local->connectedAt;
+    const auto ownLabel = [&] {
+        return localConnected && !local->account.isEmpty()
+            ? tr("This computer · %1").arg(local->account) : tr("This computer");
+    };
     switch (role) {
     case Qt::DisplayRole:  return p.name;
     case IdRole:           return p.id;
     case HostRole:         return p.port == 3389 ? p.host : QStringLiteral("%1:%2").arg(p.host).arg(p.port);
-    case StatusRole:       return int(st.state);
-    case StatusBadgeRole:  return statusBadge(st);
+    case StatusRole:       return int(localConnected ? ServerStatus::Online : st.state);
+    case StatusBadgeRole: {
+        if (!own)
+            return statusBadge(st);
+        const QString label = ownLabel();
+        return freshForConnection && st.state == ServerStatus::Online && !st.others.isEmpty()
+            ? label + QStringLiteral(" +%1").arg(st.others.size()) : label;
+    }
     case UserRole_:        return p.displayUser();
     case SearchRole: {
         QString text = p.name + QLatin1Char(' ') + p.host + QLatin1Char(' ') + p.displayUser();
         for (const RemoteSession &s : st.all) // so searching a nickname finds the server that person is on
             text += QLatin1Char(' ') + sessionOwner(s) + QLatin1Char(' ') + s.client + QLatin1Char(' ') + s.user;
+        if (own)
+            text += QLatin1Char(' ') + ownLabel();
         return text;
     }
     case CountryRole:      return p.countryHost == p.host ? p.country : QString();
-    case StatusColorRole:  return statusColor(st);
-    case StatusToolTipRole: return statusToolTip(st);
+    case StatusColorRole:  return own ? Theme::kGreen : statusColor(st);
+    case StatusToolTipRole: {
+        const QString detail = freshForConnection || st.occupancy == ServerStatus::OccupancyError
+            ? statusToolTip(st) : QString();
+        if (!own)
+            return detail;
+        return detail.isEmpty() ? ownLabel() : ownLabel() + QStringLiteral("\n\n") + detail;
+    }
     case OccupancyRole:    return int(st.occupancy);
     case LatencyRole:      return st.latencyMs;
     case SignalRole:       return signalBars(st);
     case OwnerIdleRole:    return st.others.isEmpty() ? -1 : st.others.first().idleMinutes;
     case FavoriteRole:     return p.favorite;
     case GroupRole:        return p.group;
+    case OwnerConnectionMinutesRole: return st.others.isEmpty() ? -1 : connectionMinutes(st, st.others.first());
+    case OwnSessionRole:   return own;
     default:               return {};
     }
 }
@@ -187,6 +212,11 @@ void ServerStore::update(const ServerProfile &p)
     const int i = indexOfId(p.id);
     if (i < 0)
         return;
+    const auto &previous = m_profiles.at(i);
+    if (!previous.sameConnection(p) || previous.checkSessions != p.checkSessions || previous.monitor != p.monitor) {
+        m_status.remove(p.id);
+        queueSummary();
+    }
     m_profiles[i] = p;
     emit dataChanged(index(i), index(i));
     save();
@@ -200,6 +230,7 @@ void ServerStore::remove(const QString &id)
     beginRemoveRows({}, i, i);
     m_profiles.removeAt(i);
     m_status.remove(id);
+    m_localConnections.remove(id);
     rebuildIndex();
     endRemoveRows();
     save();
@@ -214,10 +245,49 @@ void ServerStore::setStatus(const QString &id, const ServerStatus &s)
     auto it = m_status.constFind(id);
     if (it != m_status.constEnd() && *it == s)
         return;
+    bool visibleChange = true;
+    if (it != m_status.constEnd()) {
+        ServerStatus previous = *it;
+        const qint64 previousAge = previous.others.isEmpty() ? -1 : connectionMinutes(previous, previous.others.first());
+        const qint64 age = s.others.isEmpty() ? -1 : connectionMinutes(s, s.others.first());
+        previous.checkedAt = s.checkedAt;
+        previous.serverNowUtcMs = s.serverNowUtcMs;
+        // Repaint for a changed minute, rather than every new timestamp behind the same text.
+        const auto local = m_localConnections.constFind(id);
+        const bool firstFreshSample = local != m_localConnections.constEnd()
+            && it->checkedAt <= local->connectedAt && s.checkedAt > local->connectedAt;
+        visibleChange = firstFreshSample || previousAge != age || previous != s;
+    }
     m_status.insert(id, s);
+    if (!visibleChange)
+        return;
     emit dataChanged(index(i), index(i));
     emit statusChanged(id);
     queueSummary();
+}
+
+bool ServerStore::setLocalConnection(const QString &id, bool connected, const QString &account)
+{
+    const int row = indexOfId(id);
+    if (row < 0)
+        return false;
+    if (connected) {
+        const auto previous = m_localConnections.constFind(id);
+        if (previous != m_localConnections.constEnd() && previous->account == account)
+            return false;
+        m_localConnections.insert(id, {account, QDateTime::currentMSecsSinceEpoch()});
+    } else {
+        if (!m_localConnections.remove(id))
+            return false;
+        const auto status = m_status.find(id);
+        if (status != m_status.end())
+            status->mine = false; // A fresh server query can still find a session opened in another client.
+    }
+    emit dataChanged(index(row), index(row), {StatusRole, StatusBadgeRole, StatusColorRole, StatusToolTipRole,
+                                            OwnSessionRole, SearchRole});
+    emit statusChanged(id);
+    queueSummary();
+    return true;
 }
 
 ServerStore::Counts ServerStore::counts() const
@@ -228,9 +298,10 @@ ServerStore::Counts ServerStore::counts() const
     for (const ServerProfile &p : m_profiles) {
         const auto found = m_status.constFind(p.id);
         const ServerStatus &st = found == m_status.constEnd() ? none : *found;
-        if (st.state == ServerStatus::Online) {
+        const bool local = m_localConnections.contains(p.id);
+        if (local || st.state == ServerStatus::Online) {
             ++c.online;
-            if (st.occupancy == ServerStatus::Busy)
+            if (local || st.mine || st.occupancy == ServerStatus::Busy)
                 ++c.busy;
             else if (st.occupancy == ServerStatus::Free)
                 ++c.free;

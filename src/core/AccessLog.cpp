@@ -41,7 +41,7 @@ constexpr int kKeepOtherDays = 400;
 // The summary line of a folded run has "|more=N" after its detail: N attempts besides the line itself.
 const char *const kMoreMarker = "|more=";
 
-const char *const kHeader =
+const char kHeader[] =
     "time_utc,time_local,server_id,server,host,source,event,user,address,client,detail,operator,session_id,record_id\r\n";
 
 QString key(const QString &serverId, const QString &source)
@@ -64,6 +64,18 @@ QString eventName(AccessEvent::Kind kind)
     case AccessEvent::UserCreated:        return QStringLiteral("UserCreated");
     case AccessEvent::GroupMemberAdded:   return QStringLiteral("GroupMemberAdded");
     case AccessEvent::TaskCreated:        return QStringLiteral("TaskCreated");
+    case AccessEvent::UserEnabled: return QStringLiteral("UserEnabled");
+    case AccessEvent::UserDisabled: return QStringLiteral("UserDisabled");
+    case AccessEvent::UserDeleted: return QStringLiteral("UserDeleted");
+    case AccessEvent::PasswordChangeAttempt: return QStringLiteral("PasswordChangeAttempt");
+    case AccessEvent::PasswordResetAttempt: return QStringLiteral("PasswordResetAttempt");
+    case AccessEvent::AccountLocked: return QStringLiteral("AccountLocked");
+    case AccessEvent::GroupMemberRemoved: return QStringLiteral("GroupMemberRemoved");
+    case AccessEvent::TaskRemoved: return QStringLiteral("TaskRemoved");
+    case AccessEvent::TaskEnabled: return QStringLiteral("TaskEnabled");
+    case AccessEvent::TaskDisabled: return QStringLiteral("TaskDisabled");
+    case AccessEvent::TaskUpdated: return QStringLiteral("TaskUpdated");
+    case AccessEvent::AuditPolicyChanged: return QStringLiteral("AuditPolicyChanged");
     case AccessEvent::LogCleared:
     case AccessEvent::SystemLogCleared:   return QStringLiteral("LogCleared");
     case AccessEvent::ServiceInstalled:   return QStringLiteral("ServiceInstalled");
@@ -302,10 +314,9 @@ bool write(const QByteArray &lines)
     const bool isNew = !f.exists() || f.size() == 0;
     if (!f.open(QIODevice::Append))
         return false;
-    if (isNew)
-        f.write(kHeader);
-    f.write(lines);
-    return true;
+    if (isNew && f.write(kHeader) != qint64(sizeof(kHeader) - 1))
+        return false;
+    return f.write(lines) == lines.size() && f.flush();
 }
 
 } // namespace
@@ -333,6 +344,10 @@ const QStringList &AccessLog::events()
         QStringLiteral("FailedLogon"),   QStringLiteral("SecurityReconnect"), QStringLiteral("SecurityDisconnect"),
         QStringLiteral("UserCreated"),   QStringLiteral("GroupMemberAdded"), QStringLiteral("TaskCreated"),
         QStringLiteral("LogCleared"),    QStringLiteral("ServiceInstalled"),
+        QStringLiteral("UserEnabled"), QStringLiteral("UserDisabled"), QStringLiteral("UserDeleted"),
+        QStringLiteral("PasswordChangeAttempt"), QStringLiteral("PasswordResetAttempt"), QStringLiteral("AccountLocked"),
+        QStringLiteral("GroupMemberRemoved"), QStringLiteral("TaskRemoved"), QStringLiteral("TaskEnabled"),
+        QStringLiteral("TaskDisabled"), QStringLiteral("TaskUpdated"), QStringLiteral("AuditPolicyChanged"),
         QStringLiteral("Connect"),       QStringLiteral("Monitor"),         QStringLiteral("AuditEnable"),
         QStringLiteral("Message"),       QStringLiteral("DisplayTuned"),
         QStringLiteral("Closed"),        QStringLiteral("ServerAdded"),     QStringLiteral("ServerEdited"),
@@ -350,8 +365,11 @@ QHash<QString, EventCursor> AccessLog::cursors(const QString &serverId)
     QHash<QString, EventCursor> result;
     for (const QString &source : WinRm::eventSources()) {
         EventCursor c;
-        c.afterUtc = g_lastEvent.value(key(serverId, source));
-        const qint64 checked = g_checkedAt.value(key(serverId, source));
+        const QString channelKey = key(serverId, source);
+        c.afterUtc = g_lastEvent.value(channelKey);
+        for (qint64 id : g_atLastEvent.value(channelKey))
+            c.afterRecordId = qMax(c.afterRecordId, id);
+        const qint64 checked = g_checkedAt.value(channelKey);
         if (c.afterUtc.isEmpty() && checked > 0)
             c.lookbackMs = QDateTime::currentMSecsSinceEpoch() - checked + kLookbackMarginMs;
         result.insert(source, c);
@@ -360,7 +378,7 @@ QHash<QString, EventCursor> AccessLog::cursors(const QString &serverId)
 }
 
 int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &events, const QList<RemoteSession> &live,
-                      QList<AccessRecord> *written)
+                      QList<AccessRecord> *written, const QSet<QString> &failedSources)
 {
     QMutexLocker lock(&g_mutex);
     loadLastEvents();
@@ -439,7 +457,7 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
                       f.detail + QLatin1String(kMoreMarker) + QString::number(f.more - 1), {}, 0, f.recordId);
     }
     if (added > 0 && !write(lines))
-        return 0;
+        return -1;
     if (written)
         *written = records;
     for (auto it = newest.cbegin(); it != newest.cend(); ++it) {
@@ -451,16 +469,16 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
     }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     for (const QString &source : WinRm::eventSources())
-        g_checkedAt.insert(key(server.id, source), now);
+        if (!failedSources.contains(source))
+            g_checkedAt.insert(key(server.id, source), now);
     return added;
 }
 
 void AccessLog::note(const ServerProfile &server, const QString &event, const QString &user, const QString &detail,
-                     const QString &address)
+                     const QString &address, const QDateTime &when)
 {
     QMutexLocker lock(&g_mutex);
-    const QString timeUtc = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-ddTHH:mm:ss.zzz"))
-                            + QStringLiteral("0000Z");
+    const QString timeUtc = when.toUTC().toString(QStringLiteral("yyyy-MM-ddTHH:mm:ss.zzz")) + QStringLiteral("0000Z");
     const QString operatorName = qEnvironmentVariable("USERDOMAIN") + QLatin1Char('\\') + qEnvironmentVariable("USERNAME");
     write(line(server, timeUtc, QStringLiteral("RCONNECT"), event, user, address, qEnvironmentVariable("COMPUTERNAME"),
                detail, operatorName, 0, 0));

@@ -29,6 +29,11 @@ struct ServerProfile {
     bool checkSessions = true; // who is connected, over WinRM with the saved password
 
     bool isValid() const { return !host.trimmed().isEmpty(); }
+    bool sameConnection(const ServerProfile &other) const
+    {
+        return host == other.host && port == other.port && user == other.user
+            && domain == other.domain && password == other.password;
+    }
     QString displayUser() const;
     QSize fixedResolution() const;
     QJsonObject toJson() const;

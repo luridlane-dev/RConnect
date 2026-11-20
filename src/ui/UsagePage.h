@@ -7,6 +7,7 @@ class QPushButton;
 class QStandardItemModel;
 class QTimer;
 class QTreeView;
+namespace UsageEngine { struct Report; }
 
 // Who was on which server, and for how long, day by day (see UsageLog and UsageEngine). A row per day,
 // server and computer; open it to see each visit with its start and end, and under that the stretches
@@ -24,6 +25,7 @@ protected:
 private:
     void retranslate();
     void reload();
+    void showReport(const UsageEngine::Report &report);
     void rebuild();
     void explain();
 
@@ -33,9 +35,13 @@ private:
     QLabel *m_subtitle;
     QLabel *m_warning;
     QLabel *m_total;
+    QLabel *m_metricLabels[4] = {};
+    QLabel *m_metricValues[4] = {};
     QComboBox *m_range;
     QPushButton *m_refresh;
     QPushButton *m_rebuild;
     QPushButton *m_help;
     QTimer *m_timer;
+    bool m_reading = false;
+    bool m_readAgain = false;
 };

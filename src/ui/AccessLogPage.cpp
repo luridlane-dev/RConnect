@@ -1,4 +1,5 @@
 #include "AccessLogPage.h"
+#include "model/ServerStore.h"
 
 #include "ContactsDialog.h"
 #include "Theme.h"
@@ -77,9 +78,10 @@ bool inCategory(const QString &event, int category)
     case Alerts:
         return event.startsWith(QLatin1String("Alert")) || Threats::isTampering(event);
     case Changes:
-        return event == QLatin1String("UserCreated") || event == QLatin1String("GroupMemberAdded")
-            || event == QLatin1String("TaskCreated") || event == QLatin1String("ServiceInstalled")
-            || event == QLatin1String("LogCleared");
+        return event.startsWith(QLatin1String("User")) || event.startsWith(QLatin1String("GroupMember"))
+            || event.startsWith(QLatin1String("Task")) || event.startsWith(QLatin1String("Password"))
+            || event == QLatin1String("ServiceInstalled") || event == QLatin1String("AccountLocked")
+            || event == QLatin1String("AuditPolicyChanged") || event == QLatin1String("LogCleared");
     default:
         return true;
     }
@@ -194,6 +196,7 @@ public:
 
     void setCategory(int category) { change(m_category, category); }
     void setServer(const QString &serverId) { change(m_server, serverId); }
+    void setSource(const QString &source) { change(m_source, source); }
     // Only rows at or after this UTC time ("2026-10-31T08:15:30"); empty = all.
     void setSince(const QString &sinceUtc) { change(m_since, sinceUtc); }
     void setText(const QString &text) { change(m_text, text.trimmed()); }
@@ -272,6 +275,8 @@ private:
                     continue;
                 if (!m_server.isEmpty() && r.serverId != m_server)
                     continue;
+                if (!m_source.isEmpty() && r.source != m_source)
+                    continue;
                 if (!m_since.isEmpty() && r.timeUtc < m_since)
                     continue;
                 if (!m_text.isEmpty()) {
@@ -313,15 +318,15 @@ private:
     QStringList m_headers;
     QTimer m_refilter;
     int m_category = All;
-    QString m_server;
+    QString m_server, m_source;
     QString m_since;
     QString m_text;
     int m_sortColumn = Time;
     Qt::SortOrder m_order = Qt::DescendingOrder;
 };
 
-AccessLogPage::AccessLogPage(QWidget *parent)
-    : QWidget(parent)
+AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
+    : QWidget(parent), m_store(store)
 {
     m_model = new AccessTableModel(
         [this](const AccessLine &line) {
@@ -367,13 +372,17 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     m_title->setObjectName(QStringLiteral("pageTitle"));
     m_subtitle = new QLabel(this);
     m_subtitle->setObjectName(QStringLiteral("pageSubtitle"));
+    m_subtitle->setWordWrap(true);
     auto *titles = new QVBoxLayout;
     titles->setSpacing(2);
     titles->addWidget(m_title);
     titles->addWidget(m_subtitle);
 
     m_refresh = new QPushButton(this);
-    connect(m_refresh, &QPushButton::clicked, this, &AccessLogPage::reload);
+    connect(m_refresh, &QPushButton::clicked, this, [this] {
+        emit syncRequested(m_server->currentData().toString());
+        reload();
+    });
     m_export = new QPushButton(this);
     connect(m_export, &QPushButton::clicked, this, &AccessLogPage::exportCsv);
     m_open = new QPushButton(this);
@@ -386,19 +395,28 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     head->addWidget(m_open, 0, Qt::AlignTop);
 
     m_category = new QComboBox(this);
-    m_category->setMinimumWidth(210);
+    m_category->setMinimumWidth(155);
+    m_category->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_category, &QComboBox::currentIndexChanged, this, [this](int i) {
         m_model->setCategory(i);
     });
     m_server = new QComboBox(this);
-    m_server->setMinimumWidth(170);
+    m_server->setMinimumWidth(134);
     m_server->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_server, &QComboBox::currentIndexChanged, this, [this] {
         m_model->setServer(m_server->currentData().toString());
+        updateSyncStatus();
     });
     m_period = new QComboBox(this);
-    m_period->setMinimumWidth(150);
+    m_period->setMinimumWidth(116);
+    m_period->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_period, &QComboBox::currentIndexChanged, this, [this] { applyPeriod(); });
+    m_source = new QComboBox(this);
+    m_source->setMinimumWidth(118);
+    m_source->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    connect(m_source, &QComboBox::currentIndexChanged, this, [this] {
+        m_model->setSource(m_source->currentData().toString());
+    });
     m_filter = new QLineEdit(this);
     m_filter->setClearButtonEnabled(true);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString &text) {
@@ -409,6 +427,7 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     filters->addWidget(m_category);
     filters->addWidget(m_server);
     filters->addWidget(m_period);
+    filters->addWidget(m_source);
     filters->addWidget(m_filter, 1);
 
     auto *view = m_view = new QTableView(this);
@@ -434,6 +453,10 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     view->setColumnWidth(By, 160);
     view->sortByColumn(Time, Qt::DescendingOrder);
 
+    m_syncStatus = new QLabel(this);
+    m_syncStatus->setObjectName(QStringLiteral("fieldHint"));
+    m_syncStatus->setTextFormat(Qt::PlainText);
+    m_syncStatus->setWordWrap(true);
     m_count = new QLabel(this);
     m_count->setObjectName(QStringLiteral("pageSubtitle"));
     // The count under the table follows every refilter.
@@ -477,6 +500,7 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     lay->setSpacing(14);
     lay->addLayout(head);
     lay->addLayout(filters);
+    lay->addWidget(m_syncStatus);
     lay->addWidget(view, 1);
     lay->addWidget(m_detail);
     lay->addWidget(m_count);
@@ -495,6 +519,9 @@ AccessLogPage::AccessLogPage(QWidget *parent)
     m_timer->setInterval(kRefreshMs);
     connect(m_timer, &QTimer::timeout, this, &AccessLogPage::reload);
 
+    connect(m_store, &QAbstractItemModel::rowsInserted, this, &AccessLogPage::fillServers);
+    connect(m_store, &QAbstractItemModel::rowsRemoved, this, &AccessLogPage::fillServers);
+    connect(m_store, &QAbstractItemModel::modelReset, this, &AccessLogPage::fillServers);
     retranslate();
 }
 
@@ -506,6 +533,8 @@ QString AccessLogPage::sourceText(const QString &source)
         return tr("Remote Desktop connection log");
     if (source == QLatin1String("SEC"))
         return tr("Windows security log");
+    if (source == QLatin1String("AUD"))
+        return tr("Windows account and policy audit");
     if (source == QLatin1String("SYS"))
         return tr("Windows system log");
     return source == QLatin1String("RCONNECT") ? QStringLiteral("RConnect") : source;
@@ -536,6 +565,18 @@ QString AccessLogPage::eventText(const QString &event)
     if (is("GroupMemberAdded"))   return tr("Added to a privileged group");
     if (is("TaskCreated"))        return tr("Scheduled task created");
     if (is("ServiceInstalled"))   return tr("Service installed");
+    if (is("UserEnabled")) return tr("User account enabled");
+    if (is("UserDisabled")) return tr("User account disabled");
+    if (is("UserDeleted")) return tr("User account deleted");
+    if (is("PasswordChangeAttempt")) return tr("Password change attempted");
+    if (is("PasswordResetAttempt")) return tr("Password reset attempted");
+    if (is("AccountLocked")) return tr("User account locked");
+    if (is("GroupMemberRemoved")) return tr("Removed from a privileged group");
+    if (is("TaskRemoved")) return tr("Scheduled task deleted");
+    if (is("TaskEnabled")) return tr("Scheduled task enabled");
+    if (is("TaskDisabled")) return tr("Scheduled task disabled");
+    if (is("TaskUpdated")) return tr("Scheduled task changed");
+    if (is("AuditPolicyChanged")) return tr("Audit policy changed");
     if (is("LogCleared"))         return tr("Event log cleared");
     if (is("AlertBruteForce"))    return tr("Alert: password guessing");
     if (is("AlertBreakIn"))       return tr("Alert: sign-in after failed attempts");
@@ -567,6 +608,8 @@ QString AccessLogPage::alertSummary(const AccessRecord &r)
         return tr("%1 log cleared by %2").arg(r.detail, r.user);
     if (e == QLatin1String("TaskCreated"))
         return tr("New scheduled task %1 by %2").arg(r.detail, r.user);
+    if (e == QLatin1String("AuditPolicyChanged"))
+        return tr("Windows audit policy was changed by %1").arg(r.user);
     if (e == QLatin1String("ServiceInstalled"))
         return tr("New service %1").arg(r.detail);
     return {};
@@ -576,10 +619,10 @@ void AccessLogPage::retranslate()
 {
     m_title->setText(tr("Activity history"));
     m_subtitle->setText(tr("Sign-ins, failed attempts, disconnections, security alerts and what was done in RConnect."));
-    m_refresh->setText(tr("Refresh"));
+    m_refresh->setText(tr("Fetch from servers"));
     m_export->setText(tr("Export…"));
     m_open->setText(tr("Open file"));
-    m_filter->setPlaceholderText(tr("Search by server, user, IP address or device"));
+    m_filter->setPlaceholderText(tr("Search activity"));
     const int current = m_category->currentIndex();
     m_category->blockSignals(true);
     m_category->clear();
@@ -594,7 +637,17 @@ void AccessLogPage::retranslate()
     m_period->setCurrentIndex(qMax(0, period));
     m_period->blockSignals(false);
     applyPeriod();
+    const QString source = m_source->currentData().toString();
+    m_source->blockSignals(true);
+    m_source->clear();
+    m_source->addItem(tr("All sources"), QString());
+    for (const QString &code : WinRm::eventSources() + QStringList{QStringLiteral("RCONNECT")})
+        m_source->addItem(sourceText(code), code);
+    m_source->setCurrentIndex(qMax(0, m_source->findData(source)));
+    m_source->blockSignals(false);
+    m_model->setSource(m_source->currentData().toString());
     fillServers();
+    updateSyncStatus();
     m_model->setHeaders({tr("Time"), tr("Server"), tr("Activity"), tr("User"), tr("IP address"),
                                         tr("Device"), tr("Details"), tr("By")});
     if (isVisible())
@@ -638,8 +691,7 @@ QString shortName(const QString &user)
     return user.mid(user.lastIndexOf(QLatin1Char('\\')) + 1);
 }
 
-// "Connection accepted" only repeats the sign-in line that follows it. Failed attempts from one
-// address close to each other (a password guessing run) are one line.
+// Failed attempts from one server and address are shown together.
 QList<AccessLine> buildLines(QList<AccessRecord> records)
 {
     if (records.size() > kMaxRaw)
@@ -656,8 +708,6 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
     QList<AccessLine> lines;
     QHash<QString, int> growing; // server and address -> the line still taking attempts
     for (AccessRecord &r : records) {
-        if (r.event == QLatin1String("Authenticated"))
-            continue;
         // A summary line of the log stands for the attempts that were left out ("|more=N").
         int standsFor = 1;
         if (const qsizetype marker = r.detail.indexOf(QLatin1String("|more=")); marker >= 0) {
@@ -797,6 +847,8 @@ void AccessLogPage::showDetail()
     add(tr("How"), alertSummary(r).isEmpty() ? detailText(r.detail) : alertSummary(r));
     add(tr("Done by"), r.operatorName);
     add(tr("Seen in"), sourceText(r.source));
+    if (r.recordId > 0 && line.attempts == 1)
+        add(tr("Windows record number"), QString::number(r.recordId));
     add(tr("Record no."), r.recordId > 0 ? QString::number(r.recordId) : QString());
 
     // Two entries per row of the table.
@@ -811,19 +863,77 @@ void AccessLogPage::showDetail()
 void AccessLogPage::fillServers()
 {
     const QString chosen = m_server->currentData().toString();
-    QMap<QString, QString> servers; // name (sorted) -> id
+    QHash<QString, QString> servers;
     for (const AccessLine &line : std::as_const(m_lines))
         if (!line.r.serverId.isEmpty())
-            servers.insert(line.r.server.isEmpty() ? line.r.serverId : line.r.server, line.r.serverId);
+            servers.insert(line.r.serverId, line.r.server.isEmpty() ? line.r.serverId : line.r.server);
+    for (const ServerProfile &profile : m_store->all())
+        servers.insert(profile.id, profile.name);
+    QStringList ids = servers.keys();
+    std::sort(ids.begin(), ids.end(), [&servers](const QString &a, const QString &b) {
+        const int name = servers.value(a).localeAwareCompare(servers.value(b));
+        return name == 0 ? a < b : name < 0;
+    });
     m_server->blockSignals(true);
     m_server->clear();
     m_server->addItem(tr("All servers"), QString());
-    for (auto it = servers.cbegin(); it != servers.cend(); ++it)
-        m_server->addItem(it.key(), it.value());
+    for (const QString &id : ids)
+        m_server->addItem(servers.value(id), id);
     const int index = m_server->findData(chosen);
     m_server->setCurrentIndex(index < 0 ? 0 : index);
     m_server->blockSignals(false);
     m_model->setServer(m_server->currentData().toString());
+    updateSyncStatus();
+}
+
+void AccessLogPage::setSyncState(const QString &id, const QString &name, bool running,
+                                 const QStringList &failedChannels, const QString &error)
+{
+    m_syncStates.insert(id, {name, running, failedChannels, error});
+    updateSyncStatus();
+    if (!running && isVisible())
+        reload();
+}
+
+void AccessLogPage::updateSyncStatus()
+{
+    const QString selected = m_server->currentData().toString();
+    QStringList details;
+    int running = 0, incomplete = 0, complete = 0;
+    for (auto it = m_syncStates.cbegin(); it != m_syncStates.cend(); ++it) {
+        if (!selected.isEmpty() && selected != it.key())
+            continue;
+        const SyncState &state = it.value();
+        QStringList issues;
+        if (!state.error.isEmpty())
+            issues << state.error;
+        QStringList channels;
+        for (const QString &channel : state.failedChannels)
+            channels << sourceText(channel);
+        if (!channels.isEmpty())
+            issues << tr("Could not read: %1").arg(channels.join(QStringLiteral(", ")));
+        if (!issues.isEmpty()) {
+            ++incomplete;
+            details << state.name + QStringLiteral(" · ") + issues.join(QStringLiteral(" · "));
+        }
+        if (state.running)
+            ++running;
+        else if (issues.isEmpty())
+            ++complete;
+    }
+    QStringList states;
+    if (running > 0)
+        states << tr("Reading %1 servers").arg(running);
+    if (incomplete > 0)
+        states << tr("Missing data on %1 servers").arg(incomplete);
+    if (complete > 0)
+        states << tr("Logs read on %1 servers").arg(complete);
+    m_syncStatus->setText(states.isEmpty() ? tr("Windows logs are read over WinRM.") : states.join(QStringLiteral(" · ")));
+    if (!selected.isEmpty() && !details.isEmpty())
+        m_syncStatus->setText(details.first());
+    m_syncStatus->setToolTip(details.isEmpty() ? QString() : QStringLiteral("<qt>") +
+                             details.join(QLatin1Char('\n')).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"))
+                             + QStringLiteral("</qt>"));
 }
 
 void AccessLogPage::applyPeriod()
@@ -839,7 +949,7 @@ void AccessLogPage::updateCount()
 {
     m_count->setText(m_lines.isEmpty()
                          ? tr("Nothing recorded yet. Activity appears here after your servers have been checked.")
-                         : tr("Showing %1 of %2").arg(m_model->rowCount()).arg(m_lines.size()));
+                         : tr("Showing %1 of %2 recent rows").arg(m_model->rowCount()).arg(m_lines.size()));
 }
 
 // The rows shown now, in the order shown, for a report.

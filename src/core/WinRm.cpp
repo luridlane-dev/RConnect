@@ -1,4 +1,5 @@
 #include "WinRm.h"
+#include "WindowsTcp.h"
 
 #include "Log.h"
 
@@ -29,7 +30,9 @@ const char *const kTransferNs = "http://schemas.xmlsoap.org/ws/2004/09/transfer"
 // Receive timed out with no output yet; ask again.
 const char *const kTimedOutCode = "2150858793";
 const QByteArray kMarker = "##RCONNECT##";
+const QByteArray kSessionListMarker = "##RCQUSEROK##";
 const QByteArray kEventsMarker = "##RCONNECT-EVENTS##";
+const QByteArray kConnectionsMarker = "##RCONNECT-CONNECTIONS##";
 // Starts one log's output ("##RCLOG:LSM##"), so each log is parsed on its own.
 const QByteArray kLogMarker = "##RCLOG:";
 constexpr int kMaxEvents = 300; // per log and call
@@ -40,38 +43,45 @@ QString timeClause(const EventCursor &c)
     // Only a time in the exact format the server writes ends up in the command line.
     static const QRegularExpression format(
         QStringLiteral("^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(\\.\\d{1,9})?Z$"));
-    if (format.match(c.afterUtc).hasMatch())
-        return QStringLiteral("@SystemTime>='%1'").arg(c.afterUtc);
+    if (format.match(c.afterUtc).hasMatch()) {
+        if (c.afterRecordId > 0)
+            return QStringLiteral("(TimeCreated[@SystemTime>'%1'] or (TimeCreated[@SystemTime='%1'] and EventRecordID>%2))")
+                .arg(c.afterUtc).arg(c.afterRecordId);
+        return QStringLiteral("TimeCreated[@SystemTime>='%1']").arg(c.afterUtc);
+    }
     const qint64 ms = c.lookbackMs > 0 ? qMin(c.lookbackMs, kMaxLookbackMs) : kMaxLookbackMs;
-    return QStringLiteral("timediff(@SystemTime)<=%1").arg(ms);
+    return QStringLiteral("TimeCreated[timediff(@SystemTime)<=%1]").arg(ms);
 }
 
 QString eventLogQuery(const QString &source, const QString &log, QString xpath, const EventCursor &cursor)
 {
     xpath.replace(QLatin1String("TIME"), timeClause(cursor));
-    return QStringLiteral("echo %1%2## & wevtutil qe %3 /c:%4 /f:xml /q:\"%5\" 2>nul & ")
+    return QStringLiteral("echo %1%2## & (wevtutil qe %3 /c:%4 /rd:false /f:xml /q:\"%5\" 2>nul "
+                          "&& (echo. & echo ##RCLOGOK:%2##)) & ")
         .arg(QString::fromLatin1(kLogMarker), source, log).arg(kMaxEvents).arg(xpath);
 }
 
-// Session changes, authentications, and (when the server audits them) RDP logons, failed logons
-// and disconnects.
 QString eventCommand(const QHash<QString, EventCursor> &cursors)
 {
-    const QString lsm = QStringLiteral("*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25) "
-                                       "and TimeCreated[TIME]]]");
-    const QString rcm = QStringLiteral("*[System[EventID=1149 and TimeCreated[TIME]]]");
+    const QString lsm = QStringLiteral("*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25) and TIME]]");
+    const QString rcm = QStringLiteral("*[System[EventID=1149 and TIME]]");
     const QString sec = QStringLiteral(
-        "*[(System[(EventID=4778 or EventID=4779) and TimeCreated[TIME]]) "
-        "or (System[EventID=4624 and TimeCreated[TIME]] and EventData[Data[@Name='LogonType']='10']) "
-        "or (System[EventID=4625 and TimeCreated[TIME]] and EventData[Data[@Name='LogonType']='10' "
-        "or Data[@Name='LogonType']='3']) "
-        // new account, task, cleared log; a member added to Administrators or Remote Desktop Users
-        "or (System[(EventID=4720 or EventID=4698 or EventID=1102) and TimeCreated[TIME]]) "
-        "or (System[EventID=4732 and TimeCreated[TIME]] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' "
-        "or Data[@Name='TargetSid']='S-1-5-32-555'])]");
+        "*[System[TIME] and (System[EventID=4778 or EventID=4779] "
+        "or (System[EventID=4624] and EventData[Data[@Name='LogonType']='10']) "
+        "or (System[EventID=4625] and EventData[Data[@Name='LogonType']='10' or Data[@Name='LogonType']='3']) "
+        "or System[EventID=4720 or EventID=4698 or EventID=1102] "
+        "or (System[EventID=4732] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' "
+        "or Data[@Name='TargetSid']='S-1-5-32-555']))]");
+    // Separate selectors stay under the Windows Event Log XPath complexity limit.
+    // Legacy types keep their SEC cursor; the new types have their own backfill.
+    const QString audit = QStringLiteral(
+        "*[System[TIME] and (System[(EventID>=4722 and EventID<=4726) or (EventID>=4699 and EventID<=4702) "
+        "or EventID=4719 or EventID=4740] "
+        "or (System[EventID=4733] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' "
+        "or Data[@Name='TargetSid']='S-1-5-32-555']))]");
     const QString sys = QStringLiteral(
-        "*[(System[Provider[@Name='Service Control Manager'] and EventID=7045 and TimeCreated[TIME]]) "
-        "or (System[Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=104 and TimeCreated[TIME]])]");
+        "*[System[TIME and ((Provider[@Name='Service Control Manager'] and EventID=7045) "
+        "or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=104))]]");
     return eventLogQuery(QStringLiteral("LSM"),
                          QStringLiteral("Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"), lsm,
                          cursors.value(QStringLiteral("LSM")))
@@ -79,24 +89,26 @@ QString eventCommand(const QHash<QString, EventCursor> &cursors)
                          QStringLiteral("Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational"), rcm,
                          cursors.value(QStringLiteral("RCM")))
          + eventLogQuery(QStringLiteral("SEC"), QStringLiteral("Security"), sec, cursors.value(QStringLiteral("SEC")))
+         + eventLogQuery(QStringLiteral("AUD"), QStringLiteral("Security"), audit, cursors.value(QStringLiteral("AUD")))
          + eventLogQuery(QStringLiteral("SYS"), QStringLiteral("System"), sys, cursors.value(QStringLiteral("SYS")))
          + QStringLiteral("echo %1 & ").arg(QString::fromLatin1(kEventsMarker));
 }
 
 // Sessions, then the client name of each session from the users' volatile environment. The access
 // events (when asked for) come first, because `for` takes the rest of the line as its body.
-QString sessionCommand(const QHash<QString, EventCursor> *cursors)
+QString sessionCommand(const QHash<QString, EventCursor> *cursors, bool includeTimes)
 {
+    const QString connections = includeTimes
+        ? QStringLiteral("echo ##RCLOG:LSM## & wevtutil qe Microsoft-Windows-TerminalServices-LocalSessionManager/Operational "
+                         "/rd:true /c:256 /f:xml /q:\"*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25)]]\" "
+                         "2>nul & echo %1 & ").arg(QString::fromLatin1(kConnectionsMarker))
+        : QString();
     return (cursors ? eventCommand(*cursors) : QString())
-         // The sign-in time of each session: when its shell (explorer) started, as UTC, so the server's time
-         // zone and the language of quser do not matter.
-         + QStringLiteral("quser & echo ##RCSTART## & ")
-         // Starting PowerShell costs the server a second or two, so the sign-in times and the server clock are only
-         // read with the events (once a minute, for the usage samples); the quick check only needs quser.
-         + (cursors ? QStringLiteral("powershell -NoProfile -NonInteractive -Command "
-                                     "\"'NOW ' + [DateTime]::UtcNow.ToString('o'); "
-                                     "Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f "
-                                     "$_.SessionId, $_.StartTime.ToUniversalTime().ToString('o') }\" 2>nul & ")
+         + connections
+         + QStringLiteral("(quser && echo %1) & echo ##RCSTART## & ").arg(QString::fromLatin1(kSessionListMarker))
+         // Read the UTC clock on the server for connection times and usage samples.
+         + (cursors || includeTimes ? QStringLiteral("powershell -NoProfile -NonInteractive -Command "
+                                     "\"'NOW ' + [DateTime]::UtcNow.ToString('o')\" 2>nul & ")
                     : QString())
          + QStringLiteral("echo ##RCONNECT## & for /f \"delims=\" %k in ('reg query HKU') do "
                           "@reg query \"%k\\Volatile Environment\" /s /v CLIENTNAME 2>nul");
@@ -119,52 +131,34 @@ public:
 
     bool open(const QString &host, int connectMs, int ioMs)
     {
-        ADDRINFOW hints{};
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_protocol = IPPROTO_TCP;
-        ADDRINFOW *results = nullptr;
-        if (GetAddrInfoW(reinterpret_cast<const wchar_t *>(host.utf16()), std::to_wstring(kPort).c_str(), &hints,
-                         &results) != 0)
+        const auto result = WindowsTcp::open(host, kPort, connectMs);
+        m_socket = result.socket;
+        m_error = result.error;
+        if (m_socket == INVALID_SOCKET)
             return false;
-        for (ADDRINFOW *a = results; a && m_socket == INVALID_SOCKET; a = a->ai_next) {
-            SOCKET s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-            if (s == INVALID_SOCKET)
-                continue;
-            u_long mode = 1;
-            ioctlsocket(s, FIONBIO, &mode);
-            bool ok = connect(s, a->ai_addr, int(a->ai_addrlen)) == 0;
-            if (!ok && WSAGetLastError() == WSAEWOULDBLOCK) {
-                fd_set writable, failed;
-                FD_ZERO(&writable);
-                FD_ZERO(&failed);
-                FD_SET(s, &writable);
-                FD_SET(s, &failed);
-                timeval tv{connectMs / 1000, (connectMs % 1000) * 1000};
-                ok = select(0, nullptr, &writable, &failed, &tv) > 0 && FD_ISSET(s, &writable);
-            }
-            if (!ok) {
-                closesocket(s);
-                continue;
-            }
-            mode = 0;
-            ioctlsocket(s, FIONBIO, &mode);
-            const DWORD ms = DWORD(ioMs);
-            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&ms), sizeof ms);
-            setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&ms), sizeof ms);
-            m_socket = s;
+        u_long blocking = 0;
+        const DWORD ms = DWORD(ioMs);
+        if (ioctlsocket(m_socket, FIONBIO, &blocking) == SOCKET_ERROR
+            || setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&ms), sizeof ms) == SOCKET_ERROR
+            || setsockopt(m_socket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&ms), sizeof ms) == SOCKET_ERROR) {
+            m_error = WindowsTcp::systemError(WSAGetLastError());
+            return false;
         }
-        FreeAddrInfoW(results);
-        return m_socket != INVALID_SOCKET;
+        return true;
     }
+
+    QString error() const { return m_error; }
 
     bool send(const QByteArray &data)
     {
         qsizetype sent = 0;
         while (sent < data.size()) {
             const int n = ::send(m_socket, data.constData() + sent, int(data.size() - sent), 0);
-            if (n <= 0)
+            if (n <= 0) {
+                m_error = n == SOCKET_ERROR ? WindowsTcp::systemError(WSAGetLastError())
+                    : QCoreApplication::translate("WinRm", "The socket sent no bytes.");
                 return false;
+            }
             sent += n;
         }
         return true;
@@ -182,6 +176,10 @@ public:
         const QList<QByteArray> statusLine = lines.value(0).trimmed().split(' ');
         r = {};
         r.status = statusLine.value(1).toInt();
+        if (!statusLine.value(0).startsWith("HTTP/") || r.status < 100 || r.status > 599) {
+            m_error = QCoreApplication::translate("WinRm", "The peer did not send a valid HTTP status line.");
+            return false;
+        }
         qsizetype length = 0;
         bool chunked = false;
         for (qsizetype i = 1; i < lines.size(); ++i) {
@@ -223,8 +221,11 @@ private:
     {
         char buf[16384];
         const int n = recv(m_socket, buf, sizeof buf, 0);
-        if (n <= 0)
+        if (n <= 0) {
+            m_error = n == SOCKET_ERROR ? WindowsTcp::systemError(WSAGetLastError())
+                : QCoreApplication::translate("WinRm", "The peer closed the TCP connection.");
             return false;
+        }
         m_buffer.append(buf, n);
         return true;
     }
@@ -252,6 +253,7 @@ private:
 
     SOCKET m_socket = INVALID_SOCKET;
     QByteArray m_buffer;
+    QString m_error;
 };
 
 // NTLM through SSPI. WinRM accepts raw NTLM tokens under the Negotiate scheme.
@@ -264,6 +266,8 @@ public:
         if (m_hasCredentials)
             FreeCredentialsHandle(&m_credentials);
     }
+
+    QString error() const { return WindowsTcp::systemError(DWORD(m_status)); }
 
     bool init(const QString &host, QString user, QString domain, QString password)
     {
@@ -284,11 +288,11 @@ public:
         id.PasswordLength = ULONG(password.size());
         id.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
         TimeStamp expiry;
-        const SECURITY_STATUS st = AcquireCredentialsHandleW(nullptr, const_cast<wchar_t *>(L"NTLM"),
+        m_status = AcquireCredentialsHandleW(nullptr, const_cast<wchar_t *>(L"NTLM"),
                                                              SECPKG_CRED_OUTBOUND, nullptr, &id, nullptr, nullptr,
                                                              &m_credentials, &expiry);
         SecureZeroMemory(password.data(), size_t(password.size()) * sizeof(QChar));
-        m_hasCredentials = st == SEC_E_OK;
+        m_hasCredentials = m_status == SEC_E_OK;
         return m_hasCredentials;
     }
 
@@ -303,10 +307,10 @@ public:
         TimeStamp expiry;
         const ULONG flags = ISC_REQ_CONFIDENTIALITY | ISC_REQ_INTEGRITY | ISC_REQ_SEQUENCE_DETECT
                           | ISC_REQ_REPLAY_DETECT | ISC_REQ_ALLOCATE_MEMORY;
-        const SECURITY_STATUS st = InitializeSecurityContextW(
+        m_status = InitializeSecurityContextW(
             &m_credentials, m_hasContext ? &m_context : nullptr, m_target.data(), flags, 0, SECURITY_NATIVE_DREP,
             m_hasContext ? &inDesc : nullptr, 0, &m_context, &outDesc, &attrs, &expiry);
-        if (st != SEC_E_OK && st != SEC_I_CONTINUE_NEEDED)
+        if (m_status != SEC_E_OK && m_status != SEC_I_CONTINUE_NEEDED)
             return false;
         m_hasContext = true;
         out = QByteArray(static_cast<const char *>(outBuf.pvBuffer), qsizetype(outBuf.cbBuffer));
@@ -319,14 +323,16 @@ public:
     bool seal(const QByteArray &plain, QByteArray &out)
     {
         SecPkgContext_Sizes sizes{};
-        if (QueryContextAttributesW(&m_context, SECPKG_ATTR_SIZES, &sizes) != SEC_E_OK)
+        m_status = QueryContextAttributesW(&m_context, SECPKG_ATTR_SIZES, &sizes);
+        if (m_status != SEC_E_OK)
             return false;
         QByteArray signature(qsizetype(sizes.cbSecurityTrailer), '\0');
         QByteArray data = plain;
         SecBuffer bufs[2] = {{ULONG(signature.size()), SECBUFFER_TOKEN, signature.data()},
                              {ULONG(data.size()), SECBUFFER_DATA, data.data()}};
         SecBufferDesc desc{SECBUFFER_VERSION, 2, bufs};
-        if (EncryptMessage(&m_context, 0, &desc, 0) != SEC_E_OK)
+        m_status = EncryptMessage(&m_context, 0, &desc, 0);
+        if (m_status != SEC_E_OK)
             return false;
         signature.truncate(qsizetype(bufs[0].cbBuffer));
         const quint32 len = quint32(signature.size());
@@ -355,6 +361,7 @@ public:
     }
 
 private:
+    SECURITY_STATUS m_status = SEC_E_OK;
     CredHandle m_credentials{};
     CtxtHandle m_context{};
     bool m_hasCredentials = false;
@@ -409,6 +416,32 @@ QString xmlEscaped(const QString &s)
     return s.toHtmlEscaped();
 }
 
+void applyConnectionTimes(QList<RemoteSession> &sessions, const QList<AccessEvent> &events, qint64 serverNow)
+{
+    QHash<int, const AccessEvent *> latest;
+    for (const AccessEvent &event : events) {
+        const auto *previous = latest.value(event.sessionId);
+        if (event.sessionId > 0 && (!previous || event.recordId > previous->recordId))
+            latest.insert(event.sessionId, &event);
+    }
+    for (RemoteSession &session : sessions) {
+        const auto *event = latest.value(session.id);
+        if (!session.connected || !event
+            || (event->kind != AccessEvent::Logon && event->kind != AccessEvent::Reconnect))
+            continue;
+        const QString user = session.user.contains(QLatin1Char('\\')) ? event->user : event->user.section(QLatin1Char('\\'), -1);
+        if (user.isEmpty() || session.user.compare(user, Qt::CaseInsensitive) != 0)
+            continue;
+        const QDateTime time = QDateTime::fromString(event->timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
+        if (time.isValid() && time.toMSecsSinceEpoch() <= serverNow) {
+            session.connectedSinceUtcMs = time.toMSecsSinceEpoch();
+            if (event->kind == AccessEvent::Logon)
+                session.logonUtcMs = session.connectedSinceUtcMs;
+        }
+    }
+}
+
+
 class Client {
 public:
     Client(const QString &host, int timeoutMs)
@@ -423,16 +456,15 @@ public:
     enum Mode { Raw, Sessions, SessionsAndEvents };
 
     SessionQuery run(const QString &user, const QString &domain, const QString &password, const QString &command,
-                     Mode mode)
+                     Mode mode, const QStringList &arguments = {}, const QByteArray &standardInput = {})
     {
         SessionQuery q;
-        m_command = command;
         m_mode = mode;
         m_clock.start();
         if (!m_conn.open(m_host, qMin(m_timeoutMs, 4000), m_timeoutMs))
-            return fail(q, SessionQuery::Unreachable, QCoreApplication::translate("WinRm", "Could not reach the server's remote management service (port 5985)."));
+            return fail(q, SessionQuery::Unreachable, QCoreApplication::translate("WinRm", "TCP connection failed · %1").arg(m_conn.error()));
         if (!m_ntlm.init(m_host, user, domain, password))
-            return fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "Could not set up NTLM."));
+            return fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "NTLM setup failed · %1").arg(m_ntlm.error()));
         if (!authenticate(q))
             return q;
 
@@ -449,15 +481,27 @@ public:
 
         bool ok = false;
         QByteArray out, err;
-        const QString cmdOptions = QStringLiteral("<w:OptionSet><w:Option Name=\"WINRS_CONSOLEMODE_STDIN\">TRUE</w:Option>"
-                                                  "<w:Option Name=\"WINRS_SKIP_CMD_SHELL\">FALSE</w:Option></w:OptionSet>");
-        const QString commandLine = QStringLiteral("<rsp:CommandLine><rsp:Command>%1</rsp:Command></rsp:CommandLine>")
-                                        .arg(xmlEscaped(m_command));
+        const QString cmdOptions = QStringLiteral("<w:OptionSet><w:Option Name=\"WINRS_CONSOLEMODE_STDIN\">%1</w:Option>"
+                                                  "<w:Option Name=\"WINRS_SKIP_CMD_SHELL\">%2</w:Option></w:OptionSet>")
+                                       .arg(standardInput.isEmpty() ? QStringLiteral("TRUE") : QStringLiteral("FALSE"),
+                                            arguments.isEmpty() ? QStringLiteral("FALSE") : QStringLiteral("TRUE"));
+        QString commandLine = QStringLiteral("<rsp:CommandLine><rsp:Command>%1</rsp:Command>")
+                                  .arg(xmlEscaped(command));
+        for (const QString &argument : arguments)
+            commandLine += QStringLiteral("<rsp:Arguments>%1</rsp:Arguments>").arg(xmlEscaped(argument));
+        commandLine += QStringLiteral("</rsp:CommandLine>");
         if (call(QString::fromLatin1(kShellNs) + QStringLiteral("/Command"), shellId, cmdOptions, commandLine, r, q)) {
-            const QString commandId = r.commandId;
+            const QString commandId = xmlEscaped(r.commandId);
+            bool canReceive = !commandId.isEmpty();
+            if (canReceive && !standardInput.isEmpty()) {
+                const QString input = QStringLiteral("<rsp:Send><rsp:Stream Name=\"stdin\" CommandId=\"%1\" "
+                                                     "End=\"true\">%2</rsp:Stream></rsp:Send>")
+                                          .arg(commandId, QString::fromLatin1(standardInput.toBase64()));
+                canReceive = call(QString::fromLatin1(kShellNs) + QStringLiteral("/Send"), shellId, {}, input, r, q);
+            }
             const QString receive = QStringLiteral("<rsp:Receive><rsp:DesiredStream CommandId=\"%1\">stdout stderr"
                                                    "</rsp:DesiredStream></rsp:Receive>").arg(commandId);
-            while (m_clock.elapsed() < m_timeoutMs) {
+            while (canReceive && m_clock.elapsed() < m_timeoutMs) {
                 if (!call(QString::fromLatin1(kShellNs) + QStringLiteral("/Receive"), shellId, {}, receive, r, q,
                           true))
                     break;
@@ -488,12 +532,22 @@ public:
         if (m_mode == SessionsAndEvents) {
             const qsizetype split = out.indexOf(kEventsMarker);
             if (split >= 0) {
-                q.events = parseEventLogs(out.left(split), &q.eventsSkipped);
+                parseEventPage(out.left(split), q);
                 out.remove(0, split + kEventsMarker.size());
                 out.remove(0, out.indexOf('\n') + 1); // rest of the echo line
+            } else {
+                parseEventPage({}, q);
             }
         }
+        QList<AccessEvent> connectionEvents;
+        const qsizetype split = out.indexOf(kConnectionsMarker);
+        if (split >= 0) {
+            connectionEvents = parseEventLogs(out.left(split));
+            out.remove(0, out.indexOf('\n', split) + 1);
+        }
         q.sessions = parseSessions(out, &q.serverNowUtcMs);
+        q.sessionsRead = out.contains(kSessionListMarker) || !q.sessions.isEmpty();
+        applyConnectionTimes(q.sessions, connectionEvents, q.serverNowUtcMs);
         return q;
     }
 
@@ -520,27 +574,35 @@ private:
         const QByteArray contentType = "application/soap+xml;charset=UTF-8";
         QByteArray token;
         HttpResponse resp;
-        if (!m_ntlm.step({}, token) || !m_conn.send(request(contentType, {}, token)) || !m_conn.receive(resp)) {
-            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "The server's remote management service did not answer."));
+        const auto exchange = [&](const QByteArray &challenge) {
+            if (!m_ntlm.step(challenge, token)) {
+                fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "NTLM exchange failed · %1")
+                                                  .arg(m_ntlm.error()));
+                return false;
+            }
+            if (!m_conn.send(request(contentType, {}, token)) || !m_conn.receive(resp)) {
+                fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "HTTP authentication exchange failed · %1")
+                                                  .arg(m_conn.error()));
+                return false;
+            }
+            return true;
+        };
+        if (!exchange({}))
             return false;
-        }
         QByteArray challenge;
         for (const QByteArray &v : std::as_const(resp.authenticate))
             if (v.startsWith("Negotiate "))
                 challenge = QByteArray::fromBase64(v.mid(10));
         if (resp.status != 401 || challenge.isEmpty()) {
             fail(q, SessionQuery::Failed,
-                 QCoreApplication::translate("WinRm", "The server does not accept this kind of sign-in (code %1).").arg(resp.status));
+                 QCoreApplication::translate("WinRm", "HTTP %1 received during authentication without a usable Negotiate challenge.").arg(resp.status));
             return false;
         }
-        if (!m_ntlm.step(challenge, token) || !m_conn.send(request(contentType, {}, token))
-            || !m_conn.receive(resp)) {
-            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "The server's remote management service did not answer."));
+        if (!exchange(challenge))
             return false;
-        }
         if (resp.status == 401) {
             fail(q, SessionQuery::AuthFailed,
-                 QCoreApplication::translate("WinRm", "Sign-in was refused. Use one of the server's administrator accounts."));
+                 QCoreApplication::translate("WinRm", "Authentication rejected (HTTP 401)."));
             return false;
         }
         return true;
@@ -585,7 +647,7 @@ private:
         const QByteArray plain = envelope(action, shellId, options, body);
         QByteArray sealed;
         if (!m_ntlm.seal(plain, sealed)) {
-            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "Could not encrypt the request."));
+            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "Could not encrypt the request · %1").arg(m_ntlm.error()));
             return false;
         }
         const QByteArray payload = kBoundary + "\r\n\tContent-Type: " + kProtocol + "\r\n"
@@ -596,12 +658,13 @@ private:
                                        + "\";boundary=\"Encrypted Boundary\"";
         HttpResponse resp;
         if (!m_conn.send(request(contentType, payload)) || !m_conn.receive(resp)) {
-            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "The connection to the server's remote management service was lost."));
+            fail(q, SessionQuery::Failed, QCoreApplication::translate("WinRm", "WS-Management %1 exchange failed · %2")
+                                              .arg(action.section(QLatin1Char('/'), -1), m_conn.error()));
             return false;
         }
         if (resp.status == 401) {
             fail(q, SessionQuery::AuthFailed,
-                 QCoreApplication::translate("WinRm", "Sign-in was refused. Use one of the server's administrator accounts."));
+                 QCoreApplication::translate("WinRm", "Authentication rejected (HTTP 401)."));
             return false;
         }
 
@@ -622,8 +685,13 @@ private:
             reply.stdOut.clear();
             return true;
         }
-        fail(q, SessionQuery::Failed,
-             reply.faultText.isEmpty() ? QCoreApplication::translate("WinRm", "The server returned an error (code %1).").arg(resp.status) : reply.faultText);
+        QString error = QCoreApplication::translate("WinRm", "WS-Management %1 returned HTTP %2.")
+                            .arg(action.section(QLatin1Char('/'), -1)).arg(resp.status);
+        if (!reply.faultCode.isEmpty())
+            error += QStringLiteral(" · WSManFault %1").arg(reply.faultCode);
+        if (!reply.faultText.isEmpty())
+            error += QStringLiteral(" · ") + reply.faultText.simplified().left(600);
+        fail(q, SessionQuery::Failed, error);
         return false;
     }
 
@@ -643,6 +711,23 @@ public:
             pos = next;
         }
         return events;
+    }
+
+    static void parseEventPage(const QByteArray &output, SessionQuery &q)
+    {
+        q.events = parseEventLogs(output, &q.eventsSkipped);
+        QHash<QString, int> counts;
+        for (const AccessEvent &event : std::as_const(q.events))
+            q.moreEvents |= ++counts[event.source] == kMaxEvents;
+        QSet<QByteArray> completed;
+        for (const QByteArray &line : output.split('\n')) {
+            const QByteArray marker = line.trimmed();
+            if (marker.startsWith("##RCLOGOK:") && marker.endsWith("##"))
+                completed.insert(marker);
+        }
+        for (const QString &source : WinRm::eventSources())
+            if (!completed.contains("##RCLOGOK:" + source.toLatin1() + "##"))
+                q.failedEventSources.insert(source);
     }
 
 private:
@@ -806,22 +891,43 @@ private:
             e.client = d.value(QStringLiteral("ClientName"));
             e.detail = d.value(QStringLiteral("SessionName"));
             return true;
-        case AccessEvent::UserCreated: // the new account; detail: who created it
-            e.source = QStringLiteral("SEC");
+        case AccessEvent::UserCreated:
+        case AccessEvent::UserEnabled:
+        case AccessEvent::UserDisabled:
+        case AccessEvent::UserDeleted:
+        case AccessEvent::PasswordChangeAttempt:
+        case AccessEvent::PasswordResetAttempt:
+        case AccessEvent::AccountLocked:
+            e.source = id == AccessEvent::UserCreated ? QStringLiteral("SEC") : QStringLiteral("AUD");
             e.user = accountName(d.value(QStringLiteral("TargetDomainName")), d.value(QStringLiteral("TargetUserName")));
             e.detail = actor(d);
+            if (id == AccessEvent::AccountLocked)
+                e.client = dashToEmpty(d.value(QStringLiteral("CallerComputerName")));
             return true;
-        case AccessEvent::GroupMemberAdded: { // the new member; detail: group|who added it
-            e.source = QStringLiteral("SEC");
+        case AccessEvent::GroupMemberAdded:
+        case AccessEvent::GroupMemberRemoved: {
+            e.source = id == AccessEvent::GroupMemberAdded ? QStringLiteral("SEC") : QStringLiteral("AUD");
             const QString name = dashToEmpty(d.value(QStringLiteral("MemberName")));
             e.user = name.isEmpty() ? d.value(QStringLiteral("MemberSid")) : name;
             e.detail = d.value(QStringLiteral("TargetUserName")) + QLatin1Char('|') + actor(d);
             return true;
         }
-        case AccessEvent::TaskCreated: // detail: task name: what it runs
-            e.source = QStringLiteral("SEC");
+        case AccessEvent::TaskCreated:
+        case AccessEvent::TaskRemoved:
+        case AccessEvent::TaskEnabled:
+        case AccessEvent::TaskDisabled:
+        case AccessEvent::TaskUpdated:
+            e.source = id == AccessEvent::TaskCreated ? QStringLiteral("SEC") : QStringLiteral("AUD");
             e.user = actor(d);
-            e.detail = d.value(QStringLiteral("TaskName")) + QStringLiteral(": ") + taskCommand(d.value(QStringLiteral("TaskContent")));
+            e.detail = d.value(QStringLiteral("TaskName"));
+            if (const QString command = taskCommand(d.value(QStringLiteral("TaskContentNew"),
+                                                            d.value(QStringLiteral("TaskContent")))); !command.isEmpty())
+                e.detail += QStringLiteral(": ") + command;
+            return true;
+        case AccessEvent::AuditPolicyChanged:
+            e.source = QStringLiteral("AUD");
+            e.user = actor(d);
+            e.detail = d.value(QStringLiteral("SubcategoryGuid"));
             return true;
         case AccessEvent::LogCleared:
         case AccessEvent::SystemLogCleared: // the one who cleared it; detail: which log
@@ -892,24 +998,13 @@ private:
         }
 
         // "NOW <time>" is the server clock, so samples and events agree.
-        // Then "<session id> <time>" per shell; the first is the sign-in.
         for (const QString &raw : starts.split(QLatin1Char('\n'))) {
             const QStringList parts = raw.trimmed().split(QLatin1Char(' '), Qt::SkipEmptyParts);
-            if (parts.size() != 2)
+            if (parts.size() != 2 || parts.at(0) != QLatin1String("NOW"))
                 continue;
-            if (parts.at(0) == QLatin1String("NOW")) {
-                const QDateTime now = QDateTime::fromString(parts.at(1).left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-                if (now.isValid())
-                    serverNow = now.toMSecsSinceEpoch();
-                continue;
-            }
-            const int id = parts.at(0).toInt();
-            const QDateTime t = QDateTime::fromString(parts.at(1).left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-            if (!t.isValid())
-                continue;
-            for (RemoteSession &s : sessions)
-                if (s.id == id && (s.logonUtcMs == 0 || t.toMSecsSinceEpoch() < s.logonUtcMs))
-                    s.logonUtcMs = t.toMSecsSinceEpoch();
+            const QDateTime now = QDateTime::fromString(parts.at(1).left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
+            if (now.isValid())
+                serverNow = now.toMSecsSinceEpoch();
         }
 
         // HKEY_USERS\<sid>\Volatile Environment\<session id>
@@ -938,20 +1033,18 @@ private:
     // ".", "none": under a minute; "5"; "1:05"; "2+03:04" (days+hours:minutes)
     static int parseIdle(const QString &text)
     {
-        int days = 0;
-        QString rest = text;
-        const qsizetype plus = rest.indexOf(QLatin1Char('+'));
-        if (plus >= 0) {
-            days = rest.left(plus).toInt();
-            rest = rest.mid(plus + 1);
-        }
-        const qsizetype colon = rest.indexOf(QLatin1Char(':'));
-        const int minutes = colon >= 0 ? rest.left(colon).toInt() * 60 + rest.mid(colon + 1).toInt() : rest.toInt();
-        return days * 1440 + minutes;
+        if (text == QLatin1String(".") || text.compare(QLatin1String("none"), Qt::CaseInsensitive) == 0)
+            return 0;
+        static const QRegularExpression format(QStringLiteral("^(?:(\\d{1,6})\\+)?(?:(\\d{1,6}):)?(\\d{1,6})$"));
+        const auto match = format.match(text);
+        if (!match.hasMatch())
+            return -1;
+        const qint64 minutes = match.captured(1).toLongLong() * 1440
+            + match.captured(2).toLongLong() * 60 + match.captured(3).toLongLong();
+        return int(minutes);
     }
 
     QString m_host;
-    QString m_command;
     Mode m_mode = Sessions;
     int m_timeoutMs;
     QByteArray m_hostHeader;
@@ -966,7 +1059,7 @@ private:
 const QStringList &WinRm::eventSources()
 {
     static const QStringList sources = {QStringLiteral("LSM"), QStringLiteral("RCM"), QStringLiteral("SEC"),
-                                        QStringLiteral("SYS")};
+                                        QStringLiteral("AUD"), QStringLiteral("SYS")};
     return sources;
 }
 
@@ -992,11 +1085,12 @@ SessionQuery withOneRetry(int timeoutMs, Attempt attempt)
 
 SessionQuery WinRm::querySessions(const QString &host, const QString &user, const QString &domain,
                                   const QString &password, int timeoutMs,
-                                  const QHash<QString, EventCursor> *cursors)
+                                  const QHash<QString, EventCursor> *cursors, bool includeTimes)
 {
+    const QString command = sessionCommand(cursors, includeTimes);
     return withOneRetry(timeoutMs, [&] {
         return Client(host.trimmed(), timeoutMs)
-            .run(user, domain, password, sessionCommand(cursors),
+            .run(user, domain, password, command,
                  cursors ? Client::SessionsAndEvents : Client::Sessions);
     });
 }
@@ -1006,4 +1100,18 @@ SessionQuery WinRm::runCommand(const QString &host, const QString &user, const Q
 {
     // A command may change something on the server (messages, auditing): it is not repeated.
     return Client(host.trimmed(), timeoutMs).run(user, domain, password, command, Client::Raw);
+}
+
+SessionQuery WinRm::runPowerShell(const QString &host, const QString &user, const QString &domain,
+                                 const QString &password, int timeoutMs, const QString &script)
+{
+    // WinRS can limit a command line even when cmd.exe is skipped. Keep the launcher fixed and send the script on stdin.
+    const QString launcher = QStringLiteral("$stdin=[IO.StreamReader]::new([Console]::OpenStandardInput(),[Text.Encoding]::UTF8);"
+                                            "& ([ScriptBlock]::Create($stdin.ReadToEnd()))");
+    const QByteArray encoded = QByteArray(reinterpret_cast<const char *>(launcher.utf16()), launcher.size() * 2).toBase64();
+    return Client(host.trimmed(), timeoutMs)
+        .run(user, domain, password, QStringLiteral("powershell.exe"), Client::Raw,
+             {QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
+              QStringLiteral("-EncodedCommand"), QString::fromLatin1(encoded)},
+             script.toUtf8());
 }

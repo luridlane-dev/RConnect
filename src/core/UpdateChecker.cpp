@@ -48,14 +48,17 @@ QString cleanVersion(QString tag)
     return tag;
 }
 
-QString updateDir() { return QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).filePath(QStringLiteral("RConnect-update")); }
-
 } // namespace
 
 UpdateChecker::UpdateChecker(QObject *parent)
     : QObject(parent)
     , m_net(new QNetworkAccessManager(this))
 {
+}
+
+QString UpdateChecker::downloadDirectory()
+{
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).filePath(QStringLiteral("RConnect-update"));
 }
 
 void UpdateChecker::check()
@@ -118,8 +121,9 @@ void UpdateChecker::download(const UpdateInfo &info)
         emit downloadFailed(tr("This release has no installer."));
         return;
     }
-    QDir().mkpath(updateDir());
-    const QString path = QDir(updateDir()).filePath(QStringLiteral("RConnect-%1-setup.exe").arg(info.version));
+    const QDir directory(downloadDirectory());
+    QDir().mkpath(directory.absolutePath());
+    const QString path = directory.filePath(QStringLiteral("RConnect-%1-setup.exe").arg(info.version));
     auto *file = new QFile(path, this);
     if (!file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         const QString error = file->errorString();

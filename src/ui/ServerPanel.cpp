@@ -5,10 +5,15 @@
 #include "ServerSectionModel.h"
 #include "Theme.h"
 #include "core/Contacts.h"
+#include "core/StatusMonitor.h"
 #include "model/ServerStore.h"
 
+#include <QApplication>
 #include <QButtonGroup>
+#include <QClipboard>
 #include <QCollator>
+#include <QCursor>
+#include <QDateTime>
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -25,6 +30,7 @@
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QTimer>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 // Filters by search text and availability. Sorted by group (named groups by name, then the servers without
@@ -68,7 +74,8 @@ protected:
             return false;
         const int state = i.data(ServerStore::StatusRole).toInt();
         const bool online = state == ServerStatus::Online;
-        const bool busy = online && i.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy;
+        const bool busy = online && (i.data(ServerStore::OwnSessionRole).toBool()
+                                     || i.data(ServerStore::OccupancyRole).toInt() == ServerStatus::Busy);
         switch (m_mode) {
         case Favorites: return i.data(ServerStore::FavoriteRole).toBool();
         case Available: return online && !busy;
@@ -132,15 +139,18 @@ QIcon viewIcon(bool grid)
     pm.setDevicePixelRatio(dpr);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
-    p.setPen(Qt::NoPen);
-    p.setBrush(Theme::kLabel);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(Theme::kLabelSecondary, 1.25, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(Qt::NoBrush);
     if (grid) {
         for (int y : {1, 8})
             for (int x : {1, 8})
-                p.drawRect(x, y, 5, 5);
+                p.drawRoundedRect(QRectF(x + .5, y + .5, 4, 4), 1, 1);
     } else {
-        for (int y : {2, 6, 10})
-            p.drawRect(1, y, 12, 2);
+        for (int y : {3, 7, 11}) {
+            p.drawPoint(QPointF(2.5, y));
+            p.drawLine(QPointF(5.5, y), QPointF(12, y));
+        }
     }
     return QIcon(pm);
 }
@@ -193,7 +203,7 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     auto *segmented = new QFrame(this);
     segmented->setObjectName(QStringLiteral("segmented"));
     auto *segLay = new QHBoxLayout(segmented);
-    segLay->setContentsMargins(2, 2, 2, 2);
+    segLay->setContentsMargins(4, 4, 4, 4);
     segLay->setSpacing(2);
     m_filters = new QButtonGroup(this);
     m_filters->setExclusive(true);
@@ -215,7 +225,7 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     auto *views = new QFrame(this);
     views->setObjectName(QStringLiteral("segmented"));
     auto *viewLay = new QHBoxLayout(views);
-    viewLay->setContentsMargins(2, 2, 2, 2);
+    viewLay->setContentsMargins(4, 4, 4, 4);
     viewLay->setSpacing(2);
     m_viewGroup = new QButtonGroup(this);
     m_viewGroup->setExclusive(true);
@@ -223,11 +233,12 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     for (int id : {0, 1}) {
         auto *b = new QPushButton(views);
         b->setObjectName(QStringLiteral("segment"));
+        b->setProperty("iconOnly", true);
         b->setCheckable(true);
         b->setCursor(Qt::PointingHandCursor);
         b->setIcon(viewIcon(id == 0));
         b->setIconSize(QSize(14, 14));
-        b->setFixedWidth(34);
+        b->setFixedWidth(32);
         b->setChecked((id == 1) == listMode);
         m_viewGroup->addButton(b, id);
         viewLay->addWidget(b);
@@ -236,6 +247,7 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
         for (int id : {0, 1})
             m_viewGroup->button(id)->setIcon(viewIcon(id == 0));
+        m_list->viewport()->update();
     });
     auto *filterRow = new QHBoxLayout;
     filterRow->setContentsMargins(kInset, 0, m_rightInset, 0);
@@ -268,6 +280,11 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
     m_list->setCursor(Qt::PointingHandCursor);
     m_list->setFrameShape(QFrame::NoFrame);
     m_list->viewport()->installEventFilter(this);
+    connect(m_list->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+        QWidget *viewport = m_list->viewport();
+        const QPoint pos = viewport->mapFromGlobal(QCursor::pos());
+        m_delegate->setHovered(viewport->underMouse() ? m_list->indexAt(pos) : QModelIndex{});
+    });
     connect(m_list, &QListView::clicked, this, [this](const QModelIndex &i) {
         if (i.data(ServerSectionModel::HeaderRole).toBool()) // a group header folds and unfolds its group
             m_sections->toggleCollapsed(i.data(ServerSectionModel::SectionGroupRole).toString());
@@ -284,7 +301,7 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
 
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(10);
+    lay->setSpacing(12);
     lay->addLayout(head);
     lay->addLayout(filterRow);
     lay->addWidget(m_list, 1);
@@ -314,6 +331,8 @@ void ServerPanel::setListMode(bool list)
     if (list == m_delegate->listMode())
         return;
     QSettings().setValue(QStringLiteral("ui/listView"), list);
+    m_delegate->setHovered({});
+    m_delegate->setPressed({});
     m_delegate->setListMode(list);
     m_list->setSpacing(list ? 0 : kColumnGap);
     m_columns = -1; // forces a new layout with the other item size
@@ -326,6 +345,11 @@ void ServerPanel::retranslate()
     m_search->setPlaceholderText(tr("Search servers"));
     m_add->setText(tr("+ Add server"));
     m_import->setText(tr("Import"));
+    const QStringList viewNames = {tr("Grid view"), tr("List view")};
+    for (int id : {0, 1}) {
+        m_viewGroup->button(id)->setAccessibleName(viewNames.at(id));
+        m_viewGroup->button(id)->setToolTip(viewNames.at(id));
+    }
     updateCounts();
     updateEmptyState();
     m_list->viewport()->update();
@@ -391,6 +415,20 @@ void ServerPanel::fitCards()
 
 bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
 {
+    if (watched == m_list->viewport()) {
+        if (e->type() == QEvent::MouseMove)
+            m_delegate->setHovered(m_list->indexAt(static_cast<QMouseEvent *>(e)->pos()));
+        if (e->type() == QEvent::MouseButtonPress) {
+            const auto *mouse = static_cast<QMouseEvent *>(e);
+            if (mouse->button() == Qt::LeftButton)
+                m_delegate->setPressed(m_list->indexAt(mouse->pos()));
+        }
+        if (e->type() == QEvent::MouseButtonRelease || e->type() == QEvent::UngrabMouse
+            || e->type() == QEvent::Leave || e->type() == QEvent::Hide)
+            m_delegate->setPressed({});
+        if (e->type() == QEvent::Leave || e->type() == QEvent::Hide)
+            m_delegate->setHovered({});
+    }
     if (watched == m_list->viewport() && e->type() == QEvent::MouseButtonRelease) {
         // The star toggles the favourite; the click does not open the server.
         const auto *me = static_cast<QMouseEvent *>(e);
@@ -416,10 +454,10 @@ void ServerPanel::changeEvent(QEvent *e)
         retranslate();
 }
 
-void ServerPanel::setOpenIds(const QSet<QString> &ids)
+void ServerPanel::setOpenSessionIds(const QSet<QString> &open)
 {
-    m_delegate->setOpenIds(ids);
-    m_list->viewport()->update();
+    if (m_delegate->setOpenSessionIds(open))
+        m_list->viewport()->update();
 }
 
 void ServerPanel::setImportVisible(bool visible)
@@ -457,6 +495,24 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     menu.addAction(favorite ? tr("Remove from favourites") : tr("Add to favourites"), this,
                    [this, id, favorite] { m_store->setFavorite(id, !favorite); });
     menu.addAction(tr("Check status now"), this, [this, id] { emit refreshRequested(id); });
+    if (!sessionErrorDetails(m_store->status(id)).isEmpty()) {
+        menu.addAction(tr("Copy connection diagnostics"), this, [this, id] {
+            const ServerProfile profile = m_store->profileById(id);
+            const ServerStatus status = m_store->status(id);
+            const QStringList errors = sessionErrorDetails(status);
+            if (!profile.isValid() || errors.isEmpty())
+                return;
+            QStringList lines{tr("Server %1 (%2)").arg(profile.name, profile.host)};
+            if (status.checkedAt > 0) {
+                const auto checked = QDateTime::fromMSecsSinceEpoch(status.checkedAt, QTimeZone::utc());
+                lines << tr("Session check at %1").arg(checked.toString(Qt::ISODateWithMs));
+            }
+            if (status.state == ServerStatus::Online && status.latencyMs >= 0)
+                lines << tr("RDP TCP %1 responded in %2 ms.").arg(profile.port).arg(status.latencyMs);
+            lines << errors;
+            QApplication::clipboard()->setText(lines.join(QLatin1Char('\n')));
+        });
+    }
 
     QMenu *group = menu.addMenu(tr("Group"));
     const QString current = i.data(ServerStore::GroupRole).toString();
@@ -492,10 +548,27 @@ void ServerPanel::showContextMenu(const QPoint &pos)
                                           : tr("Edit contact “%1”…").arg(Contacts::instance().label(s.client, s.user)),
                        this, [this, s] { ContactsDialog::editFor(s.client, s.user, this); });
     }
-    if (shown > 0)
-        menu.addSeparator();
-    menu.addAction(tr("Track sign-in attempts…"), this, [this, id] { emit auditRequested(id); });
-    menu.addAction(tr("Smoother, sharper picture…"), this, [this, id] { emit displayTuneRequested(id); });
+    const ServerProfile profile = m_store->profileById(id);
+    if (StatusMonitor::canCheckSessions(profile)) {
+        QMenu *recipients = nullptr;
+        const auto sessions = m_store->status(id).all;
+        for (const RemoteSession &session : sessions) {
+            if (!session.connected || session.id <= 0 || session.user.isEmpty())
+                continue;
+            if (!recipients) {
+                if (shown > 0)
+                    menu.addSeparator();
+                recipients = menu.addMenu(tr("Send message…"));
+            }
+            const QString client = Contacts::instance().label(session.client, session.user);
+            const QString recipient = client.isEmpty() ? session.user
+                : QStringLiteral("%1 · %2").arg(client, session.user);
+            recipients->addAction(tr("%1 · Session %2").arg(recipient).arg(session.id),
+                                  this, [this, id, sessionId = session.id, user = session.user] {
+                                      emit messageRequested(id, sessionId, user);
+                                  });
+        }
+    }
     menu.addSeparator();
     menu.addAction(tr("Edit…"), this, [this, id] { emit editRequested(id); });
     menu.addAction(tr("Delete…"), this, [this, id] { emit removeRequested(id); });

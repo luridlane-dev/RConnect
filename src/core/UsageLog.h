@@ -21,10 +21,9 @@ namespace UsageLog {
 QString eventsPath();
 QString samplesPath();
 
-// A check succeeded. `live` are the current sessions, `serverNowUtcMs` the server's clock (0: use this
-// PC's) and `written` the access log lines the check added.
-void sampled(const ServerProfile &server, const QList<RemoteSession> &live, qint64 serverNowUtcMs,
-             const QList<AccessRecord> &written);
+// A session check succeeded. Use the server clock when supplied.
+void sampled(const ServerProfile &server, const QList<RemoteSession> &live, qint64 serverNowUtcMs);
+void recordEvents(const QList<AccessRecord> &written);
 
 // Rebuilds usage-events.csv from access-log.csv (old file kept as .bak). Returns the event count.
 int rebuildEvents();

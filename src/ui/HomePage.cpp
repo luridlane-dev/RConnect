@@ -2,7 +2,6 @@
 
 #include "AccessLogPage.h"
 #include "ContactsDialog.h"
-#include "LiveSessionsPage.h"
 #include "SessionWindow.h"
 #include "SettingsDialog.h"
 #include "ServerPanel.h"
@@ -39,7 +38,7 @@
 
 namespace {
 
-enum Glyph { Monitor, People, Bars, Clock, Gear };
+enum Glyph { Monitor, Bars, Clock, Gear };
 
 // Line icon in one colour, drawn at 2x so it stays sharp.
 QPixmap glyphPixmap(Glyph glyph, const QColor &color)
@@ -57,12 +56,6 @@ QPixmap glyphPixmap(Glyph glyph, const QColor &color)
         p.drawRoundedRect(QRectF(2, 3, 14, 9.5), 2, 2);
         p.drawLine(QPointF(9, 12.5), QPointF(9, 15));
         p.drawLine(QPointF(5.5, 15.2), QPointF(12.5, 15.2));
-        break;
-    case People:
-        p.drawEllipse(QPointF(7, 6.5), 2.8, 2.8);
-        p.drawArc(QRectF(2, 10.5, 10, 8), 0, 180 * 16);
-        p.drawEllipse(QPointF(13, 7.2), 2.1, 2.1);
-        p.drawArc(QRectF(11, 11.5, 6, 6), 20 * 16, 140 * 16);
         break;
     case Bars:
         p.drawLine(QPointF(4, 14), QPointF(4, 9));
@@ -89,26 +82,25 @@ QPixmap glyphPixmap(Glyph glyph, const QColor &color)
     return pm;
 }
 
-constexpr Glyph kNavGlyphs[4] = {Monitor, People, Bars, Clock};
+constexpr Glyph kNavGlyphs[] = {Monitor, Bars, Clock};
 
-// The three monitoring pages only get a button in the navigation when they are turned on in the settings; they
+// The two monitoring pages only get a button in the navigation when they are turned on in the settings; they
 // are off by default. Turning one off hides the button only: what is recorded does not change.
 struct OptionalPage {
     const char *key;
 };
-constexpr OptionalPage kOptionalPages[4] = {{nullptr}, {"pages/live"}, {"pages/usage"}, {"pages/log"}};
+constexpr OptionalPage kOptionalPages[] = {{nullptr}, {"pages/usage"}, {"pages/log"}};
 
 bool pageEnabled(int index)
 {
     return !kOptionalPages[index].key || QSettings().value(QLatin1String(kOptionalPages[index].key), false).toBool();
 }
 
-// Grey, and white once the button is checked.
 QIcon navIcon(Glyph glyph)
 {
     QIcon icon;
     icon.addPixmap(glyphPixmap(glyph, Theme::kLabelSecondary), QIcon::Normal, QIcon::Off);
-    icon.addPixmap(glyphPixmap(glyph, Qt::white), QIcon::Normal, QIcon::On);
+    icon.addPixmap(glyphPixmap(glyph, Theme::kBlueText), QIcon::Normal, QIcon::On);
     return icon;
 }
 
@@ -123,17 +115,18 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     // Navigation
     auto *sidebar = new QFrame(this);
     sidebar->setObjectName(QStringLiteral("sidebar"));
-    sidebar->setFixedWidth(236);
+    sidebar->setFixedWidth(210);
     auto *side = new QVBoxLayout(sidebar);
-    side->setContentsMargins(14, 22, 14, 16);
-    side->setSpacing(4);
+    side->setContentsMargins(14, 25, 14, 16);
+    side->setSpacing(5);
 
     // Created before the buttons, so it lies behind them.
     m_navPill = new QFrame(sidebar);
     m_navPill->setObjectName(QStringLiteral("navPill"));
+    m_navPill->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_navPill->hide();
     m_pillAnim = new QPropertyAnimation(m_navPill, "geometry", this);
-    m_pillAnim->setDuration(140);
+    m_pillAnim->setDuration(185);
     m_pillAnim->setEasingCurve(QEasingCurve::OutCubic);
     sidebar->installEventFilter(this);
 
@@ -147,15 +140,16 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     brand->addWidget(logo);
     brand->addWidget(name, 1);
     side->addLayout(brand);
-    side->addSpacing(22);
+    side->addSpacing(24);
 
     m_nav = new QButtonGroup(this);
     m_nav->setExclusive(true);
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < int(std::size(kNavGlyphs)); ++i) {
         auto *b = new QPushButton(sidebar);
         b->setObjectName(QStringLiteral("navButton"));
         b->setCheckable(true);
         b->setChecked(i == 0);
+        b->setFocusPolicy(Qt::TabFocus);
         b->setCursor(Qt::PointingHandCursor);
         b->setIcon(navIcon(kNavGlyphs[i]));
         b->setIconSize(QSize(18, 18));
@@ -166,6 +160,7 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
 
     m_settings = new QPushButton(sidebar);
     m_settings->setObjectName(QStringLiteral("navButton"));
+    m_settings->setFocusPolicy(Qt::TabFocus);
     m_settings->setCursor(Qt::PointingHandCursor);
     m_settings->setIcon(navIcon(Gear));
     m_settings->setIconSize(QSize(18, 18));
@@ -178,7 +173,7 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     auto *serversPage = new QWidget(m_pages);
     auto *serversLay = new QVBoxLayout(serversPage);
     serversLay->setContentsMargins(0, 0, 0, 0);
-    serversLay->setSpacing(10);
+    serversLay->setSpacing(18);
     m_title = new QLabel(serversPage);
     m_title->setObjectName(QStringLiteral("pageTitle"));
     // The counts are on the filter buttons below.
@@ -194,16 +189,14 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
     serversLay->addWidget(m_panel, 1);
     m_pages->addWidget(serversPage);
 
-    m_live = new LiveSessionsPage(store, m_pages);
-    m_pages->addWidget(m_live);
     m_usage = new UsagePage(m_pages);
     m_pages->addWidget(m_usage);
-    m_log = new AccessLogPage(m_pages);
+    m_log = new AccessLogPage(store, m_pages);
     m_pages->addWidget(m_log);
 
     auto *content = new QWidget(this);
     auto *contentLay = new QVBoxLayout(content);
-    contentLay->setContentsMargins(28, 26, 28, 20);
+    contentLay->setContentsMargins(30, 24, 30, 20);
     contentLay->addWidget(m_pages);
 
     auto *lay = new QHBoxLayout(this);
@@ -223,7 +216,7 @@ HomePage::HomePage(ServerStore *store, QWidget *parent)
         m_brandLayout->setContentsMargins(ServerPanel::kInset, 0, inset, 0);
     });
     connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < int(std::size(kNavGlyphs)); ++i)
             m_nav->button(i)->setIcon(navIcon(kNavGlyphs[i]));
         m_settings->setIcon(navIcon(Gear));
     });
@@ -267,7 +260,7 @@ void HomePage::movePill(bool animate)
 // Shows the buttons of the pages that are turned on. If the page being viewed was turned off, the server list comes back.
 void HomePage::applyPages()
 {
-    for (int i = 1; i < 4; ++i)
+    for (int i = 1; i < int(std::size(kNavGlyphs)); ++i)
         m_nav->button(i)->setVisible(pageEnabled(i));
     if (!pageEnabled(m_pages->currentIndex())) {
         m_pages->setCurrentIndex(0);
@@ -279,7 +272,7 @@ void HomePage::applyPages()
 void HomePage::retranslate()
 {
     m_settings->setText(tr("Settings"));
-    const QStringList names = {tr("Servers"), tr("Who's connected"), tr("Time on servers"), tr("Activity history")};
+    const QStringList names = {tr("Servers"), tr("Time on servers"), tr("Activity history")};
     for (int i = 0; i < names.size(); ++i)
         m_nav->button(i)->setText(names.at(i));
     updateSummary();
@@ -314,12 +307,14 @@ void HomePage::showAbout()
     box.setWindowTitle(tr("About RConnect"));
     box.setIconPixmap(QIcon(QStringLiteral(":/icon.png")).pixmap(56, 56));
     box.setText(QStringLiteral("<b>RConnect %1</b>").arg(QApplication::applicationVersion()));
+    const QString linkColor = Theme::kBlueText.name();
     box.setInformativeText(tr("Saves your Remote Desktop servers and connects to them in one click.")
                            + QStringLiteral("<br><br>")
                            + tr("Developed by Lurid Lane")
-                           + QStringLiteral("<br><a href=\"https://github.com/luridlane-dev/RConnect\" style=\"color:#7da9dc\">"
+                           + QStringLiteral("<br><a href=\"https://github.com/luridlane-dev/RConnect\" style=\"color:%1\">"
                                             "github.com/luridlane-dev/RConnect</a><br><br>MIT License<br>"
-                                            "<a href=\"https://db-ip.com\" style=\"color:#7da9dc\">IP Geolocation by DB-IP</a>"));
+                                            "<a href=\"https://db-ip.com\" style=\"color:%1\">IP Geolocation by DB-IP</a>")
+                                 .arg(linkColor));
     box.setTextFormat(Qt::RichText);
     box.setTextInteractionFlags(Qt::TextBrowserInteraction);
     box.exec();

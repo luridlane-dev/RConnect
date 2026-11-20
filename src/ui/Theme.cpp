@@ -1,6 +1,8 @@
 #include "Theme.h"
 
 #include <QApplication>
+#include <QDialog>
+#include <QEvent>
 #include <QFont>
 #include <QHash>
 #include <QPalette>
@@ -16,31 +18,25 @@ namespace {
 // Tokens in @name@ are replaced by the colours of the current mode.
 const char *const kStyleSheet = R"(
 QWidget { color: @text@; font-family: "Segoe UI"; font-size: 13px; }
-QWidget#root { background: @bg@; }
-QMainWindow, QDialog, QMessageBox { background: @bg@; }
+QWidget#root, QMainWindow, QDialog, QMessageBox { background: @bg@; }
 
 QWidget#topBar { background: @topBar@; border-bottom: 1px solid @border@; }
-QToolButton#menuButton {
-    background: transparent; border: none; border-radius: 2px; color: @text2@; padding: 0 0 3px 0; margin: 3px 2px; font-size: 16px;
+QToolButton#menuButton, QToolButton#homeTab, QToolButton#barButton {
+    background: transparent; border: none; border-radius: 3px; color: @text2@; margin: 5px 3px; padding: 0;
 }
-QToolButton#menuButton:hover { background: @hover@; color: @text@; }
-QToolButton#menuButton:pressed { background: @press@; }
-QToolButton#homeTab {
-    background: transparent; border: none; border-radius: 2px; padding: 0; margin: 3px 2px 3px 4px;
-    min-width: 28px; max-width: 28px;
+QToolButton#menuButton { font-size: 19px; padding-bottom: 2px; }
+QToolButton#barButton { padding: 0 12px; }
+QToolButton#menuButton:hover, QToolButton#homeTab:hover, QToolButton#barButton:hover {
+    background: @hover@; color: @text@;
 }
-QToolButton#homeTab:hover { background: @hover@; }
-QToolButton#homeTab:checked { background: @tabHome@; }
-QToolButton#winButton {
-    background: transparent; border: none; border-radius: 0; color: @text2@; padding: 0; font-size: 13px;
+QToolButton#homeTab:checked { background: @accentSoft@; }
+QToolButton#winButton, QToolButton#winClose {
+    background: transparent; border: none; border-radius: 0; color: @text2@; padding: 0; font-size: 14px;
 }
 QToolButton#winButton:hover { background: @hover@; color: @text@; }
-QToolButton#winClose {
-    background: transparent; border: none; border-radius: 0; color: @text2@; padding: 0; font-size: 15px;
-}
 QToolButton#winClose:hover { background: #c42b1c; color: #ffffff; }
 QToolButton#trafficClose, QToolButton#trafficMin, QToolButton#trafficMax {
-    border: none; border-radius: 2px; padding: 0; min-width: 12px; max-width: 12px; min-height: 12px; max-height: 12px;
+    border: none; border-radius: 6px; padding: 0; min-width: 12px; max-width: 12px; min-height: 12px; max-height: 12px;
 }
 QToolButton#trafficClose { background: #ff5f57; }
 QToolButton#trafficMin { background: #febc2e; }
@@ -48,239 +44,230 @@ QToolButton#trafficMax { background: #28c840; }
 QToolButton#trafficClose:hover { background: #ff8780; }
 QToolButton#trafficMin:hover { background: #ffd060; }
 QToolButton#trafficMax:hover { background: #5bdc70; }
-QFrame#popup { background: @solid@; border: 1px solid @solidBorder@; border-radius: 2px; }
-QLabel#brandName { font-size: 16px; font-weight: 700; color: @text@; }
-QLabel#brandSummary { color: @text2@; font-size: 12px; }
-QLabel#pageTitle { font-size: 20px; font-weight: 700; color: @text@; }
-QLabel#pageSubtitle { color: @text2@; font-size: 13px; }
-QLabel#operatorName { color: @text@; font-size: 12px; font-weight: 600; }
+
+QLabel#brandName { font-size: 18px; font-weight: 600; }
+QLabel#pageTitle { font-size: 28px; font-weight: 600; }
+QLabel#pageSubtitle, QLabel#fieldHint { color: @text2@; }
+QLabel#fieldHint { font-size: 12px; }
+QLabel#settingsHeading, QLabel#popupTitle { font-size: 14px; font-weight: 600; }
+QLabel#settingsTitle { font-size: 24px; font-weight: 600; }
+QFrame#settingsRail { background: @sidebar@; border-right: 1px solid @border@; }
+QFrame#settingsFooter { background: @sidebar@; border-top: 1px solid @border@; }
+QFrame#settingsSection { background: @surface@; border: none; border-radius: 3px; }
+QListWidget#settingsNavigation { background: transparent; border: none; outline: none; }
+QListWidget#settingsNavigation::item {
+    min-height: 19px; color: @text2@; margin: 1px 0; padding: 8px 8px;
+    border-left: 2px solid transparent; border-radius: 2px;
+}
+QListWidget#settingsNavigation::item:hover { background: @hoverSoft@; color: @text@; }
+QListWidget#settingsNavigation::item:selected {
+    background: @accentSoft@; color: @accentText@; border-left-color: @focus@;
+}
+QLabel#emptyState { color: @text2@; font-size: 14px; }
+QLabel#warningText { color: @orange@; }
+
 QFrame#sidebar { background: @sidebar@; border-right: 1px solid @border@; }
-QFrame#detailCard { background: @surface@; border: 1px solid @border@; border-radius: 2px; }
-QFrame#navPill { background: @accent@; border-radius: 2px; }
+QFrame#detailCard, QFrame#popup { background: @surface@; border: 1px solid @border@; border-radius: 3px; }
+QFrame#navPill { background: @accentSoft@; border-radius: 3px; }
 QPushButton#navButton {
-    background: transparent; border: none; border-radius: 2px; color: @text2@; text-align: left;
-    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    background: transparent; border: 1px solid transparent; border-radius: 3px; color: @text2@;
+    text-align: left; min-height: 24px; padding: 7px 11px; font-weight: 600;
 }
 QPushButton#navButton:hover { background: @hoverSoft@; color: @text@; }
-QPushButton#navButton:checked { background: transparent; color: #ffffff; font-weight: 600; }
-QLabel#emptyState { color: @text3@; font-size: 14px; }
-QLabel#popupTitle { font-size: 13px; font-weight: 600; color: @text@; }
-QLabel#fieldHint { color: @text2@; font-size: 12px; }
-QLabel#settingsHeading { color: @text2@; font-size: 11px; font-weight: 600; }
-QToolButton#barButton {
-    background: transparent; border: none; border-radius: 2px; color: @text2@; padding: 0 12px; font-size: 13px;
+QPushButton#navButton:pressed { background: @hoverSoft@; }
+QPushButton#navButton:checked { background: transparent; color: @accentText@; }
+
+QPlainTextEdit, QLineEdit, QSpinBox, QComboBox {
+    background: @field@; border: 1px solid @border@; border-radius: 3px; padding: 6px 9px;
+    selection-background-color: @accent@; selection-color: @onAccent@;
 }
-QToolButton#barButton:hover { background: @hover@; color: @text@; }
-QToolButton#settingsButton {
-    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 16px; background: @button@;
-    border: none; border-radius: 2px; color: @text2@; padding: 0;
+QPlainTextEdit:focus, QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: @focus@; }
+QLineEdit#searchField { padding: 0 9px; min-height: 38px; }
+QComboBox QAbstractItemView {
+    background: @solid@; border: 1px solid @solidBorder@; selection-background-color: @accent@;
+    selection-color: @onAccent@; outline: none;
 }
-QToolButton#settingsButton:hover { background: @hover@; color: @text@; }
-QToolButton#sectionToggle {
-    background: transparent; border: none; color: @accentText@; padding: 2px 0; font-weight: 600;
-}
-QToolButton#sectionToggle:hover { color: @accent@; }
-QPlainTextEdit {
-    background: @field@; border: 1px solid @border@; border-radius: 2px; padding: 5px 8px;
-    selection-background-color: @accent@; selection-color: #ffffff;
-}
-QPlainTextEdit:focus { border-color: @accent@; }
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator:unchecked { background: @field@; border: 1px solid @focus@; border-radius: 2px; }
+QCheckBox::indicator:unchecked:hover { background: @hover@; }
 
 QListView { background: transparent; border: none; outline: none; }
-QTableView {
-    background: @surface@; alternate-background-color: @surfaceAlt@; border: 1px solid @border@; border-radius: 2px;
-    gridline-color: transparent; outline: none; selection-background-color: @accent@; selection-color: #ffffff;
+QTableView, QTreeView {
+    background: @surface@; alternate-background-color: @surfaceAlt@; border: 1px solid @border@; border-radius: 3px;
+    outline: none; selection-background-color: @accent@; selection-color: @onAccent@;
 }
-QTableView::item { padding: 3px 8px; border: none; }
+QTableView { gridline-color: transparent; }
+QTableView::item { padding: 4px 9px; border: none; }
+QTableView::item:selected, QTreeView::item:selected { color: @onAccent@; }
+QHeaderView, QTableCornerButton::section { background: @surfaceAlt@; border: none; }
 QHeaderView::section {
-    background: @surfaceAlt@; color: @text2@; border: none; border-bottom: 1px solid @border@; padding: 6px 8px;
-    font-weight: 600;
+    background: @surfaceAlt@; color: @text2@; border: none; border-bottom: 1px solid @border@;
+    padding: 8px 9px; font-weight: 600;
 }
-QTableView QScrollBar:horizontal { height: 8px; margin: 2px; background: transparent; }
-QTableView QScrollBar::handle:horizontal { background: @scroll@; border-radius: 2px; min-width: 36px; }
-QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
-QScrollBar::handle:vertical { background: @scroll@; border-radius: 2px; min-height: 36px; }
-QScrollBar::handle:vertical:hover { background: @scrollHover@; }
-QScrollBar::handle:vertical:disabled { background: transparent; }
+QAbstractScrollArea::corner { background: @surface@; }
+QScrollBar:horizontal { height: 8px; margin: 2px; background: transparent; }
+QScrollBar:vertical { width: 8px; margin: 2px; background: transparent; }
+QScrollBar::handle { background: @scroll@; border-radius: 4px; }
+QScrollBar::handle:horizontal { min-width: 32px; }
+QScrollBar::handle:vertical { min-height: 32px; }
+QScrollBar::handle:hover { background: @scrollHover@; }
+QScrollBar::handle:disabled { background: transparent; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
 QPushButton, QToolButton {
-    background: @segOn@; border: 1px solid @border@; border-radius: 2px; padding: 5px 12px;
+    background: @button@; border: 1px solid @border@; border-radius: 3px; padding: 6px 12px;
 }
 QPushButton:hover, QToolButton:hover { background: @hover@; }
 QPushButton:pressed, QToolButton:pressed { background: @press@; }
-QPushButton:disabled { background: @surface@; color: @text3@; }
-QPushButton#primaryButton { background: @accent@; border-color: transparent; color: #ffffff; font-weight: 600; }
-QPushButton#primaryButton:disabled { background: @surface@; color: @text3@; }
-QPushButton#primaryButton:hover { background: @accentHover@; }
-QPushButton#primaryButton:pressed { background: @accentPress@; }
-QPushButton#addButton {
-    background: @accent@; border-color: transparent; color: #ffffff; font-weight: 600; border-radius: 2px;
-    padding: 0 18px; min-height: 34px;
+QPushButton:focus, QToolButton:focus, QPushButton#navButton:focus, QPushButton#segment:focus {
+    border-color: @focus@;
 }
-QPushButton#addButton:hover { background: @accentHover@; }
-QPushButton#addButton:pressed { background: @accentPress@; }
+QPushButton#primaryButton, QPushButton#addButton {
+    background: @accent@; border-color: transparent; color: @onAccent@; font-weight: 600;
+}
+QPushButton#primaryButton:hover, QPushButton#addButton:hover { background: @accentHover@; }
+QPushButton#primaryButton:pressed, QPushButton#addButton:pressed { background: @accentPress@; }
+QPushButton#primaryButton:focus, QPushButton#addButton:focus { border-color: @onAccent@; }
+QPushButton:disabled, QToolButton:disabled, QPushButton#primaryButton:disabled, QPushButton#addButton:disabled {
+    background: @surfaceAlt@; color: @text3@; border-color: @border@;
+}
+QPushButton#addButton { padding: 0 16px; min-height: 38px; }
+QToolButton#sectionToggle {
+    background: transparent; border-color: transparent; color: @accentText@; padding: 3px 4px; font-weight: 600;
+}
+QToolButton#sectionToggle:hover { background: @hoverSoft@; }
+QToolButton#sectionToggle:focus { border-color: @focus@; }
 
-QFrame#segmented { background: @segTrack@; border-radius: 2px; }
+QFrame#segmented { background: @surfaceAlt@; border: 1px solid @border@; border-radius: 4px; }
 QPushButton#segment {
-    background: transparent; color: @text2@; border: none; border-radius: 2px; padding: 0 14px;
-    min-height: 26px; font-weight: 500;
+    background: transparent; color: @text2@; border: 1px solid transparent; border-radius: 3px;
+    padding: 0 9px; min-height: 26px; font-weight: 600;
 }
-QPushButton#segment:hover { color: @text@; background: transparent; }
-QPushButton#segment:checked { background: @accent@; color: #ffffff; border: none; font-weight: 600; }
-
-QLineEdit, QSpinBox, QComboBox {
-    background: @field@; border: 1px solid @border@; border-radius: 2px; padding: 5px 9px;
-    selection-background-color: @accent@; selection-color: #ffffff;
-}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid @accent@; }
-QLineEdit#searchField { border-radius: 2px; padding: 0 14px; min-height: 32px; }
-QComboBox QAbstractItemView {
-    background: @solid@; border: 1px solid @solidBorder@; border-radius: 2px; selection-background-color: @accent@;
-    selection-color: #ffffff; outline: none;
-}
-QCheckBox { spacing: 10px; }
-QCheckBox::indicator { width: 16px; height: 16px; border-radius: 1px; border: 1.5px solid @text3@; background: transparent; }
-QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
+QPushButton#segment:hover { color: @text@; background: @hoverSoft@; }
+QPushButton#segment:pressed { background: @hover@; color: @text@; }
+QPushButton#segment:checked { background: @accentSoft@; color: @accentText@; }
+QPushButton#segment:checked:pressed { background: @press@; }
+QPushButton#segment[iconOnly="true"] { padding: 0; }
+QPushButton#segment[iconOnly="true"]:focus { border-color: @focus@; }
 
 QTabBar { background: transparent; }
 QTabBar::tab {
-    background: transparent; color: @text2@; padding: 0 4px 0 20px; margin: 0; border: none; font-size: 12px;
-    min-width: 80px; max-width: 180px;
+    background: transparent; color: @text2@; padding: 0 4px 0 12px; margin: 5px 2px;
+    border: none; border-radius: 3px; font-size: 12px; min-width: 80px; max-width: 180px;
 }
 QTabBar::tab:hover { color: @text@; background: @hoverSoft@; }
-QTabBar::tab:selected { color: #ffffff; background: transparent; font-weight: 600; }
+QTabBar::tab:selected { background: transparent; color: @text@; font-weight: 600; }
 QToolButton#tabClose {
-    background: transparent; border: none; border-radius: 2px; color: @text2@; font-size: 13px; padding: 0; margin: 0;
+    background: transparent; border: none; border-radius: 4px; color: @text2@; font-size: 13px; padding: 0;
 }
 QToolButton#tabClose:hover { background: @hover@; color: @text@; }
-QToolButton#tabClose:pressed { background: @press@; }
 
-QWidget#emptyPage { background: transparent; }
-QScrollArea#settingsScroll, QWidget#settingsContent { background: transparent; border: none; }
+QWidget#emptyPage, QScrollArea#settingsScroll, QWidget#settingsContent { background: transparent; border: none; }
+QWidget#sessionOverlay { background: @bg@; }
+QLabel#overlayTitle { font-size: 22px; font-weight: 600; }
+QLabel#overlayMessage { color: @text2@; font-size: 14px; }
 
-QWidget#sessionOverlay { background: @overlay@; }
-QLabel#overlayTitle { font-size: 22px; font-weight: 700; color: @overlayText@; }
-QLabel#overlayMessage { color: @overlayText2@; font-size: 14px; }
-
-QMenu { background: @solid@; border: 1px solid @solidBorder@; border-radius: 2px; padding: 6px; }
-QMenu::item { padding: 6px 20px; border-radius: 2px; }
-QMenu::item:selected { background: @accent@; color: #ffffff; }
-QMenu::separator { height: 1px; background: @solidBorder@; margin: 4px 8px; }
-QToolTip { background: @solid@; color: @text@; border: 1px solid @solidBorder@; border-radius: 2px; padding: 5px 9px; font-size: 12px; }
+QMenu { background: @solid@; border: 1px solid @solidBorder@; border-radius: 3px; padding: 5px; }
+QMenu::item { padding: 7px 22px; border-radius: 2px; }
+QMenu::item:selected { background: @accentSoft@; color: @accentText@; }
+QMenu::item:disabled { color: @text3@; }
+QMenu::separator { height: 1px; background: @border@; margin: 4px 8px; }
+QToolTip { background: @solid@; color: @text@; border: 1px solid @solidBorder@; padding: 5px 9px; font-size: 12px; }
 )";
 
-// Every colour of one mode. The style sheet tokens and the colours used by hand-painted widgets both come from
-// here, so the two cannot drift apart. Surfaces are opaque (cheaper to paint, and the same on any background);
-// only hover, press and scroll handles are translucent because they sit on whatever is below them.
 struct Scheme {
-    QColor bg, topBar, surface, surfaceAlt, sidebar, button, field, border, solid, solidBorder;
+    QColor bg, topBar, surface, surfaceAlt, sidebar, button, field, border, focus, solid, solidBorder;
     QColor text, text2, text3;
-    QColor hover, hoverSoft, press, tabPill, tabActive, tabHome, segTrack, segOn, scroll, scrollHover;
-    QColor accent, accentHover, accentPress, accentText;
-    QColor green, orange, red, busy, busyText;
-    QColor overlay, overlayText, overlayText2;
-    QColor cardHover, cardPressed, separator, separatorStrong, barOff, iconLine, iconTile;
-    QColor headFill;
+    QColor hover, hoverSoft, press, tabActive, scroll, scrollHover;
+    QColor accent, accentHover, accentPress, accentText, accentSoft, onAccent;
+    QColor green, orange, favorite, red, busy, busyText;
+    QColor busySurface, connectedSurface, separator, separatorStrong, barOff;
 };
 
 Scheme darkScheme()
 {
     Scheme c;
-    c.bg = QColor(0x1b, 0x1e, 0x23);
-    c.topBar = QColor(0x14, 0x16, 0x1a);
-    c.surface = QColor(0x24, 0x28, 0x2e);
-    c.surfaceAlt = QColor(0x20, 0x23, 0x29);
-    c.sidebar = QColor(0x17, 0x19, 0x1e);
-    c.button = QColor(0x2c, 0x31, 0x38);
-    c.field = QColor(0x19, 0x1b, 0x20);
-    c.border = QColor(0x36, 0x3b, 0x43);
-    c.solid = QColor(0x27, 0x2b, 0x31);
-    c.solidBorder = QColor(0x3c, 0x42, 0x4a);
-    c.text = QColor(0xe4, 0xe7, 0xeb);
-    c.text2 = QColor(0xa3, 0xaa, 0xb4);
-    c.text3 = QColor(0x78, 0x80, 0x8b);
-    c.hover = QColor(255, 255, 255, 20);
-    c.hoverSoft = QColor(255, 255, 255, 12);
-    c.press = QColor(255, 255, 255, 32);
-    c.tabPill = QColor(255, 255, 255, 30);
-    // The tab in front: a muted blue with white text, so it cannot be mistaken for the others on the dark bar.
-    c.tabActive = QColor(0x33, 0x51, 0x76);
-    c.tabHome = QColor(0x2d, 0x32, 0x39);
-    c.segTrack = QColor(0x19, 0x1b, 0x20);
-    c.segOn = QColor(0x31, 0x37, 0x3f);
-    c.scroll = QColor(255, 255, 255, 46);
-    c.scrollHover = QColor(255, 255, 255, 90);
-    c.accent = QColor(0x44, 0x79, 0xb4);
-    c.accentHover = QColor(0x51, 0x88, 0xc4);
-    c.accentPress = QColor(0x39, 0x6a, 0x9f);
-    c.accentText = QColor(0x86, 0xad, 0xdc);
-    c.green = QColor(0x70, 0xa1, 0x86);
-    c.orange = QColor(0xc4, 0xa0, 0x66);
-    c.red = QColor(0xc4, 0x7a, 0x72);
-    c.busy = QColor(0xd2, 0x6a, 0x60);
-    c.busyText = QColor(0xf0, 0x8c, 0x82);
-    c.overlay = c.bg;
-    c.overlayText = c.text;
-    c.overlayText2 = c.text2;
-    c.cardHover = QColor(0x2b, 0x30, 0x37);
-    c.cardPressed = QColor(0x20, 0x23, 0x29);
-    c.separator = QColor(255, 255, 255, 18);
-    c.separatorStrong = QColor(255, 255, 255, 34);
-    c.barOff = QColor(255, 255, 255, 40);
-    c.iconLine = QColor(0xd1, 0xd5, 0xdb);
-    c.iconTile = QColor(0x4f, 0x5d, 0x6b);
-    c.headFill = QColor(0x2e, 0x33, 0x3b);
+    c.bg = QColor("#080808");
+    c.topBar = QColor("#101010");
+    c.surface = QColor("#151515");
+    c.surfaceAlt = QColor("#111111");
+    c.sidebar = QColor("#101010");
+    c.button = QColor("#212121");
+    c.field = QColor("#141414");
+    c.border = QColor("#262626");
+    c.focus = QColor("#777777");
+    c.solid = QColor("#1c1c1c");
+    c.solidBorder = QColor("#333333");
+    c.text = QColor("#f5f5f5");
+    c.text2 = QColor("#c2c2c2");
+    c.text3 = QColor("#9d9d9d");
+    c.hover = QColor("#2a2a2a");
+    c.hoverSoft = QColor(255, 255, 255, 19);
+    c.press = QColor("#353535");
+    c.tabActive = QColor("#2b2b2b");
+    c.scroll = QColor("#484848");
+    c.scrollHover = QColor("#747474");
+    c.accent = QColor("#ededed");
+    c.accentHover = QColor("#ffffff");
+    c.accentPress = QColor("#d1d1d1");
+    c.accentText = QColor("#eeeeee");
+    c.accentSoft = QColor("#282828");
+    c.onAccent = QColor("#141414");
+    c.green = QColor("#65dbab");
+    c.orange = QColor("#ffdf42");
+    c.favorite = QColor("#ffe34d");
+    c.red = QColor("#fb8393");
+    c.busy = QColor("#fb8393");
+    c.busyText = QColor("#ffa6b2");
+    c.busySurface = QColor("#291b20");
+    c.connectedSurface = QColor("#172820");
+    c.separator = QColor("#222222");
+    c.separatorStrong = c.border;
+    c.barOff = QColor("#484848");
     return c;
 }
 
 Scheme lightScheme()
 {
     Scheme c;
-    c.bg = QColor(0xf3, 0xf4, 0xf6);
-    c.topBar = QColor(0xe3, 0xe6, 0xea);
-    c.surfaceAlt = QColor(0xf7, 0xf8, 0xf9);
-    c.sidebar = QColor(0xec, 0xee, 0xf1);
-    c.border = QColor(0xd0, 0xd4, 0xda);
-    c.solidBorder = QColor(0xc6, 0xcb, 0xd2);
-    c.text = QColor(0x1f, 0x23, 0x28);
-    c.text2 = QColor(0x4d, 0x55, 0x60);
-    c.text3 = QColor(0x73, 0x7b, 0x86);
-    c.segTrack = QColor(0xe4, 0xe7, 0xeb);
-    c.accent = QColor(0x2f, 0x65, 0xa2);
-    c.accentHover = QColor(0x3a, 0x73, 0xb3);
-    c.accentPress = QColor(0x27, 0x55, 0x8a);
-    c.green = QColor(0x55, 0x8c, 0x6c);
-    c.orange = QColor(0xa9, 0x80, 0x46);
-    c.red = QColor(0xb0, 0x66, 0x5e);
-    c.busy = QColor(0xc2, 0x48, 0x3c);
-    c.busyText = QColor(0xb0, 0x28, 0x1e);
-    c.cardHover = QColor(0xee, 0xf3, 0xf9);
-    c.separator = QColor(0, 0, 0, 22);
-    c.separatorStrong = QColor(0, 0, 0, 46);
-    c.surface = QColor(0xff, 0xff, 0xff);
-    c.button = QColor(0xff, 0xff, 0xff);
-    c.field = c.surface;
-    c.solid = QColor(0xff, 0xff, 0xff);
-    c.hover = QColor(0, 0, 0, 15);
-    c.hoverSoft = QColor(0, 0, 0, 10);
-    c.press = QColor(0, 0, 0, 26);
-    c.tabPill = QColor(0, 0, 0, 34);
-    c.tabActive = QColor(0x3a, 0x67, 0x9a);
-    c.tabHome = QColor(0xff, 0xff, 0xff);
-    c.segOn = QColor(0xff, 0xff, 0xff);
-    c.scroll = QColor(0, 0, 0, 56);
-    c.scrollHover = QColor(0, 0, 0, 107);
-    c.accentText = c.accent;
-    c.overlay = c.bg;
-    c.overlayText = c.text;
-    c.overlayText2 = c.text2;
-    c.cardPressed = QColor(0xec, 0xee, 0xf1);
-    c.barOff = QColor(0, 0, 0, 36);
-    c.iconLine = QColor(0x3a, 0x3a, 0x3f);
-    c.iconTile = QColor(0x5b, 0x6b, 0x7c);
-    c.headFill = QColor(0xe9, 0xed, 0xf2);
+    c.bg = QColor("#f4f6fc");
+    c.topBar = QColor("#ffffff");
+    c.surface = QColor("#ffffff");
+    c.surfaceAlt = QColor("#f0f3fa");
+    c.sidebar = QColor("#eef1f9");
+    c.button = QColor("#ffffff");
+    c.field = QColor("#ffffff");
+    c.border = QColor("#e1e6f0");
+    c.focus = QColor("#6878c4");
+    c.solid = QColor("#ffffff");
+    c.solidBorder = QColor("#c5d0e3");
+    c.text = QColor("#19233a");
+    c.text2 = QColor("#4c5974");
+    c.text3 = QColor("#606e88");
+    c.hover = QColor("#e9edf8");
+    c.hoverSoft = QColor(70, 86, 146, 17);
+    c.press = QColor("#dce4f6");
+    c.tabActive = QColor("#e3e9ff");
+    c.scroll = QColor("#bcc7db");
+    c.scrollHover = QColor("#8594b0");
+    c.accent = QColor("#414eb3");
+    c.accentHover = QColor("#3542a3");
+    c.accentPress = QColor("#2c3688");
+    c.accentText = QColor("#3746a3");
+    c.accentSoft = QColor("#e3e9ff");
+    c.onAccent = QColor("#ffffff");
+    c.green = QColor("#087554");
+    c.orange = QColor("#795800");
+    c.favorite = QColor("#e5b500");
+    c.red = QColor("#be3a54");
+    c.busy = QColor("#be3a54");
+    c.busyText = QColor("#a62a43");
+    c.busySurface = QColor("#fbeef0");
+    c.connectedSurface = QColor("#e5f3eb");
+    c.separator = QColor("#e1e7f2");
+    c.separatorStrong = c.border;
+    c.barOff = QColor("#d7dfee");
     return c;
 }
 
@@ -307,8 +294,8 @@ void setColours(const Scheme &c)
     using namespace Theme;
     kBackground = c.bg;
     kCard = c.surface;
-    kCardHover = c.cardHover;
-    kCardPressed = c.cardPressed;
+    kBusySurface = c.busySurface;
+    kConnectedSurface = c.connectedSurface;
     kSeparator = c.separator;
     kSeparatorStrong = c.separatorStrong;
     kLabel = c.text;
@@ -318,17 +305,16 @@ void setColours(const Scheme &c)
     kBlueText = c.accentText;
     kGreen = c.green;
     kOrange = c.orange;
+    kFavorite = c.favorite;
     kRed = c.red;
     kBusy = c.busy;
     kBusyText = c.busyText;
-    kTabPill = c.tabPill;
     kTabActive = c.tabActive;
     kBarOff = c.barOff;
     kPopupFill = c.solid;
     kPopupBorder = c.solidBorder;
-    kIconLine = c.iconLine;
-    kIconTile = c.iconTile;
-    kHeaderFill = c.headFill;
+    kAccentSoft = c.accentSoft;
+    kOnAccent = c.onAccent;
 }
 
 void applyMode(QApplication &app)
@@ -348,7 +334,8 @@ void applyMode(QApplication &app)
     p.setColor(QPalette::ToolTipBase, c.solid);
     p.setColor(QPalette::ToolTipText, c.text);
     p.setColor(QPalette::Highlight, c.accent);
-    p.setColor(QPalette::HighlightedText, Qt::white);
+    p.setColor(QPalette::HighlightedText, c.onAccent);
+    p.setColor(QPalette::Link, c.accentText);
     p.setColor(QPalette::PlaceholderText, c.text2);
     p.setColor(QPalette::Disabled, QPalette::Text, c.text3);
     p.setColor(QPalette::Disabled, QPalette::ButtonText, c.text3);
@@ -358,17 +345,30 @@ void applyMode(QApplication &app)
         {"bg", c.bg}, {"topBar", c.topBar}, {"text", c.text}, {"text2", c.text2}, {"text3", c.text3},
         {"surface", c.surface}, {"surfaceAlt", c.surfaceAlt}, {"sidebar", c.sidebar}, {"button", c.button},
         {"hover", c.hover}, {"hoverSoft", c.hoverSoft}, {"press", c.press}, {"field", c.field}, {"border", c.border},
-        {"tabPill", c.tabPill}, {"tabActive", c.tabActive}, {"tabHome", c.tabHome}, {"segTrack", c.segTrack}, {"segOn", c.segOn}, {"scroll", c.scroll},
+        {"focus", c.focus},
+        {"scroll", c.scroll},
         {"scrollHover", c.scrollHover}, {"solid", c.solid}, {"solidBorder", c.solidBorder}, {"accent", c.accent},
         {"accentHover", c.accentHover}, {"accentPress", c.accentPress}, {"accentText", c.accentText},
-        {"green", c.green}, {"orange", c.orange}, {"red", c.red}, {"overlay", c.overlay},
-        {"overlayText", c.overlayText}, {"overlayText2", c.overlayText2}
+        {"accentSoft", c.accentSoft}, {"onAccent", c.onAccent}, {"orange", c.orange}
     };
     QString sheet = QString::fromUtf8(kStyleSheet);
     for (auto it = tokens.cbegin(); it != tokens.cend(); ++it)
         sheet.replace(QLatin1Char('@') + it.key() + QLatin1Char('@'), css(it.value()));
     app.setStyleSheet(sheet);
 }
+
+class DialogTitleBars : public QObject {
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Show && qobject_cast<QDialog *>(watched))
+            Theme::darkTitleBar(static_cast<QWidget *>(watched));
+        return false;
+    }
+};
 
 } // namespace
 
@@ -385,6 +385,7 @@ void apply(QApplication &app)
     base.setStyleStrategy(QFont::PreferAntialias);
     app.setFont(base);
     applyMode(app);
+    app.installEventFilter(new DialogTitleBars(&app));
 
     app.setEffectEnabled(Qt::UI_AnimateCombo, false);
     app.setEffectEnabled(Qt::UI_FadeMenu, false);
@@ -411,6 +412,10 @@ void setMode(Mode m)
     g_mode = m;
     QSettings().setValue(QStringLiteral("theme"), m == Light ? QStringLiteral("light") : QStringLiteral("dark"));
     applyMode(*qobject_cast<QApplication *>(QApplication::instance()));
+    for (QWidget *window : QApplication::topLevelWidgets()) {
+        if (window->isVisible() && qobject_cast<QDialog *>(window))
+            darkTitleBar(window);
+    }
     emit notifier()->changed();
 }
 
@@ -436,7 +441,13 @@ void darkTitleBar(QWidget *window)
 {
     const BOOL on = g_mode == Dark ? TRUE : FALSE;
     const HWND hwnd = reinterpret_cast<HWND>(window->winId());
-    DwmSetWindowAttribute(hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &on, sizeof(on));
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &on, sizeof(on));
+    const QColor background = window->palette().color(QPalette::Window);
+    const QColor text = window->palette().color(QPalette::WindowText);
+    const COLORREF caption = RGB(background.red(), background.green(), background.blue());
+    const COLORREF foreground = RGB(text.red(), text.green(), text.blue());
+    DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+    DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &foreground, sizeof(foreground));
 }
 
 } // namespace Theme

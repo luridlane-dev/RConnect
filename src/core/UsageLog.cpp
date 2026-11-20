@@ -172,25 +172,25 @@ int rebuildLocked()
         QFile::remove(UsageLog::eventsPath() + QStringLiteral(".bak"));
         QFile::copy(UsageLog::eventsPath(), UsageLog::eventsPath() + QStringLiteral(".bak"));
     }
-    g_events.clear();
-    g_eventKeys.clear();
+    QList<Event> events;
+    QSet<QString> keys;
     QByteArray lines;
     for (const AccessRecord &r : records) {
         Event e;
         QByteArray line;
         QString key;
-        if (!toEvent(r, e, line, key) || g_eventKeys.contains(key))
+        if (!toEvent(r, e, line, key) || keys.contains(key))
             continue;
-        g_eventKeys.insert(key);
-        g_events << e;
+        keys.insert(key);
+        events << e;
         lines += line;
     }
     QSaveFile f(UsageLog::eventsPath());
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(kEventsHeader);
-        f.write(lines);
-        f.commit();
-    }
+    const QByteArray header(kEventsHeader);
+    if (!f.open(QIODevice::WriteOnly) || f.write(header) != header.size() || f.write(lines) != lines.size() || !f.commit())
+        return -1;
+    g_events = std::move(events);
+    g_eventKeys = std::move(keys);
     return int(g_events.size());
 }
 
@@ -260,7 +260,10 @@ void load()
                 : state == QLatin1String("D")     ? Sample::Disconnected
                 : state == QLatin1String("H")     ? Sample::Heartbeat
                                                   : Sample::Gone;
-            s.idleMin = c.at(6).toInt();
+            bool idleKnown = false;
+            s.idleMin = c.at(6).toInt(&idleKnown);
+            if (!idleKnown)
+                s.idleMin = -1;
             s.client = c.at(7);
             g_samples << s;
         }
@@ -279,13 +282,10 @@ QString UsageLog::samplesPath()
     return dir() + QStringLiteral("/usage-samples.csv");
 }
 
-void UsageLog::sampled(const ServerProfile &server, const QList<RemoteSession> &live, qint64 serverNowUtcMs,
-                       const QList<AccessRecord> &written)
+void UsageLog::recordEvents(const QList<AccessRecord> &written)
 {
     QMutexLocker lock(&g_mutex);
     load();
-    const qint64 now = serverNowUtcMs > 0 ? serverNowUtcMs : QDateTime::currentMSecsSinceEpoch();
-
     QByteArray eventLines;
     for (const AccessRecord &r : written) {
         Event e;
@@ -298,6 +298,15 @@ void UsageLog::sampled(const ServerProfile &server, const QList<RemoteSession> &
         eventLines += line;
     }
     append(eventsPath(), kEventsHeader, eventLines);
+}
+
+void UsageLog::sampled(const ServerProfile &server, const QList<RemoteSession> &live, qint64 serverNowUtcMs)
+{
+    QMutexLocker lock(&g_mutex);
+    load();
+    const qint64 now = serverNowUtcMs > 0 ? serverNowUtcMs : QDateTime::currentMSecsSinceEpoch();
+    if (now <= g_beat.value(server.id))
+        return;
 
     QByteArray sampleLines;
     auto add = [&](int sessionId, const QString &user, Sample::State state, int idle, const QString &client) {

@@ -2,7 +2,6 @@
 
 #include "AccessLogPage.h"
 #include "HomePage.h"
-#include "LiveSessionsPage.h"
 #include "ServerEditDialog.h"
 #include "ServerPanel.h"
 #include "SessionWindow.h"
@@ -23,6 +22,7 @@
 #include <QDir>
 #include <QRegularExpression>
 #include <QSystemTrayIcon>
+#include <QFile>
 #include <QFileDialog>
 #include <QLineEdit>
 #include <QSet>
@@ -42,7 +42,10 @@
 #include <QThreadPool>
 #include <QTimer>
 #include <QToolButton>
+#include <QUuid>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include <windows.h>
 
@@ -72,7 +75,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(QPen(Theme::kPopupBorder, 1));
         p.setBrush(Theme::kPopupFill);
-        p.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
     }
 };
 
@@ -111,19 +114,19 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     , m_monitor(new StatusMonitor(m_store, this))
     , m_updater(new UpdateChecker(this))
 {
+    m_connectLogPool.setMaxThreadCount(1);
     m_home = new HomePage(m_store);
     connect(&Contacts::instance(), &Contacts::changed, m_store, &ServerStore::refreshDisplay);
     connect(m_home, &HomePage::importRequested, this, &Workspace::importServers);
     connect(m_home, &HomePage::exportRequested, this, &Workspace::exportServers);
     connect(m_home, &HomePage::updateCheckRequested, this, [this] { checkForUpdates(true); });
     connect(m_updater, &UpdateChecker::checked, this, &Workspace::onUpdateChecked);
-    connect(m_home->liveSessions(), &LiveSessionsPage::refreshRequested, m_monitor, &StatusMonitor::refreshAllNow);
-    connect(m_home->liveSessions(), &LiveSessionsPage::messageRequested, this, &Workspace::sendMessage);
     connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
+    connect(m_home->accessLog(), &AccessLogPage::syncRequested, m_monitor, &StatusMonitor::refreshEvents);
+    connect(m_monitor, &StatusMonitor::eventSyncChanged, m_home->accessLog(), &AccessLogPage::setSyncState);
     connect(m_monitor, &StatusMonitor::unknownPerson, this, &Workspace::showStranger);
     ServerPanel *panel = m_home->panel();
-    connect(panel, &ServerPanel::auditRequested, this, &Workspace::enableAuditing);
-    connect(panel, &ServerPanel::displayTuneRequested, this, &Workspace::tuneDisplay);
+    connect(panel, &ServerPanel::messageRequested, this, &Workspace::sendMessage);
     connect(panel, &ServerPanel::openRequested, this, [this](const QString &id) { openServer(id, m_main); });
     connect(panel, &ServerPanel::addRequested, this, &Workspace::addServer);
     connect(panel, &ServerPanel::importRequested, this, &Workspace::importServers);
@@ -252,7 +255,10 @@ void Workspace::openServer(const QString &id, SessionWindow *target)
         }
         return;
     }
-    ServerProfile p = m_store->profileById(id);
+    if (m_pendingOpens.contains(id))
+        return;
+    const ServerProfile saved = m_store->profileById(id);
+    ServerProfile p = saved;
     if (!p.isValid())
         return;
 
@@ -270,21 +276,58 @@ void Workspace::openServer(const QString &id, SessionWindow *target)
         connectServer(p, target);
         return;
     }
-    // Ask the server who is connected right before connecting; a minute-old status is too old.
-    if (m_pendingOpens.contains(id))
-        return;
-    m_pendingOpens.insert(id);
-    QApplication::setOverrideCursor(Qt::BusyCursor);
-    QPointer<SessionWindow> window = target;
-    m_monitor->checkSessions(p, [this, p, window](const ServerStatus &status) {
-        QApplication::restoreOverrideCursor();
-        m_pendingOpens.remove(p.id);
-        if (m_quitting || windowOf(p.id) || !m_store->profileById(p.id).isValid())
+    const QPointer<SessionWindow> window = target;
+    const auto connectChecked = [this, p, saved, window](const ServerStatus &status) {
+        const auto stillValid = [&] {
+            const ServerProfile current = m_store->profileById(p.id);
+            return !m_quitting && !windowOf(p.id) && current.isValid() && current.sameConnection(saved)
+                && current.savePassword == saved.savePassword && current.checkSessions == saved.checkSessions;
+        };
+        if (!stillValid())
             return;
-        SessionWindow *target = window ? window.data() : m_main;
-        if (confirmBusy(p, status, target))
-            connectServer(p, target);
+        SessionWindow *destination = window ? window.data() : m_main;
+        if (confirmBusy(p, status, destination) && stillValid())
+            connectServer(p, window ? window.data() : m_main);
+    };
+    if (const auto status = m_monitor->recentSessionStatus(p)) {
+        m_pendingOpens.insert(id, nullptr); // guard against another open while the busy prompt is visible
+        connectChecked(*status);
+        m_pendingOpens.remove(id);
+        return;
+    }
+
+    auto *dialog = new QMessageBox(QMessageBox::Information, p.name,
+                                   tr("Checking who is connected…"), QMessageBox::Cancel, target);
+    dialog->setInformativeText(tr("You can connect now if you do not need to wait for the session check."));
+    auto *proceed = dialog->addButton(tr("Connect now"), QMessageBox::AcceptRole);
+    dialog->setWindowModality(Qt::WindowModal);
+    dialog->setDefaultButton(QMessageBox::Cancel);
+    m_pendingOpens.insert(id, dialog);
+    connect(dialog, &QObject::destroyed, this, [this, id, dialog] {
+        if (m_pendingOpens.value(id) == dialog)
+            m_pendingOpens.remove(id);
     });
+    auto *reveal = new QTimer(dialog);
+    reveal->setSingleShot(true);
+    connect(reveal, &QTimer::timeout, dialog, [dialog] { dialog->show(); });
+    reveal->start(900);
+
+    const QPointer<QMessageBox> pending = dialog;
+    const auto finish = [this, id, pending, reveal, connectChecked](bool accepted, const ServerStatus &status) {
+        if (!pending || m_pendingOpens.value(id) != pending.data())
+            return;
+        m_pendingOpens[id] = nullptr;
+        reveal->stop();
+        pending->hide();
+        pending->deleteLater();
+        if (accepted)
+            connectChecked(status);
+        m_pendingOpens.remove(id);
+    };
+    connect(dialog, &QMessageBox::finished, this, [this, id, dialog, proceed, finish] {
+        finish(dialog->clickedButton() == proceed, m_store->status(id));
+    });
+    m_monitor->checkSessions(p, [finish](const ServerStatus &status) { finish(true, status); });
 }
 
 bool Workspace::confirmBusy(const ServerProfile &p, const ServerStatus &status, QWidget *parent) const
@@ -309,7 +352,13 @@ bool Workspace::confirmBusy(const ServerProfile &p, const ServerStatus &status, 
 void Workspace::connectServer(const ServerProfile &p, SessionWindow *target)
 {
     const QString id = p.id;
-    AccessLog::note(p, QStringLiteral("Connect"), p.displayUser());
+    ServerProfile logProfile;
+    logProfile.id = p.id;
+    logProfile.name = p.name;
+    logProfile.host = p.host;
+    m_connectLogPool.start([logProfile, user = p.displayUser(), when = QDateTime::currentDateTimeUtc()] {
+        AccessLog::note(logProfile, QStringLiteral("Connect"), user, {}, {}, when);
+    });
     auto *session = new RdpSession(p, target);
     m_sessions.insert(id, session);
     connect(session, &RdpSession::stateChanged, this, &Workspace::onSessionState);
@@ -335,6 +384,7 @@ void Workspace::endSession(const QString &id)
     RdpSession *s = m_sessions.take(id);
     if (!s)
         return;
+    const bool hadLocalConnection = m_store->setLocalConnection(id, false);
     updateLiveSessions();
     audit(m_store->profileById(id), QStringLiteral("Closed"));
     SessionWindow *w = windowOf(id);
@@ -344,7 +394,10 @@ void Workspace::endSession(const QString &id)
     if (w)
         closeWindowIfEmpty(w);
     refreshOpenMarkers();
-    m_monitor->refresh(id);
+    if (hadLocalConnection)
+        m_monitor->localConnectionChanged(id);
+    else
+        m_monitor->refresh(id);
 }
 
 void Workspace::detachSession(const QString &id, const QPoint &globalPos)
@@ -496,8 +549,11 @@ void Workspace::showServerPopup(SessionWindow *w)
         connect(panel, &ServerPanel::editRequested, this, [this, popup](const QString &id) { popup->hide(); editServer(id); });
         connect(panel, &ServerPanel::removeRequested, this, [this, popup](const QString &id) { popup->hide(); removeServer(id); });
         connect(panel, &ServerPanel::refreshRequested, this, [this](const QString &id) { m_monitor->refresh(id, true); });
-        connect(panel, &ServerPanel::auditRequested, this, [this, popup](const QString &id) { popup->hide(); enableAuditing(id); });
-        connect(panel, &ServerPanel::displayTuneRequested, this, [this, popup](const QString &id) { popup->hide(); tuneDisplay(id); });
+        connect(panel, &ServerPanel::messageRequested, this, [this, popup](const QString &id, int sessionId,
+                                                                           const QString &user) {
+            popup->hide();
+            sendMessage(id, sessionId, user);
+        });
         m_popups.insert(w, popup);
         refreshOpenMarkers();
     }
@@ -691,18 +747,21 @@ void Workspace::removeServer(const QString &id)
 void Workspace::onSessionState(RdpSession::State state)
 {
     auto *s = qobject_cast<RdpSession *>(sender());
-    if (!s)
+    if (!s || m_sessions.value(s->serverId()) != s)
         return;
+    const QString id = s->serverId();
+    const bool localConnected = state == RdpSession::Connected;
+    if (m_store->setLocalConnection(id, localConnected, localConnected ? s->connectedUser() : QString()))
+        m_monitor->localConnectionChanged(id);
     SessionWindow *w = windowOf(s->serverId());
     if (w) {
         w->updateSessionTab(s, state == RdpSession::Replaced);
         if (state == RdpSession::Replaced)
             QApplication::alert(w, 0);
     }
-    if (state == RdpSession::Connected || state == RdpSession::Replaced)
-        m_monitor->refresh(s->serverId());
     if (state == RdpSession::Replaced || state == RdpSession::Disconnected)
         explainEnd(s);
+    refreshOpenMarkers();
     updateLiveSessions();
 }
 
@@ -745,110 +804,99 @@ void Workspace::explainEnd(RdpSession *s)
 
 void Workspace::refreshOpenMarkers()
 {
-    QSet<QString> ids;
+    QSet<QString> open;
     for (auto it = m_sessions.cbegin(); it != m_sessions.cend(); ++it)
-        ids.insert(it.key());
-    m_home->panel()->setOpenIds(ids);
+        open.insert(it.key());
+    m_home->panel()->setOpenSessionIds(open);
     for (QFrame *popup : std::as_const(m_popups))
-        popup->findChild<ServerPanel *>()->setOpenIds(ids);
+        popup->findChild<ServerPanel *>()->setOpenSessionIds(open);
 }
 
-// The Security log only has failed logons and disconnects if the server audits them.
-void Workspace::enableAuditing(const QString &id)
+void Workspace::sendMessage(const QString &id, int sessionId, const QString &user)
 {
     const ServerProfile p = m_store->profileById(id);
-    if (!p.isValid())
+    if (!p.isValid() || sessionId <= 0 || !StatusMonitor::canCheckSessions(p))
         return;
-    if (!StatusMonitor::canCheckSessions(p)) {
-        QMessageBox::information(dialogParent(), tr("Track sign-in attempts"),
-                                 tr("To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.")
-                                     .arg(p.name));
+
+    const auto activeSessions = m_store->status(id).all;
+    const auto recipient = std::find_if(activeSessions.cbegin(), activeSessions.cend(), [sessionId, &user](const RemoteSession &s) {
+        return s.id == sessionId && s.connected && s.user.compare(user, Qt::CaseInsensitive) == 0;
+    });
+    if (recipient == activeSessions.cend()) {
+        QMessageBox::warning(dialogParent(), tr("Send message"), tr("This session is no longer connected."));
         return;
     }
-    if (!confirm(dialogParent(), tr("Track sign-in attempts"),
-                 tr("Record sign-in attempts on “%1”?\n\nThis changes a security setting on the server, so Windows keeps "
-                    "a record of every sign-in and every failed attempt, and of new accounts, changes to the "
-                    "administrators and new scheduled tasks. They show up in Activity history.")
-                     .arg(p.name),
-                 false))
-        return;
+    const QString client = Contacts::instance().label(recipient->client, user);
+    const QString display = client.isEmpty() ? user : QStringLiteral("%1 · %2").arg(client, user);
 
-    QApplication::setOverrideCursor(Qt::BusyCursor);
-    QPointer<Workspace> self(this);
-    QThreadPool::globalInstance()->start([self, p] {
-        // Logon, Other Logon/Logoff Events, User Account Management, Security Group Management,
-        // Other Object Access Events (scheduled tasks).
-        QStringList steps;
-        for (const char *guid : {"0CCE9215", "0CCE921C", "0CCE9235", "0CCE9237", "0CCE9227"})
-            steps << QStringLiteral("auditpol /set /subcategory:\"{%1-69AE-11D9-BED3-505054503030}\" /success:enable "
-                                    "/failure:enable").arg(QLatin1String(guid));
-        const QString command = steps.join(QStringLiteral(" && ")) + QStringLiteral(" && echo ##OK## || echo ##FAILED##");
-        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 15000, command);
-        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
-        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
-        QMetaObject::invokeMethod(qApp, [self, p, ok, error] {
-            QApplication::restoreOverrideCursor();
-            if (!self)
-                return;
-            if (ok) {
-                AccessLog::note(p, QStringLiteral("AuditEnable"), p.displayUser());
-                QMessageBox::information(self->dialogParent(), tr("Track sign-in attempts"),
-                                         tr("Sign-in tracking is on for “%1”. New activity will appear in Activity history.").arg(p.name));
-            } else {
-                QMessageBox::warning(self->dialogParent(), tr("Track sign-in attempts"),
-                                     tr("Could not change the setting on “%1”: %2").arg(p.name, error));
-            }
-        }, Qt::QueuedConnection);
-    });
-}
-
-// Windows servers send at most 30 frames a second and, by default, colour-reduced (AVC 4:2:0) pictures, which make
-// small text soft. Two documented server settings lift that: DWMFRAMEINTERVAL=15 (60 fps, Microsoft KB 2885213) and
-// the policy "Prioritize H.264/AVC 444 graphics mode". The local monitor's refresh rate cannot be passed on: the
-// picture changes only as often as the server sends it.
-void Workspace::tuneDisplay(const QString &id)
-{
-    const ServerProfile p = m_store->profileById(id);
-    if (!p.isValid())
-        return;
-    if (!StatusMonitor::canCheckSessions(p)) {
-        QMessageBox::information(dialogParent(), tr("Smoother, sharper picture"),
-                                 tr("To do this, “%1” needs a saved administrator password and “Show who is connected” turned on in its settings.")
-                                     .arg(p.name));
+    constexpr qsizetype kMessageLimit = 1024;
+    QString text;
+    while (true) {
+        bool accepted = false;
+        text = QInputDialog::getMultiLineText(
+            dialogParent(), tr("Send message"),
+            tr("Message for %1 on “%2” (up to %3 characters):").arg(display, p.name).arg(kMessageLimit),
+            text, &accepted).trimmed();
+        if (!accepted || text.isEmpty())
+            return;
+        if (text.size() <= kMessageLimit)
+            break;
+        QMessageBox::warning(dialogParent(), tr("Send message"), tr("Use at most %1 characters.").arg(kMessageLimit));
+    }
+    const ServerProfile current = m_store->profileById(id);
+    if (!current.isValid() || !current.sameConnection(p) || !StatusMonitor::canCheckSessions(current)) {
+        QMessageBox::warning(dialogParent(), tr("Send message"), tr("The server settings changed. Open the message again."));
         return;
     }
-    if (!confirm(dialogParent(), tr("Smoother, sharper picture"),
-                 tr("Change the picture settings of “%1”?\n\nThe server will send up to 60 frames a second instead of 30, "
-                    "and text in full colour so it stays sharp. This changes two settings on the server and uses a "
-                    "little more network. It takes effect after the server restarts.")
-                     .arg(p.name),
-                 false))
-        return;
 
-    QApplication::setOverrideCursor(Qt::BusyCursor);
+    QFile queueFile(QStringLiteral(":/message/Queue.ps1"));
+    QFile popupFile(QStringLiteral(":/message/Show.ps1"));
+    if (!queueFile.open(QIODevice::ReadOnly) || !popupFile.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(dialogParent(), tr("Send message"), tr("The message window resources could not be opened."));
+        return;
+    }
+
+    const auto encodeText = [](const QString &value) { return QString::fromLatin1(value.toUtf8().toBase64()); };
+    const QString encodedUser = encodeText(user);
+    const QString popup = QString::fromUtf8(popupFile.readAll()).arg(sessionId).arg(
+        encodedUser, encodeText(tr("Message from the administrator")), encodeText(text),
+        encodeText(tr("Close")), encodeText(tr("Copy")));
+    const QString taskName = QStringLiteral("RConnectMessage-") + QUuid::createUuid().toString(QUuid::Id128);
+    const QString script = QString::fromUtf8(queueFile.readAll()).arg(sessionId).arg(encodedUser, popup.trimmed(), taskName);
     QPointer<Workspace> self(this);
-    QThreadPool::globalInstance()->start([self, p] {
-        const QString command = QStringLiteral(
-            "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\" /v DWMFRAMEINTERVAL "
-            "/t REG_DWORD /d 15 /f && reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\" "
-            "/v AVC444ModePreferred /t REG_DWORD /d 1 /f && echo ##OK## || echo ##FAILED##");
-        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 15000, command);
-        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
-        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
-        QMetaObject::invokeMethod(qApp, [self, p, ok, error] {
-            QApplication::restoreOverrideCursor();
-            if (!self)
-                return;
-            if (ok) {
-                AccessLog::note(p, QStringLiteral("DisplayTuned"), p.displayUser());
-                QMessageBox::information(self->dialogParent(), tr("Smoother, sharper picture"),
-                                         tr("Done. Restart “%1” once for the new picture settings to take effect.").arg(p.name));
-            } else {
-                QMessageBox::warning(self->dialogParent(), tr("Smoother, sharper picture"),
-                                     tr("Could not change the setting on “%1”: %2").arg(p.name, error));
+    QThreadPool::globalInstance()->start([self, p, user, display, taskName, script] {
+        Threats::expectMessageTask(p.id, taskName);
+        const SessionQuery reply = WinRm::runPowerShell(p.host, p.user, p.domain, p.password, 12000, script);
+        bool queued = false;
+        QString error = reply.error;
+        if (reply.result == SessionQuery::Ok) {
+            const QByteArray errorPrefix = "RCONNECT_MESSAGE_ERROR ";
+            for (const QByteArray &line : reply.output.split('\n')) {
+                const QByteArray result = line.trimmed();
+                if (result == "RCONNECT_MESSAGE_QUEUED")
+                    queued = true;
+                else if (result.startsWith(errorPrefix))
+                    error = QString::fromUtf8(QByteArray::fromBase64(result.mid(errorPrefix.size())));
             }
+            if (!queued && error.isEmpty())
+                error = QString::fromUtf8(reply.output).simplified();
+        }
+        if (queued)
+            AccessLog::note(p, QStringLiteral("Message"), p.displayUser(), user);
+        QMetaObject::invokeMethod(qApp, [self, p, display, queued, error] {
+            if (!self || self->m_quitting)
+                return;
+            auto *box = new QMessageBox(queued ? QMessageBox::Information : QMessageBox::Warning,
+                                        tr("Send message"), {}, QMessageBox::Ok, self->dialogParent());
+            box->setTextFormat(Qt::PlainText);
+            box->setText(queued ? tr("Message queued for %1.").arg(display)
+                                : tr("Could not verify that the message was queued on “%1”.").arg(p.name));
+            if (!queued && !error.isEmpty())
+                box->setInformativeText(error.left(550));
+            box->setAttribute(Qt::WA_DeleteOnClose);
+            box->open();
         }, Qt::QueuedConnection);
-    });
+    }, 1);
 }
 
 // A warning from Threats, or a tampering event, as a Windows notification.
@@ -879,90 +927,6 @@ void Workspace::showStranger(const QString &server, const QString &client, const
     tray()->showMessage(tr("Unknown person on %1").arg(server),
                         tr("%1 (account %2) connected and is not in your contacts.").arg(client, user),
                         QSystemTrayIcon::Warning, 20000);
-}
-
-// A pop-up on the user's screen in their session (msg.exe on the server).
-void Workspace::sendMessage(const QString &serverId, int sessionId, const QString &user)
-{
-    const ServerProfile p = m_store->profileById(serverId);
-    if (!p.isValid() || sessionId <= 0)
-        return;
-    constexpr int kMaxLength = 255;
-    bool accepted = false;
-    QString text = QInputDialog::getMultiLineText(
-        dialogParent(), tr("Send message"), tr("Message for %1 on “%2” (up to %3 characters):").arg(user, p.name).arg(kMaxLength),
-        {}, &accepted);
-    text = text.trimmed();
-    if (!accepted || text.isEmpty())
-        return;
-    text = text.left(kMaxLength);
-
-    QApplication::setOverrideCursor(Qt::BusyCursor);
-    QPointer<Workspace> self(this);
-    const QString heading = tr("Message from the administrator");
-    QThreadPool::globalInstance()->start([self, p, sessionId, user, text, heading] {
-        // Text and title go through PowerShell as base64, so nothing in them is read as a command.
-        const QString message = QString::fromLatin1(text.toUtf8().toBase64());
-        const QString title = QString::fromLatin1(heading.toUtf8().toBase64());
-        // A real warning box (yellow triangle, system sound, on top of everything) in the person's
-        // session: WTSSendMessage with MB_ICONWARNING. msg.exe only shows plain text, so it stays as the
-        // fallback if the call cannot be set up.
-        // The message goes first. The box itself is silent when shown this way, so a short task then plays the system sound inside
-        // the person's own session (the sound travels with their Remote Desktop audio, if they have it on).
-        // The task runs as the signed-in user, interactively, and is removed again. A failure of the
-        // sound never stops the message.
-        const QString script = QStringLiteral(R"PS(
-$m=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%1'))
-$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%2'))
-$sid=%3
-$ex=0
-try {
-Add-Type -Namespace RC -Name W -MemberDefinition '[DllImport("wtsapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern bool WTSSendMessage(IntPtr h,int s,string t,int tl,string m,int ml,int st,int to,out int r,bool w);'
-$r=0
-if (-not [RC.W]::WTSSendMessage([IntPtr]::Zero,$sid,$t,$t.Length*2,$m,$m.Length*2,0x51030,300,[ref]$r,$false)) { $ex=[Runtime.InteropServices.Marshal]::GetLastWin32Error() }
-} catch { msg.exe $sid /time:300 $m; $ex=$LASTEXITCODE }
-try {
-$o=Get-CimInstance Win32_Process -Filter "SessionId=$sid AND Name='explorer.exe'" | Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwner
-if ($ex -eq 0 -and $o -and $o.User) {
-$dir=Join-Path $env:ProgramData 'RConnect'
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$f=Join-Path $dir ('beep-'+[guid]::NewGuid().ToString('N')+'.ps1')
-$snd='$w=@("Windows Notify Messaging.wav","Windows Notify System Generic.wav","Windows Exclamation.wav","Windows Ding.wav") | % { Join-Path $env:windir ("Media\"+$_) } | ? { Test-Path $_ } | Select-Object -First 1; if ($w) { (New-Object Media.SoundPlayer $w).PlaySync() }'
-Set-Content -LiteralPath $f -Value $snd -Encoding ASCII
-$n='RConnectBeep-'+[guid]::NewGuid().ToString('N')
-$ps='-NoProfile -ExecutionPolicy Bypass -File "'+$f+'"'
-if ([Environment]::OSVersion.Version.Build -ge 17763) { $a=New-ScheduledTaskAction -Execute 'conhost.exe' -Argument ('--headless powershell.exe '+$ps) }
-else { $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-WindowStyle Hidden '+$ps) }
-$pr=New-ScheduledTaskPrincipal -UserId ("$($o.Domain)\$($o.User)") -LogonType Interactive
-Register-ScheduledTask -TaskName $n -Action $a -Principal $pr -Force | Out-Null
-Start-ScheduledTask -TaskName $n
-for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 250; if ((Get-ScheduledTask -TaskName $n).State -ne 'Running') { break } }
-Unregister-ScheduledTask -TaskName $n -Confirm:$false
-Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
-}
-} catch { }
-exit $ex
-)PS").arg(message, title).arg(sessionId);
-        const QByteArray encoded = QByteArray(reinterpret_cast<const char *>(script.utf16()), script.size() * 2).toBase64();
-        const QString command = QStringLiteral("powershell -NoProfile -NonInteractive -EncodedCommand %1 "
-                                               "&& echo ##OK## || echo ##FAILED##").arg(QString::fromLatin1(encoded));
-        const SessionQuery q = WinRm::runCommand(p.host, p.user, p.domain, p.password, 30000, command);
-        const bool ok = q.result == SessionQuery::Ok && q.output.contains("##OK##");
-        const QString error = q.result != SessionQuery::Ok ? q.error : QString::fromUtf8(q.output).simplified();
-        QMetaObject::invokeMethod(qApp, [self, p, user, text, ok, error] {
-            QApplication::restoreOverrideCursor();
-            if (!self)
-                return;
-            if (ok) {
-                AccessLog::note(p, QStringLiteral("Message"), user, text.left(120));
-                QMessageBox::information(self->dialogParent(), tr("Send message"),
-                                         tr("The message was shown to %1.").arg(user));
-            } else {
-                QMessageBox::warning(self->dialogParent(), tr("Send message"),
-                                     tr("Could not send the message on “%1”: %2").arg(p.name, error));
-            }
-        }, Qt::QueuedConnection);
-    });
 }
 
 void Workspace::checkForUpdates(bool manual)

@@ -23,8 +23,8 @@
 //  - Away (AFK): idle for kAfkMinutes or more. A sample at time t with idle m minutes proves the
 //    stretch [t - m min - 30 s, t] (quser rounds down, so the middle of the minute is used). The
 //    whole stretch counts as away, clipped to the segment start.
-//  - Unknown: parts of a segment with no sample within kSampleGapSec, unless a later idle reading
-//    proves they were away. Never guessed.
+//  - Unknown: a connection with no input measurements, or gaps longer than kSampleGapSec,
+//    unless a later idle reading covers the gap. Active time is estimated from nearby samples.
 //  - No end event: the segment ends at its last sample that saw it connected. No start event: it
 //    starts at its first such sample (a lower bound). A connected quser session with no event at
 //    all becomes its own "inferred" segment.
@@ -59,7 +59,7 @@ struct Sample {
     int sessionId = 0;
     QString user;
     State state = Connected;
-    int idleMin = 0;
+    int idleMin = -1;    // -1: the server supplied no input measurement
     QString client;     // computer the session was connected from, at that moment
 };
 
@@ -84,7 +84,7 @@ struct Segment {
     qint64 start = 0, end = 0;
     bool startKnown = true;   // false: no start event, start is the first sample that saw it
     bool endKnown = true;     // false: no end event, end is the last sample that saw it
-    bool open = false;        // still connected, end is "now"
+    bool open = false;        // still connected at the last recent check; end is that check
     bool inferred = false;    // not in the event log, only quser shows it
     QString client;
     QList<Part> parts;        // cover start..end without gaps
@@ -110,6 +110,7 @@ struct DayVisit {
     QList<Part> parts;        // only this day's parts of the connected stretches
     qint64 activeMs = 0, afkMs = 0, unknownMs = 0;
     bool fromPreviousDay = false, intoNextDay = false;
+    bool open = false;
     qint64 totalMs() const { return activeMs + afkMs + unknownMs; }
 };
 

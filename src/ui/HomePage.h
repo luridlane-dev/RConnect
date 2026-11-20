@@ -2,7 +2,6 @@
 #include <QWidget>
 
 class AccessLogPage;
-class LiveSessionsPage;
 class QButtonGroup;
 class QFrame;
 class QPropertyAnimation;
@@ -22,7 +21,6 @@ public:
     explicit HomePage(ServerStore *store, QWidget *parent = nullptr);
 
     ServerPanel *panel() const { return m_panel; }
-    LiveSessionsPage *liveSessions() const { return m_live; }
     AccessLogPage *accessLog() const { return m_log; }
 
 signals:
@@ -45,7 +43,6 @@ private:
 
     ServerStore *m_store;
     ServerPanel *m_panel;
-    LiveSessionsPage *m_live;
     UsagePage *m_usage;
     AccessLogPage *m_log;
     QStackedWidget *m_pages;

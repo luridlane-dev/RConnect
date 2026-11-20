@@ -70,6 +70,8 @@ ServerProfile ServerProfile::fromJson(const QJsonObject &o)
     p.countryHost = o.value(QLatin1String("countryHost")).toString();
     p.colorDepth = o.value(QLatin1String("colorDepth")).toInt(32);
     p.resolution = o.value(QLatin1String("resolution")).toString();
+    if (p.resolution == QLatin1String("native"))
+        p.resolution.clear(); // The former native mode is the default fit again.
     p.clipboard = o.value(QLatin1String("clipboard")).toBool(true);
     p.drives = o.value(QLatin1String("drives")).toBool(false);
     p.audio = o.value(QLatin1String("audio")).toBool(true);

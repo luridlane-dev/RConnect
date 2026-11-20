@@ -18,13 +18,13 @@ class ServerPanel : public QWidget {
     Q_OBJECT
 public:
     // Left and right inset, also used by the page title so everything lines up with the cards.
-    static constexpr int kInset = 6;
+    static constexpr int kInset = 8;
     // Space right of the last card column, which the search row and the page title also leave free.
     int rightInset() const { return m_rightInset; }
 
     explicit ServerPanel(ServerStore *store, QWidget *parent = nullptr);
 
-    void setOpenIds(const QSet<QString> &ids);
+    void setOpenSessionIds(const QSet<QString> &open);
     void focusSearch();
     // The popup next to the session tabs has no import button.
     void setImportVisible(bool visible);
@@ -42,8 +42,7 @@ signals:
     void editRequested(const QString &id);
     void removeRequested(const QString &id);
     void refreshRequested(const QString &id);
-    void auditRequested(const QString &id);
-    void displayTuneRequested(const QString &id);
+    void messageRequested(const QString &id, int sessionId, const QString &user);
 
 protected:
     void changeEvent(QEvent *e) override;

@@ -1,19 +1,26 @@
 #pragma once
+#include <QHash>
+#include <QPersistentModelIndex>
 #include <QSet>
 #include <QStyledItemDelegate>
+#include <QVariantAnimation>
+
+class QAbstractItemView;
 
 // Paints one server as a card (grid) or as a single row (list): status, name, address, connection quality.
 class ServerDelegate : public QStyledItemDelegate {
     Q_OBJECT
 public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    explicit ServerDelegate(QAbstractItemView *view);
 
-    static constexpr int kCardHeight = 60;
-    static constexpr int kRowHeight = 40;
-    static constexpr int kHeaderHeight = 60;
+    static constexpr int kCardHeight = 76;
+    static constexpr int kRowHeight = 46;
+    static constexpr int kHeaderHeight = 34;
     static constexpr int kMinCardWidth = 330;
 
-    void setOpenIds(const QSet<QString> &ids) { m_open = ids; }
+    bool setOpenSessionIds(const QSet<QString> &open);
+    void setHovered(const QModelIndex &index);
+    void setPressed(const QModelIndex &index);
     // Where the favourite star is, for the item rectangle of the view.
     QRect starRect(const QRect &itemRect) const;
     void setCardWidth(int width) { m_cardWidth = width; }
@@ -35,8 +42,14 @@ public:
 
 private:
     void paintHeader(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const;
+    qreal hoverAmount(const QPersistentModelIndex &index) const;
 
+    QAbstractItemView *m_view;
     QSet<QString> m_open;
+    QPersistentModelIndex m_hovered;
+    QPersistentModelIndex m_pressed;
+    QHash<QPersistentModelIndex, qreal> m_hoverFrom;
+    QVariantAnimation m_hover;
     int m_cardWidth = kMinCardWidth;
     int m_columns = 1;
     int m_gap = 6;

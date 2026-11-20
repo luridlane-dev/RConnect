@@ -25,6 +25,8 @@ public:
         OwnerIdleRole, // minutes the connected user has been idle, -1 if nobody
         FavoriteRole,  // bool
         GroupRole,     // group name, empty if none
+        OwnerConnectionMinutesRole, // minutes since the current connection started, -1 if unknown
+        OwnSessionRole, // bool: this PC has a connected session
     };
 
     explicit ServerStore(QObject *parent = nullptr);
@@ -51,6 +53,7 @@ public:
 
     ServerStatus status(const QString &id) const { return m_status.value(id); }
     void setStatus(const QString &id, const ServerStatus &s);
+    bool setLocalConnection(const QString &id, bool connected, const QString &account = {});
 
     Counts counts() const;
     void setCountry(const QString &id, const QString &host, const QString &country);
@@ -70,6 +73,11 @@ signals:
     void summaryChanged();
 
 private:
+    struct LocalConnection {
+        QString account;
+        qint64 connectedAt;
+    };
+
     static QString filePath();
     void rebuildIndex();
     void scheduleSave();
@@ -77,6 +85,7 @@ private:
 
     QList<ServerProfile> m_profiles;
     QHash<QString, ServerStatus> m_status;
+    QHash<QString, LocalConnection> m_localConnections;
     QHash<QString, int> m_rows;
     QTimer m_saveTimer;
     QTimer m_summaryTimer;

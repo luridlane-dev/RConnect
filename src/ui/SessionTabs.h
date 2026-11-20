@@ -12,7 +12,7 @@ class AnimatedTabBar : public QTabBar {
 public:
     explicit AnimatedTabBar(QWidget *parent = nullptr);
 
-    static constexpr int kHeight = 28;
+    static constexpr int kHeight = 39;
     static const char *const kMimeType;
 
     QToolButton *addButton() const { return m_add; }

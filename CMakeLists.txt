@@ -35,6 +35,7 @@ add_executable(RConnect WIN32
     src/core/GeoIp.h             src/core/GeoIp.cpp
     src/core/HostNames.h         src/core/HostNames.cpp
     src/core/Language.h          src/core/Language.cpp
+    src/core/LocalCache.h        src/core/LocalCache.cpp
     src/core/Log.h               src/core/Log.cpp
     src/core/Priority.h          src/core/Priority.cpp
     src/core/Secrets.h           src/core/Secrets.cpp
@@ -46,6 +47,7 @@ add_executable(RConnect WIN32
     src/core/UsageEngine.h       src/core/UsageEngine.cpp
     src/core/UsageLog.h          src/core/UsageLog.cpp
     src/core/WinRm.h             src/core/WinRm.cpp
+    src/core/WindowsTcp.h
     src/core/WtsQuery.h          src/core/WtsQuery.cpp
     src/model/ServerProfile.h    src/model/ServerProfile.cpp
     src/model/ServerStatus.h
@@ -54,7 +56,6 @@ add_executable(RConnect WIN32
     src/ui/AccessLogPage.h       src/ui/AccessLogPage.cpp
     src/ui/ContactsDialog.h      src/ui/ContactsDialog.cpp
     src/ui/HomePage.h            src/ui/HomePage.cpp
-    src/ui/LiveSessionsPage.h    src/ui/LiveSessionsPage.cpp
     src/ui/ServerDelegate.h      src/ui/ServerDelegate.cpp
     src/ui/SettingsDialog.h      src/ui/SettingsDialog.cpp
     src/ui/ServerEditDialog.h    src/ui/ServerEditDialog.cpp

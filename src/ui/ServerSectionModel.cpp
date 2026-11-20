@@ -13,6 +13,7 @@ const QString kSettingsKey = QStringLiteral("ui/collapsedGroupNames");
 bool isFree(const QModelIndex &i)
 {
     return i.data(ServerStore::StatusRole).toInt() == ServerStatus::Online
+        && !i.data(ServerStore::OwnSessionRole).toBool()
         && i.data(ServerStore::OccupancyRole).toInt() != ServerStatus::Busy;
 }
 

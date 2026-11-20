@@ -23,6 +23,7 @@ constexpr qint64 kRepeatMs = 30 * 60 * 1000;
 // Older events are history, not news.
 constexpr qint64 kRecentMs = 24 * 3600 * 1000;
 constexpr int kMaxUsers = 20;
+constexpr qint64 kMessageTaskWindowMs = 10 * 60 * 1000;
 
 QMutex g_mutex;
 bool g_loaded = false;
@@ -37,6 +38,7 @@ QHash<QString, qint64> g_breakInAt;            // server id|address|user -> time
 QSet<QString> g_known;                         // server id|account|country that signed in before
 QSet<QString> g_serversWithHistory;            // servers with at least one sign-in on record
 QHash<QString, QString> g_country;             // address -> country, "" if none
+QHash<QString, qint64> g_messageTasks;         // server id|task path -> expiration time
 
 qint64 msOf(const QString &timeUtc)
 {
@@ -126,13 +128,21 @@ void loadHistory()
 bool Threats::isTampering(const QString &event)
 {
     return event == QLatin1String("UserCreated") || event == QLatin1String("GroupMemberAdded")
-        || event == QLatin1String("LogCleared");
+        || event == QLatin1String("LogCleared") || event == QLatin1String("AuditPolicyChanged");
 }
 
 void Threats::warmUp()
 {
     QMutexLocker lock(&g_mutex);
     loadHistory();
+}
+
+void Threats::expectMessageTask(const QString &serverId, const QString &taskName)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QMutexLocker lock(&g_mutex);
+    g_messageTasks.removeIf([now](QHash<QString, qint64>::iterator entry) { return entry.value() < now; });
+    g_messageTasks.insert(serverId + QStringLiteral("|\\") + taskName, now + kMessageTaskWindowMs);
 }
 
 QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<AccessRecord> &events)
@@ -161,7 +171,16 @@ QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<A
                 news << r;
             continue;
         }
-        if (r.event == QLatin1String("ServiceInstalled") || r.event == QLatin1String("TaskCreated")) {
+        if (r.event == QLatin1String("ServiceInstalled") || r.event == QLatin1String("TaskCreated")
+            || r.event == QLatin1String("TaskUpdated")) {
+            const qsizetype commandAt = r.detail.indexOf(QStringLiteral(": "));
+            const bool messageTask = r.event == QLatin1String("TaskCreated") && commandAt >= 0
+                && r.detail.endsWith(QStringLiteral("\\System32\\WindowsPowerShell\\v1.0\\powershell.exe "
+                                                    "-NoProfile -NonInteractive -STA -WindowStyle Hidden -EncodedCommand $(Arg0)"),
+                                     Qt::CaseInsensitive)
+                && g_messageTasks.take(server.id + QLatin1Char('|') + r.detail.left(commandAt)) >= now;
+            if (messageTask)
+                continue; // The Windows event stays in the history.
             if (recent && suspiciousCommand(r.detail))
                 raise(r, QStringLiteral("AlertSuspicious"), r.user.isEmpty() ? r.event : r.user,
                       r.event + QLatin1Char('|') + r.detail);

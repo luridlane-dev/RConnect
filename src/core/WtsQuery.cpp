@@ -1,8 +1,10 @@
 #include "WtsQuery.h"
+#include "WindowsTcp.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QHash>
+#include <QTimeZone>
 
 #include <mutex>
 #include <string>
@@ -19,40 +21,11 @@ constexpr int kSmbPort = 445;
 constexpr qint64 kRetryAfterFailureMs = 5 * 60 * 1000;
 
 std::mutex g_mutex;
-QHash<QString, qint64> g_failedAt; // host (lower case) -> when it last failed
-
-// Can the file-sharing port be reached? Without it the calls below would wait for a long time.
-bool portOpen(const QString &host, int timeoutMs)
-{
-    ADDRINFOW hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-    ADDRINFOW *results = nullptr;
-    if (GetAddrInfoW(reinterpret_cast<const wchar_t *>(host.utf16()), std::to_wstring(kSmbPort).c_str(), &hints,
-                     &results) != 0)
-        return false;
-    bool open = false;
-    for (ADDRINFOW *a = results; a && !open; a = a->ai_next) {
-        SOCKET s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-        if (s == INVALID_SOCKET)
-            continue;
-        u_long nonBlocking = 1;
-        ioctlsocket(s, FIONBIO, &nonBlocking);
-        if (connect(s, a->ai_addr, int(a->ai_addrlen)) == 0) {
-            open = true;
-        } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
-            fd_set writable;
-            FD_ZERO(&writable);
-            FD_SET(s, &writable);
-            timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
-            open = select(0, nullptr, &writable, nullptr, &tv) > 0 && FD_ISSET(s, &writable);
-        }
-        closesocket(s);
-    }
-    FreeAddrInfoW(results);
-    return open;
-}
+struct Failure {
+    qint64 at;
+    QString error;
+};
+QHash<QString, Failure> g_failures;
 
 // Signs in to the server's IPC$ share with the account, for the lifetime of this object. Windows then uses that
 // account for the calls that follow. When this PC is already signed in to the server with another account, that
@@ -121,17 +94,6 @@ QString sessionText(HANDLE server, DWORD id, WTS_INFO_CLASS what)
     return text;
 }
 
-QString windowsError(DWORD code)
-{
-    wchar_t *message = nullptr;
-    FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                   code, 0, reinterpret_cast<wchar_t *>(&message), 0, nullptr);
-    QString text = message ? fromWide(message).trimmed() : QString();
-    if (message)
-        LocalFree(message);
-    return text.isEmpty() ? QStringLiteral("0x%1").arg(code, 0, 16) : text;
-}
-
 } // namespace
 
 namespace WtsQuery {
@@ -141,43 +103,46 @@ SessionQuery sessions(const QString &host, const QString &user, const QString &d
 {
     SessionQuery q;
     q.result = SessionQuery::Failed;
-    const QString key = host.toLower();
+    const QString key = host.toLower() + QLatin1Char('|') + domain.toLower() + QLatin1Char('|') + user.toLower();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     {
         std::lock_guard lock(g_mutex);
-        const auto it = g_failedAt.constFind(key);
-        if (it != g_failedAt.constEnd() && now - it.value() < kRetryAfterFailureMs) {
-            q.error = QCoreApplication::translate("WtsQuery", "The server does not answer Windows' session query either.");
+        const auto it = g_failures.constFind(key);
+        if (it != g_failures.constEnd() && now >= it->at && now - it->at < kRetryAfterFailureMs) {
+            const QString at = QDateTime::fromMSecsSinceEpoch(it->at, QTimeZone::utc()).toString(Qt::ISODate);
+            q.error = QCoreApplication::translate("WtsQuery", "Previous result at %1 (retry deferred) · %2").arg(at, it->error);
             return q;
         }
     }
     const auto failed = [&](const QString &error) {
         std::lock_guard lock(g_mutex);
-        g_failedAt.insert(key, QDateTime::currentMSecsSinceEpoch());
+        g_failures.insert(key, {QDateTime::currentMSecsSinceEpoch(), error});
         q.result = SessionQuery::Failed;
         q.error = error;
         return q;
     };
 
-    if (!portOpen(host, qMin(timeoutMs, 2500)))
-        return failed(QCoreApplication::translate("WtsQuery", "The file-sharing port (445) of the server is closed."));
+    const auto tcp = WindowsTcp::open(host, kSmbPort, qMin(timeoutMs, 2500));
+    if (tcp.socket == INVALID_SOCKET)
+        return failed(QCoreApplication::translate("WtsQuery", "TCP connection failed · %1").arg(tcp.error));
+    closesocket(tcp.socket);
 
     const ServerLogon logon(host, user, domain, password);
     if (logon.error() != NO_ERROR)
-        return failed(QCoreApplication::translate("WtsQuery", "Windows refused the sign-in: %1")
-                          .arg(windowsError(logon.error())));
+        return failed(QCoreApplication::translate("WtsQuery", "SMB IPC$ connection failed · %1")
+                          .arg(WindowsTcp::systemError(logon.error())));
 
     HANDLE server = WTSOpenServerExW(const_cast<wchar_t *>(reinterpret_cast<const wchar_t *>(host.utf16())));
     if (!server)
-        return failed(QCoreApplication::translate("WtsQuery", "Could not open the server: %1")
-                          .arg(windowsError(GetLastError())));
+        return failed(QCoreApplication::translate("WtsQuery", "WTSOpenServerExW failed · %1")
+                          .arg(WindowsTcp::systemError(GetLastError())));
 
     DWORD level = 1, count = 0;
     WTS_SESSION_INFO_1W *info = nullptr;
     if (!WTSEnumerateSessionsExW(server, &level, 0, &info, &count)) {
         const DWORD error = GetLastError();
         WTSCloseServer(server);
-        return failed(QCoreApplication::translate("WtsQuery", "Could not list the sessions: %1").arg(windowsError(error)));
+        return failed(QCoreApplication::translate("WtsQuery", "WTSEnumerateSessionsExW failed · %1").arg(WindowsTcp::systemError(error)));
     }
 
     for (DWORD i = 0; i < count; ++i) {
@@ -196,9 +161,11 @@ SessionQuery sessions(const QString &host, const QString &user, const QString &d
         if (WTSQuerySessionInformationW(server, s.SessionId, WTSSessionInfo, reinterpret_cast<LPWSTR *>(&details), &bytes)
             && details) {
             r.logonUtcMs = fileTimeMs(details->LogonTime);
-            if (r.connected && details->LastInputTime.QuadPart > 0 && details->CurrentTime.QuadPart > 0)
-                r.idleMinutes = int(qMax<qint64>(0, (details->CurrentTime.QuadPart - details->LastInputTime.QuadPart)
-                                                        / 10000000 / 60));
+            if (r.connected && details->ConnectTime.QuadPart > details->DisconnectTime.QuadPart)
+                r.connectedSinceUtcMs = fileTimeMs(details->ConnectTime);
+            if (r.connected && details->LastInputTime.QuadPart > 0
+                && details->CurrentTime.QuadPart >= details->LastInputTime.QuadPart)
+                r.idleMinutes = int((details->CurrentTime.QuadPart - details->LastInputTime.QuadPart) / 10000000 / 60);
             if (q.serverNowUtcMs == 0)
                 q.serverNowUtcMs = fileTimeMs(details->CurrentTime);
         }
@@ -211,9 +178,10 @@ SessionQuery sessions(const QString &host, const QString &user, const QString &d
 
     {
         std::lock_guard lock(g_mutex);
-        g_failedAt.remove(key);
+        g_failures.remove(key);
     }
     q.result = SessionQuery::Ok;
+    q.sessionsRead = true;
     return q;
 }
 

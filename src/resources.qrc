@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file alias="icon.png">assets/icon_256.png</file>
+        <file alias="message/Queue.ps1">core/message/Queue.ps1</file>
+        <file alias="message/Show.ps1">core/message/Show.ps1</file>
     </qresource>
 </RCC>

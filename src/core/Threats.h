@@ -19,6 +19,9 @@ namespace Threats {
 // Reads the history the "new country" check compares with; call once at start, off the GUI thread.
 void warmUp();
 
+// Correlates one task creation with a message explicitly queued by this client.
+void expectMessageTask(const QString &serverId, const QString &taskName);
+
 // `events` are the lines just written for `server`. Returns what deserves the user's attention
 // right now: events older than a day are only history. The records of the warnings have the
 // warning's event name; tampering events come back as they are.

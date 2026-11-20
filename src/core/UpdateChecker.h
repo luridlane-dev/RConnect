@@ -27,6 +27,7 @@ public:
     // Downloads info.installerUrl and checks its SHA-256; finishes with downloaded() or downloadFailed().
     void download(const UpdateInfo &info);
     void cancelDownload();
+    static QString downloadDirectory();
 
     // True when this copy was set up by the installer (the installer can replace it in place).
     static bool installedBySetup();

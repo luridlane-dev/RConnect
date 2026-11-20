@@ -26,6 +26,7 @@ public:
     QString serverName() const { return m_profile.name; }
     void setServerName(const QString &name) { m_profile.name = name; }
     State state() const { return m_state; }
+    QString connectedUser() const;
 
     void start();
     void reconnect();
@@ -74,7 +75,6 @@ private:
     void handleDisconnected(int reason);
     QSize remoteSize() const;
     uint desktopScale() const;
-    uint deviceScale() const;
     void syncDisplaySize();
     void setState(State s);
     void log(const QString &text) const;
@@ -98,6 +98,7 @@ private:
     int m_retryAttempt = 0; // automatic reconnects since the last good connection
     QTimer m_retryTimer;
     QSize m_syncedSize; // last size sent to the server
+    uint m_syncedScale = 0;
     QElapsedTimer m_connectClock;
     qint64 m_lastHeartbeat = 0;
     qint64 m_connectCalledAt = -1; // m_connectClock time when Connect() returned; -1 before

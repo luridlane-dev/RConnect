@@ -51,11 +51,16 @@ QString sessionKey(const QString &serverId, int sessionId)
 }
 
 // Samples that saw the session connected within [start, end].
-QList<const Sample *> connectedWithin(const QList<Sample> &samples, qint64 start, qint64 end)
+bool sameAccount(const QString &first, const QString &second)
+{
+    return first.isEmpty() || second.isEmpty() || accountOf(first).compare(accountOf(second), Qt::CaseInsensitive) == 0;
+}
+
+QList<const Sample *> connectedWithin(const QList<Sample> &samples, qint64 start, qint64 end, const QString &user)
 {
     QList<const Sample *> out;
     for (const Sample &s : samples)
-        if (s.state == Sample::Connected && s.ms >= start - kSlackMs && s.ms <= end + kSlackMs)
+        if (s.state == Sample::Connected && s.ms >= start - kSlackMs && s.ms <= end + kSlackMs && sameAccount(user, s.user))
             out << &s;
     return out;
 }
@@ -66,6 +71,8 @@ QList<Part> classify(qint64 start, qint64 end, const QList<const Sample *> &seen
     QList<Part> parts;
     if (end <= start)
         return parts;
+    if (std::none_of(seen.cbegin(), seen.cend(), [](const Sample *sample) { return sample->idleMin >= 0; }))
+        return {{start, end, Kind::Unknown}};
 
     QList<Span> away;
     for (const Sample *s : seen) {
@@ -80,6 +87,8 @@ QList<Part> classify(qint64 start, qint64 end, const QList<const Sample *> &seen
     QList<Span> unknown;
     qint64 previous = start;
     for (const Sample *s : seen) {
+        if (s->idleMin < 0)
+            continue;
         const qint64 at = qBound(start, s->ms, end);
         if (at - previous > kSampleGapMs)
             unknown << Span{previous, at};
@@ -208,7 +217,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 continue; // duplicate
             if (e.kind == Event::Logon || e.kind == Event::Reconnect) {
                 if (on) {
-                    if (e.ms - cur.start <= 2000 && e.address == cur.address)
+                    if (e.ms - cur.start <= 2000 && e.address == cur.address && sameAccount(cur.user, e.user))
                         continue; // sign-in and reconnect of the same connection
                     cur.end = cur.endBound = e.ms;
                     cur.endKnown = false;
@@ -220,7 +229,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 cur.user = e.user;
                 cur.address = e.address;
                 on = true;
-            } else if (on) {
+            } else if (on && sameAccount(cur.user, e.user)) {
                 cur.end = e.ms;
                 raws << cur;
                 on = false;
@@ -250,7 +259,8 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 // Connected from the first sample after the previous event.
                 r.start = r.end;
                 for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms > r.previousEvent && s.ms <= r.end + kSlackMs) {
+                    if (s.state == Sample::Connected && s.ms > r.previousEvent && s.ms <= r.end + kSlackMs
+                        && sameAccount(r.user, s.user)) {
                         r.start = qMin(s.ms, r.end);
                         break;
                     }
@@ -259,26 +269,26 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 // No disconnect in the log: connected until the last sample that saw it.
                 r.end = r.start;
                 for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs && s.ms <= r.endBound)
+                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs && s.ms <= r.endBound
+                        && sameAccount(r.user, s.user))
                         r.end = qMax(r.end, s.ms);
             } else if (r.open) {
                 const Sample *last = sm.isEmpty() ? nullptr : &sm.last();
                 // Last time quser showed it connected.
                 qint64 seenUntil = r.start;
                 for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs)
+                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs && sameAccount(r.user, s.user))
                         seenUntil = qMax(seenUntil, s.ms);
-                const bool disconnected = last && last->ms > r.start + kSlackMs && last->state != Sample::Connected;
+                const bool disconnected = last && last->ms > r.start + kSlackMs
+                    && (last->state != Sample::Connected || !sameAccount(r.user, last->user));
                 const bool absent = serverBeat.value(serverId) > seenUntil + kAbsentMs;
+                r.endKnown = false;
+                r.end = seenUntil;
+                r.open = !disconnected && !absent && nowMs - seenUntil <= kRecentMs;
                 if (disconnected || absent) {
                     // quser says it is over or no longer lists it, the log has no end.
-                    r.open = false;
-                    r.endKnown = false;
-                    r.end = seenUntil;
                     if (disconnected && nowMs - last->ms <= kRecentMs)
                         report.mismatches << Mismatch{serverId, serverNames.value(serverId), sessionId, false, last->ms};
-                } else {
-                    r.end = qMax(r.start, nowMs);
                 }
             }
             r.end = qMax(r.end, r.start);
@@ -289,7 +299,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             seg.startKnown = r.startKnown;
             seg.endKnown = r.endKnown;
             seg.open = r.open;
-            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end);
+            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end, r.user);
             seg.client = clientOf(seen);
             seg.parts = classify(seg.start, seg.end, seen);
             if (!r.startKnown && seg.start == seg.end && seen.isEmpty())
@@ -323,7 +333,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             seg.inferred = true;
             // Open if it is the newest sample and recent.
             seg.open = last.ms == sm.last().ms && nowMs - last.ms <= kRecentMs;
-            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end);
+            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end, last.user);
             seg.client = clientOf(seen);
             seg.parts = classify(seg.start, seg.end, seen);
             Visit v;
@@ -343,7 +353,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 flush();
                 continue;
             }
-            if (grouping && s.ms - last.ms > kSampleGapMs)
+            if (grouping && (s.ms - last.ms > kSampleGapMs || !sameAccount(s.user, last.user)))
                 flush();
             if (!grouping) {
                 first = s;
@@ -408,7 +418,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 const Segment &after = v.segments.first();
                 if (p.serverId == v.serverId && p.sessionId == v.sessionId && !before.inferred && !after.inferred
                     && before.endKnown && after.start - before.end <= kMergeGapMs && after.start >= before.end
-                    && p.address == v.address && sameComputer(p.client, v.client)) {
+                    && sameAccount(p.user, v.user) && p.address == v.address && sameComputer(p.client, v.client)) {
                     p.segments << after;
                     if (!v.client.isEmpty())
                         p.client = v.client;
@@ -425,23 +435,30 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
     for (int vi = 0; vi < report.visits.size(); ++vi) {
         const Visit &v = report.visits.at(vi);
         QMap<QDate, DayVisit> slices;
-        auto sliceOf = [&](const QDate &day) -> DayVisit & {
+        auto sliceOf = [&](const QDate &day, qint64 start) -> DayVisit & {
             DayVisit &d = slices[day];
             if (d.parts.isEmpty() && d.start == 0) {
                 d.visit = vi;
-                d.start = qMax(v.start(), QDateTime(day, QTime(0, 0), zone).toMSecsSinceEpoch());
+                d.start = start;
                 d.end = d.start;
             }
             return d;
         };
         for (const Segment &seg : v.segments) {
-            sliceOf(dayOf(seg.start, zone)); // list zero-length visits too
+            DayVisit &starting = sliceOf(dayOf(seg.start, zone), seg.start);
+            if (seg.open && seg.start == seg.end)
+                starting.open = true;
             for (const Part &p : seg.parts) {
                 for (qint64 at = p.start; at < p.end;) {
-                    const qint64 cut = qMin(p.end, nextDayStart(at, zone));
-                    DayVisit &d = sliceOf(dayOf(at, zone));
+                    const qint64 dayEnd = nextDayStart(at, zone);
+                    const qint64 cut = qMin(p.end, dayEnd);
+                    const QDate day = dayOf(at, zone);
+                    DayVisit &d = sliceOf(day, at);
                     d.parts << Part{at, cut, p.kind};
                     d.end = qMax(d.end, cut);
+                    d.fromPreviousDay |= dayOf(seg.start, zone) < day;
+                    d.intoNextDay |= seg.end > dayEnd;
+                    d.open |= seg.open && cut == seg.end && cut < dayEnd;
                     switch (p.kind) {
                     case Kind::Active:  d.activeMs += cut - at; break;
                     case Kind::Afk:     d.afkMs += cut - at; break;
@@ -450,16 +467,12 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                     at = cut;
                 }
             }
+            if (seg.open && dayOf(seg.end, zone) > dayOf(seg.end - 1, zone))
+                sliceOf(dayOf(seg.end, zone), seg.end).open = true;
         }
         for (auto it = slices.begin(); it != slices.end(); ++it) {
             DayVisit &d = it.value();
             const QDate day = it.key();
-            const qint64 dayStart = QDateTime(day, QTime(0, 0), zone).toMSecsSinceEpoch();
-            const qint64 dayEnd = nextDayStart(dayStart, zone);
-            d.fromPreviousDay = v.start() < dayStart;
-            d.intoNextDay = v.end() > dayEnd;
-            if (d.start < dayStart)
-                d.start = dayStart;
 
             const QString key = day.toString(Qt::ISODate) + QLatin1Char('|') + v.serverId + QLatin1Char('|')
                                 + v.client.toLower() + QLatin1Char('|') + v.address;
@@ -481,7 +494,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 ++g.entries;
             g.firstIn = qMin(g.firstIn, d.start);
             g.lastOut = qMax(g.lastOut, d.end);
-            if (v.open() && !d.intoNextDay)
+            if (d.open)
                 g.inside = true;
             g.activeMs += d.activeMs;
             g.afkMs += d.afkMs;

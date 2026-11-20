@@ -57,6 +57,11 @@ constexpr qint64 kStartTimeoutMs = 5000;
 constexpr qint64 kConnectTimeoutMs = 40000;
 // refresh(): how long to wait for the old connection to report that it closed.
 constexpr qint64 kRefreshWaitMs = 4000;
+constexpr int kMouseSendIntervalMs = 16;
+constexpr uint kNetworkWan = 5;
+constexpr uint kNetworkAutoDetect = 7;
+constexpr int kConnectPollMs = 500;
+constexpr int kConnectedPollMs = 1500;
 
 // Newest installed control first.
 const char *const kControlClsids[] = {
@@ -67,6 +72,11 @@ const char *const kControlClsids[] = {
     "{A3BC03A0-041D-42E3-AD22-882B7865C9C5}", // v9
     "{54D38BF7-B1EF-4479-9674-1BD6EA465258}", // v8
 };
+
+uint deviceScale(uint desktopScale)
+{
+    return desktopScale >= 180 ? 180 : (desktopScale >= 140 ? 140 : 100);
+}
 
 } // namespace
 
@@ -172,7 +182,7 @@ protected:
         const qreal ease = 1.0 - std::pow(1.0 - in, 3.0);
 
         // The muted colours of the theme, not bright signal colours.
-        QColor tint = Theme::kBlue;
+        QColor tint = Theme::kLabelSecondary;
         if (m_tone == Warning)
             tint = Theme::kOrange;
         else if (m_tone == Error)
@@ -186,10 +196,10 @@ protected:
         p.translate(c);
         p.setPen(Qt::NoPen);
         const QRectF tile(-30, -30, 60, 60);
-        p.setBrush(tint);
+        p.setBrush(Theme::kAccentSoft);
         p.drawRect(tile);
-        p.setBrush(QColor(255, 255, 255, 46));
-        p.setPen(QPen(Qt::white, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(tint, 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         const QRectF screen(-17, -19, 34, 24);
         p.drawRect(screen);
         p.drawLine(QPointF(0, 6.5), QPointF(0, 12));
@@ -248,7 +258,7 @@ RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
     connect(m_overlay, &SessionOverlay::reconnectClicked, this, &RdpSession::reconnect);
     connect(m_overlay, &SessionOverlay::closeClicked, this, &RdpSession::closeRequested);
 
-    m_poll.setInterval(500);
+    m_poll.setInterval(kConnectPollMs);
     connect(&m_poll, &QTimer::timeout, this, &RdpSession::poll);
     m_resizeTimer.setSingleShot(true);
     m_resizeTimer.setInterval(250);
@@ -263,16 +273,14 @@ RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
 QSize RdpSession::remoteSize() const
 {
     const qreal dpr = devicePixelRatioF();
-    // Even, 200..8192
-    const int w = qBound(200, int(m_ax->width() * dpr) & ~1, 8192);
-    const int h = qBound(200, int(m_ax->height() * dpr) & ~1, 8192);
-    return {w, h};
+    return {qBound(200, int(m_ax->width() * dpr) & ~1, 8192),
+            qBound(200, int(m_ax->height() * dpr) & ~1, 8192)};
 }
 
 void RdpSession::resizeEvent(QResizeEvent *e)
 {
     QWidget::resizeEvent(e);
-    if (m_state == Connected && !m_profile.fixedResolution().isValid())
+    if (m_state == Connected && isVisible() && !m_profile.fixedResolution().isValid())
         m_resizeTimer.start();
 }
 
@@ -289,6 +297,8 @@ void RdpSession::changeEvent(QEvent *e)
 void RdpSession::showEvent(QShowEvent *e)
 {
     QWidget::showEvent(e);
+    if (m_state == Connected && !m_profile.fixedResolution().isValid())
+        m_resizeTimer.start();
     QTimer::singleShot(0, this, &RdpSession::focusRemote);
 }
 
@@ -367,25 +377,22 @@ void RdpSession::focusRemote()
 
 uint RdpSession::desktopScale() const
 {
-    return uint(qMax(100.0, devicePixelRatioF() * 100.0));
-}
-
-uint RdpSession::deviceScale() const
-{
-    const uint scale = desktopScale();
-    return scale >= 180 ? 180 : (scale >= 140 ? 140 : 100);
+    return uint(qBound(100, qRound(devicePixelRatioF() * 100.0), 500));
 }
 
 void RdpSession::syncDisplaySize()
 {
-    if (m_state != Connected || m_ax->isNull() || m_profile.fixedResolution().isValid())
+    if (m_state != Connected || m_ax->isNull() || !isVisible() || window()->isMinimized()
+        || m_profile.fixedResolution().isValid())
         return;
     const QSize s = remoteSize();
-    if (s == m_syncedSize)
+    const uint scale = desktopScale();
+    if (s == m_syncedSize && scale == m_syncedScale)
         return;
     m_syncedSize = s;
+    m_syncedScale = scale;
     m_ax->dynamicCall("UpdateSessionDisplaySettings(uint,uint,uint,uint,uint,uint,uint)",
-                      uint(s.width()), uint(s.height()), 0u, 0u, 0u, desktopScale(), deviceScale());
+                      uint(s.width()), uint(s.height()), 0u, 0u, 0u, scale, deviceScale(scale));
 }
 
 void RdpSession::poll()
@@ -396,7 +403,7 @@ void RdpSession::poll()
     if (c != 0)
         m_sawActive = true;
     const qint64 elapsed = m_connectClock.elapsed();
-    if (c != m_lastPolled || elapsed - m_lastHeartbeat >= 5000) {
+    if (Log::detailed() && (c != m_lastPolled || elapsed - m_lastHeartbeat >= 5000)) {
         m_lastHeartbeat = elapsed;
         m_lastPolled = c;
         Log::detail(QStringLiteral("[%1] poll +%2ms Connected=%3 state=%4 visible=%5 ext=%6")
@@ -465,7 +472,7 @@ void RdpSession::repaintRemote()
     if (m_ax->isNull())
         return;
     RedrawWindow(reinterpret_cast<HWND>(m_ax->winId()), nullptr, nullptr,
-                 RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                 RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
 bool RdpSession::createControl()
@@ -489,7 +496,8 @@ bool RdpSession::createControl()
     connect(m_ax, SIGNAL(OnDisconnected(int)), this, SLOT(onDisconnected(int)));
     // Every COM event, including ones without a slot above.
     connect(m_ax, &QAxWidget::signal, this, [this](const QString &name, int argc, void *) {
-        Log::detail(QStringLiteral("[%1] event %2 (%3 args)").arg(m_profile.name, name).arg(argc));
+        if (Log::detailed())
+            Log::detail(QStringLiteral("[%1] event %2 (%3 args)").arg(m_profile.name, name).arg(argc));
     });
     connect(m_ax, &QAxWidget::exception, this, [this](int code, const QString &src, const QString &desc, const QString &help) {
         log(QStringLiteral("COM exception %1 src=%2 desc=%3 help=%4").arg(code).arg(src, desc, help));
@@ -513,6 +521,7 @@ void RdpSession::replaceControl()
     m_overlay->raise();
     m_stack->activate();
     m_syncedSize = {};
+    m_syncedScale = 0;
     log(QStringLiteral("control replaced"));
 }
 
@@ -578,11 +587,18 @@ void RdpSession::applySettings()
         adv->setProperty("keepAliveInterval", 10000);
         adv->setProperty("BitmapPeristence", 1);
         adv->setProperty("Compress", 1);
-        // No wallpaper, full-window drag, menu animations or cursor shadow.
+        // Keep visual effects light when the server cannot determine the connection type.
         adv->setProperty("PerformanceFlags", 0x1 | 0x2 | 0x4 | 0x20 | 0x80);
-        // LAN: auto-detect lets the server pick lossy codecs on internet links, which blurs text.
-        adv->setProperty("NetworkConnectionType", 6);
-        adv->setProperty("BandwidthDetection", false);
+        if (!adv->setProperty("NetworkConnectionType", kNetworkAutoDetect))
+            adv->setProperty("NetworkConnectionType", kNetworkWan);
+        const bool bandwidthDetectionSet = adv->setProperty("BandwidthDetection", true);
+        const int mouseInterval = adv->property("minInputSendInterval").toInt();
+        if (mouseInterval > kMouseSendIntervalMs)
+            adv->setProperty("minInputSendInterval", kMouseSendIntervalMs);
+        log(QStringLiteral("RDP network type=%1 bandwidth detection requested=%2 mouse interval=%3 ms")
+                .arg(adv->property("NetworkConnectionType").toUInt())
+                .arg(bandwidthDetectionSet)
+                .arg(adv->property("minInputSendInterval").toInt()));
     }
 
     // Windows key, Alt+Tab and the like go to the server while this tab has the keyboard, not to this PC. The control
@@ -594,25 +610,35 @@ void RdpSession::applySettings()
         log(QStringLiteral("SecuredSettings2 object: MISSING (Windows key and Alt+Tab stay on this PC)"));
     }
 
-    // Opens the session at the local DPI instead of 100% until the first resize.
+    const uint scale = fixed.isValid() ? 0 : desktopScale();
     IMsRdpExtendedSettings *ext = nullptr;
-    if (!fixed.isValid()
-        && m_ax->queryInterface(QUuid(QStringLiteral("{302d8188-0052-4807-806a-362b628f9ac5}")),
+    if (m_ax->queryInterface(QUuid(QStringLiteral("{302d8188-0052-4807-806a-362b628f9ac5}")),
                                 reinterpret_cast<void **>(&ext)) == S_OK && ext) {
-        const auto put = [ext](const wchar_t *name, uint value) {
+        const auto put = [ext](const wchar_t *name, VARIANT value) {
             BSTR n = SysAllocString(name);
-            VARIANT v;
-            VariantInit(&v);
-            v.vt = VT_UI4;
-            v.ulVal = value;
-            ext->put_Property(n, &v);
+            const HRESULT result = ext->put_Property(n, &value);
             SysFreeString(n);
+            return result;
         };
-        put(L"DesktopScaleFactor", desktopScale());
-        put(L"DeviceScaleFactor", deviceScale());
+        VARIANT value{};
+        value.vt = VT_BOOL;
+        value.boolVal = VARIANT_TRUE;
+        const HRESULT hardware = put(L"EnableHardwareMode", value);
+        const HRESULT urcp = put(L"UseURCP", value); // Used only when the RDP connection negotiates UDP.
+        Log::detail(QStringLiteral("[%1] RDP hardware decoding hr=0x%2 UDP rate control hr=0x%3")
+                        .arg(m_profile.name).arg(quint32(hardware), 8, 16, QLatin1Char('0'))
+                        .arg(quint32(urcp), 8, 16, QLatin1Char('0')));
+        if (!fixed.isValid()) {
+            value.vt = VT_UI4;
+            value.ulVal = scale;
+            put(L"DesktopScaleFactor", value);
+            value.ulVal = deviceScale(scale);
+            put(L"DeviceScaleFactor", value);
+        }
         ext->Release();
     }
     m_syncedSize = size;
+    m_syncedScale = scale;
 
     if (!m_profile.password.isEmpty()) {
         IMsTscNonScriptable *ns = nullptr;
@@ -668,7 +694,7 @@ void RdpSession::start()
         m_ax->dynamicCall("Connect()");
         log(QStringLiteral("Connect() returned"));
         m_connectCalledAt = m_connectClock.elapsed();
-        m_poll.start();
+        m_poll.start(m_state == Connected ? kConnectedPollMs : kConnectPollMs);
     });
 }
 
@@ -697,6 +723,7 @@ void RdpSession::refresh()
     // The server session stays logged in.
     m_refreshing = true;
     m_refreshSince = m_connectClock.elapsed();
+    m_poll.setInterval(kConnectPollMs);
     m_ax->dynamicCall("Disconnect()");
 }
 
@@ -744,22 +771,40 @@ void RdpSession::onConnected()
 
 void RdpSession::onLoginComplete()
 {
+    if (m_closing || m_refreshing || m_state == Connected)
+        return;
+
     log(QStringLiteral("login complete"));
     m_everConnected = true;
     m_retryAttempt = 0;
     m_overlay->hide();
+    m_poll.setInterval(kConnectedPollMs);
     setState(Connected);
     repaintRemote();
     focusRemote();
     const QSize before = m_syncedSize;
+    const uint beforeScale = m_syncedScale;
     syncDisplaySize();
     // The display channel may not be open yet at login; the first resize can be lost.
-    if (m_syncedSize != before)
-        QTimer::singleShot(2000, this, [this] {
-            m_syncedSize = {};
-            syncDisplaySize();
-            repaintRemote();
+    if (m_syncedSize != before || m_syncedScale != beforeScale) {
+        QTimer::singleShot(2000, m_ax, [this, control = m_ax] {
+            if (control == m_ax && m_state == Connected && !m_refreshing) {
+                m_syncedScale = 0;
+                syncDisplaySize();
+            }
         });
+    }
+}
+
+QString RdpSession::connectedUser() const
+{
+    if (m_state != Connected || m_ax->isNull())
+        return {};
+    const QString user = m_ax->property("UserName").toString();
+    if (user.isEmpty() || user.contains(QLatin1Char('\\')) || user.contains(QLatin1Char('@')))
+        return user;
+    const QString domain = m_ax->property("Domain").toString();
+    return domain.isEmpty() ? user : domain + QLatin1Char('\\') + user;
 }
 
 void RdpSession::onDisconnected(int reason)

@@ -58,12 +58,12 @@ QIcon homeIcon()
         return pm;
     };
     QIcon icon;
-    icon.addPixmap(draw(Theme::kIconLine), QIcon::Normal, QIcon::Off);
-    icon.addPixmap(draw(Theme::kLabel), QIcon::Normal, QIcon::On);
+    icon.addPixmap(draw(Theme::kLabelSecondary), QIcon::Normal, QIcon::Off);
+    icon.addPixmap(draw(Theme::kBlueText), QIcon::Normal, QIcon::On);
     return icon;
 }
 
-// The state marker of a tab: a small flat square. Icons are cached by colour, since the marker of a tab that is
+// The state marker of a tab. Icons are cached by colour, since the marker of a tab that is
 // still connecting changes many times a second.
 QIcon dotIcon(const QColor &c)
 {
@@ -77,7 +77,8 @@ QIcon dotIcon(const QColor &c)
     QPainter p(&pm);
     p.setPen(Qt::NoPen);
     p.setBrush(c);
-    p.drawRect(QRect(5, 7, 7, 7));
+    p.setRenderHint(QPainter::Antialiasing);
+    p.drawEllipse(QRectF(4, 4, 7, 7));
     const QIcon icon(pm);
     cache.insert(c.rgba(), icon);
     return icon;
@@ -136,7 +137,7 @@ SessionWindow::SessionWindow(QWidget *home, QWidget *parent)
     m_topBar->setObjectName(QStringLiteral("topBar"));
     m_topBar->setFixedHeight(AnimatedTabBar::kHeight);
     auto *bar = new QHBoxLayout(m_topBar);
-    bar->setContentsMargins(0, 0, 0, 0);
+    bar->setContentsMargins(8, 0, 0, 1);
     bar->setSpacing(0);
 
     // macOS style buttons, left; shown in full screen only.
@@ -165,7 +166,7 @@ SessionWindow::SessionWindow(QWidget *home, QWidget *parent)
     m_homeTab->setCheckable(true);
     m_homeTab->setChecked(true);
     m_homeTab->setCursor(Qt::PointingHandCursor);
-    m_homeTab->setFixedHeight(AnimatedTabBar::kHeight);
+    m_homeTab->setFixedSize(40, AnimatedTabBar::kHeight);
     m_homeTab->setVisible(isMain());
     connect(m_homeTab, &QToolButton::clicked, this, &SessionWindow::showHome);
     bar->addWidget(m_homeTab);

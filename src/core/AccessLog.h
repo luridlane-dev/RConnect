@@ -1,6 +1,7 @@
 #pragma once
 #include "WinRm.h"
 
+#include <QDateTime>
 #include <QHash>
 #include <QList>
 #include <QString>
@@ -15,7 +16,7 @@ struct AccessRecord {
     QString serverId;
     QString server;    // name when the line was written
     QString host;
-    QString source;    // LSM, RCM, SEC (server event logs) or RCONNECT (done through this program)
+    QString source;    // Windows log query (LSM, RCM, SEC, AUD, SYS) or RCONNECT
     QString event;     // see AccessLog::events()
     QString user;      // account that logged on (or, for RCONNECT lines, the one used on the server)
     QString address;   // client IP address
@@ -46,16 +47,16 @@ const QStringList &events();
 QHash<QString, EventCursor> cursors(const QString &serverId);
 
 // A check of the server succeeded: writes the events that are new and moves the cursors.
-// Returns how many lines were added.
+// Returns how many lines were added, or -1 on a write failure.
 // `live` are the sessions the server has right now: they give the computer name of people who
 // signed in without RConnect, which the event logs rarely carry.
 // `written` (optional) receives the new lines as records, oldest first per log.
 int polled(const ServerProfile &server, const QList<AccessEvent> &events, const QList<RemoteSession> &live,
-           QList<AccessRecord> *written = nullptr);
+           QList<AccessRecord> *written = nullptr, const QSet<QString> &failedSources = {});
 
 // Records something done through RConnect, e.g. "Connect" or "Monitor", for the Windows user running it.
 void note(const ServerProfile &server, const QString &event, const QString &user, const QString &detail = {},
-          const QString &address = {});
+          const QString &address = {}, const QDateTime &when = QDateTime::currentDateTimeUtc());
 
 // Records a warning RConnect worked out from the events (see Threats), e.g. "AlertBruteForce".
 // `timeUtc` is the time of the event that caused it.

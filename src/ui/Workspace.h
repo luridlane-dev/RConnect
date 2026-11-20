@@ -6,13 +6,14 @@
 #include <QHash>
 #include <QList>
 #include <QObject>
-#include <QSet>
+#include <QThreadPool>
 
 #include <optional>
 #include <string>
 
 class HomePage;
 class QFrame;
+class QMessageBox;
 class QPoint;
 class QScreen;
 class QSystemTrayIcon;
@@ -63,13 +64,10 @@ private:
     void updateLiveSessions();
     void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
-    void enableAuditing(const QString &id);
-    // Lets the server send up to 60 frames a second and full-colour (sharper) text.
-    void tuneDisplay(const QString &id);
+    void sendMessage(const QString &id, int sessionId, const QString &user);
     void showAlert(const AccessRecord &alert);
     void showStranger(const QString &server, const QString &client, const QString &user);
     QSystemTrayIcon *tray();
-    void sendMessage(const QString &serverId, int sessionId, const QString &user);
     // Detailed logging only: what was done in RConnect, written to the activity history.
     static void audit(const ServerProfile &p, const QString &event, const QString &detail = {});
 
@@ -93,6 +91,7 @@ private:
     QHash<SessionWindow *, QFrame *> m_popups;
     QSystemTrayIcon *m_tray = nullptr; // created with the first alert
     QHash<QString, RdpSession *> m_sessions;
-    QSet<QString> m_pendingOpens; // waiting for the session check
+    QHash<QString, QMessageBox *> m_pendingOpens;
+    QThreadPool m_connectLogPool;
     bool m_quitting = false;
 };
