@@ -2,6 +2,8 @@
 
 #include <QDateTime>
 #include <QMap>
+#include <QRegularExpression>
+#include <QSet>
 
 #include <algorithm>
 
@@ -122,7 +124,7 @@ struct Raw {
     bool startKnown = true, endKnown = true, open = false;
     qint64 endBound = 0;      // !endKnown: when the next connection began
     qint64 previousEvent = 0; // !startKnown: time of the session's previous event, or 0
-    QString server, user, address;
+    QString server, user, address, client;
 };
 
 QString clientOf(const QList<const Sample *> &seen)
@@ -151,6 +153,24 @@ bool Visit::inferred() const
 QString accountOf(const QString &user)
 {
     return user.mid(user.lastIndexOf(QLatin1Char('\\')) + 1);
+}
+
+QString personNameOf(const QString &alias)
+{
+    const QString trimmed = alias.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    static const QRegularExpression suffix(QStringLiteral("(?:(?:\\s*[-_]\\s*|\\s+)#?\\d+|\\s*\\(\\d+\\))$"));
+    QString base = trimmed;
+    base.remove(suffix);
+    base = base.trimmed();
+    bool hasLetter = false;
+    for (QChar ch : std::as_const(base))
+        if (ch.isLetter()) {
+            hasLetter = true;
+            break;
+        }
+    return base.size() >= 2 && hasLetter ? base : trimmed;
 }
 
 QDate dayOf(qint64 ms, const QTimeZone &zone)
@@ -228,9 +248,12 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 cur.server = e.server;
                 cur.user = e.user;
                 cur.address = e.address;
+                cur.client = e.client;
                 on = true;
             } else if (on && sameAccount(cur.user, e.user)) {
                 cur.end = e.ms;
+                if (cur.client.isEmpty() && !e.client.isEmpty())
+                    cur.client = e.client;
                 raws << cur;
                 on = false;
             } else if (e.kind == Event::Disconnect) {
@@ -242,6 +265,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 r.server = e.server;
                 r.user = e.user;
                 r.address = e.address;
+                r.client = e.client;
                 raws << r;
             }
             previousEvent = e.ms;
@@ -301,6 +325,8 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             seg.open = r.open;
             const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end, r.user);
             seg.client = clientOf(seen);
+            if (seg.client.isEmpty())
+                seg.client = r.client;
             seg.parts = classify(seg.start, seg.end, seen);
             if (!r.startKnown && seg.start == seg.end && seen.isEmpty())
                 continue; // just a stray disconnect
@@ -517,6 +543,153 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
     for (DayGroup &g : report.days)
         std::sort(g.visits.begin(), g.visits.end(), [](const DayVisit &x, const DayVisit &y) { return x.start < y.start; });
     return report;
+}
+
+Time unionOf(const QList<Part> &parts)
+{
+    struct Edge {
+        qint64 at = 0;
+        int kind = 0;
+        int delta = 0;
+    };
+    QList<Edge> edges;
+    edges.reserve(parts.size() * 2);
+    for (const Part &p : parts) {
+        if (p.end <= p.start)
+            continue;
+        edges << Edge{p.start, int(p.kind), 1} << Edge{p.end, int(p.kind), -1};
+    }
+    std::sort(edges.begin(), edges.end(), [](const Edge &x, const Edge &y) { return x.at < y.at; });
+
+    Time time;
+    int open[3] = {};
+    qint64 previous = 0;
+    for (const Edge &e : std::as_const(edges)) {
+        if (e.at > previous) {
+            const qint64 span = e.at - previous;
+            if (open[int(Kind::Active)] > 0)
+                time.activeMs += span;
+            else if (open[int(Kind::Unknown)] > 0)
+                time.unknownMs += span;
+            else if (open[int(Kind::Afk)] > 0)
+                time.afkMs += span;
+        }
+        open[e.kind] += e.delta;
+        previous = e.at;
+    }
+    return time;
+}
+
+QList<Person> people(const Report &report, const QDate &from, const QDate &to, const WhoOf &who, Breakdown by)
+{
+    struct Acc {
+        Person person;
+        QList<Part> parts;
+        QList<QList<Part>> shareParts;
+        QHash<QString, int> shareIndex;
+        QSet<QDate> days;
+        qint64 summedNetMs = 0;
+    };
+    auto note = [](QStringList &list, const QString &text) {
+        if (!text.isEmpty() && !list.contains(text, Qt::CaseInsensitive))
+            list << text;
+    };
+
+    QHash<QString, int> index;
+    QList<Acc> accs;
+    for (const DayGroup &g : report.days) {
+        if (g.day < from || g.day > to)
+            continue;
+        for (const DayVisit &dv : g.visits) {
+            const Visit &v = report.visits.at(dv.visit);
+            const Who w = who(v);
+            int pi = index.value(w.key, -1);
+            if (pi < 0) {
+                pi = int(accs.size());
+                index.insert(w.key, pi);
+                accs << Acc();
+                accs.last().person.key = w.key;
+                accs.last().person.name = w.name;
+            }
+            Acc &a = accs[pi];
+            Person &p = a.person;
+
+            Entry e;
+            e.visit = dv.visit;
+            e.day = g.day;
+            e.slice = dv;
+            e.uncertain = v.inferred() || (!v.startKnown() && !dv.fromPreviousDay)
+                          || (!v.endKnown() && !dv.intoNextDay && !dv.open);
+
+            const QString shareKey = by == Breakdown::ByServer ? v.serverId : g.day.toString(Qt::ISODate);
+            int si = a.shareIndex.value(shareKey, -1);
+            if (si < 0) {
+                si = int(p.shares.size());
+                a.shareIndex.insert(shareKey, si);
+                Share s;
+                if (by == Breakdown::ByServer) {
+                    s.serverId = v.serverId;
+                    s.server = v.server;
+                } else {
+                    s.day = g.day;
+                }
+                p.shares << s;
+                a.shareParts << QList<Part>();
+            }
+            Share &s = p.shares[si];
+            s.entries << e;
+            s.lastEnd = qMax(s.lastEnd, dv.end);
+            s.open |= dv.open;
+            s.uncertain |= e.uncertain;
+            a.shareParts[si] += dv.parts;
+
+            a.parts += dv.parts;
+            a.summedNetMs += dv.activeMs + dv.unknownMs;
+            if (!dv.parts.isEmpty() || dv.open)
+                a.days.insert(g.day);
+            p.lastEnd = qMax(p.lastEnd, dv.end);
+            p.open |= dv.open;
+            p.uncertain |= e.uncertain;
+            note(p.computers, v.client);
+            note(p.addresses, v.address);
+            note(p.accounts, v.user);
+            note(p.servers, v.server);
+        }
+    }
+
+    QList<Person> out;
+    out.reserve(accs.size());
+    for (Acc &a : accs) {
+        Person &p = a.person;
+        p.time = unionOf(a.parts);
+        p.overlapMs = qMax<qint64>(0, a.summedNetMs - p.time.netMs());
+        p.days = int(a.days.size());
+        for (qsizetype i = 0; i < p.shares.size(); ++i) {
+            Share &s = p.shares[i];
+            s.time = unionOf(a.shareParts.at(i));
+            std::sort(s.entries.begin(), s.entries.end(), [](const Entry &x, const Entry &y) {
+                return x.slice.start < y.slice.start;
+            });
+        }
+        std::sort(p.shares.begin(), p.shares.end(), [by](const Share &x, const Share &y) {
+            if (by == Breakdown::ByDay)
+                return x.day > y.day;
+            if (x.time.netMs() != y.time.netMs())
+                return x.time.netMs() > y.time.netMs();
+            if (x.time.totalMs() != y.time.totalMs())
+                return x.time.totalMs() > y.time.totalMs();
+            return x.server.compare(y.server, Qt::CaseInsensitive) < 0;
+        });
+        out << p;
+    }
+    std::sort(out.begin(), out.end(), [](const Person &x, const Person &y) {
+        if (x.time.netMs() != y.time.netMs())
+            return x.time.netMs() > y.time.netMs();
+        if (x.time.totalMs() != y.time.totalMs())
+            return x.time.totalMs() > y.time.totalMs();
+        return x.name.compare(y.name, Qt::CaseInsensitive) < 0;
+    });
+    return out;
 }
 
 } // namespace UsageEngine

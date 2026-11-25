@@ -1,5 +1,7 @@
 package com.rconnect.android.data
 
+import java.util.Locale
+
 /**
  * Reads a pasted list, one server per line: `ip;user;password;name;group` (name and group are optional).
  * The separator is `;` or a tab (so spreadsheet rows can be pasted); a first line that starts with
@@ -27,5 +29,5 @@ object ServerImport {
         return Result(added, skipped)
     }
 
-    private fun key(host: String, user: String) = host.lowercase() + "|" + user.lowercase()
+    private fun key(host: String, user: String) = host.lowercase(Locale.ROOT) + "|" + user.lowercase(Locale.ROOT)
 }

@@ -6,6 +6,7 @@
 #include "ServerPanel.h"
 #include "SessionWindow.h"
 #include "Theme.h"
+#include "UsagePage.h"
 #include "core/AccessLog.h"
 #include "core/Contacts.h"
 #include "core/Log.h"
@@ -17,9 +18,13 @@
 #include "model/ServerStore.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QMutex>
 #include <QRegularExpression>
 #include <QSystemTrayIcon>
 #include <QFile>
@@ -124,6 +129,9 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
     connect(m_home->accessLog(), &AccessLogPage::syncRequested, m_monitor, &StatusMonitor::refreshEvents);
     connect(m_monitor, &StatusMonitor::eventSyncChanged, m_home->accessLog(), &AccessLogPage::setSyncState);
+    connect(m_home->usage(), &UsagePage::syncRequested, m_monitor, &StatusMonitor::refreshEvents);
+    connect(m_home->usage(), &UsagePage::configureServersRequested, this, &Workspace::configureServerLogging);
+    connect(m_monitor, &StatusMonitor::eventSyncChanged, m_home->usage(), &UsagePage::onServerSynced);
     connect(m_monitor, &StatusMonitor::unknownPerson, this, &Workspace::showStranger);
     ServerPanel *panel = m_home->panel();
     connect(panel, &ServerPanel::messageRequested, this, &Workspace::sendMessage);
@@ -897,6 +905,121 @@ void Workspace::sendMessage(const QString &id, int sessionId, const QString &use
             box->open();
         }, Qt::QueuedConnection);
     }, 1);
+}
+
+void Workspace::configureServerLogging()
+{
+    QList<ServerProfile> targets;
+    for (const ServerProfile &p : m_store->all())
+        if (StatusMonitor::canCheckSessions(p))
+            targets << p;
+    if (targets.isEmpty()) {
+        QMessageBox::information(dialogParent(), tr("Configure servers"),
+            tr("No servers have WinRM session checks enabled."));
+        return;
+    }
+
+    QDialog dlg(dialogParent());
+    dlg.setWindowTitle(tr("Configure servers"));
+    dlg.setMinimumWidth(480);
+    auto *lay = new QVBoxLayout(&dlg);
+    lay->setSpacing(12);
+
+    auto *intro = new QLabel(
+        tr("Applies built-in Windows settings on %1 servers over WinRM (nothing is installed on the servers):\n\n"
+           "1. Client computer name logging (Security 4778/4779): enables Windows’ built-in "
+           "“Other Logon/Logoff Events” audit policy so every RDP connection records the client computer name, "
+           "even behind a shared IP and when RConnect is closed.\n\n"
+           "2. Idle RDP session limit (optional): disconnects an idle RDP session after the chosen duration "
+           "so open programs keep running while idle time ends in the server log.")
+            .arg(targets.size()),
+        &dlg);
+    intro->setWordWrap(true);
+    lay->addWidget(intro);
+
+    auto *idleLabel = new QLabel(tr("Idle RDP session disconnect limit:"), &dlg);
+    auto *idleCombo = new QComboBox(&dlg);
+    idleCombo->addItem(tr("20 minutes (recommended)"), 20);
+    idleCombo->addItem(tr("30 minutes"), 30);
+    idleCombo->addItem(tr("15 minutes"), 15);
+    idleCombo->addItem(tr("Disable (no limit)"), 0);
+    idleCombo->addItem(tr("Leave unchanged"), -1);
+    lay->addWidget(idleLabel);
+    lay->addWidget(idleCombo);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    lay->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const int idleMinutes = idleCombo->currentData().toInt();
+    // {0CCE921C-69AE-11D9-BED3-505054503030} is the language-independent GUID for "Other Logon/Logoff Events".
+    QString command = QStringLiteral("auditpol /set /subcategory:\"{0CCE921C-69AE-11D9-BED3-505054503030}\" /success:enable");
+    if (idleMinutes > 0) {
+        command += QStringLiteral(" && reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\" "
+                                  "/v MaxIdleTime /t REG_DWORD /d %1 /f")
+                       .arg(qint64(idleMinutes) * 60000);
+    } else if (idleMinutes == 0) {
+        command += QStringLiteral(" && (reg delete \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\" "
+                                  "/v MaxIdleTime /f 2>nul || exit /b 0)");
+    }
+    command += QStringLiteral(" && echo ##RCOK##");
+
+    m_home->usage()->setConfiguringServers(true);
+
+    struct Batch {
+        QMutex mutex;
+        int remaining = 0;
+        int ok = 0;
+        int total = 0;
+        QStringList failed;
+    };
+    auto batch = std::make_shared<Batch>();
+    batch->remaining = batch->total = int(targets.size());
+
+    QPointer<Workspace> self(this);
+    for (const ServerProfile &p : std::as_const(targets)) {
+        QThreadPool::globalInstance()->start([self, p, command, batch] {
+            const SessionQuery reply = WinRm::runCommand(p.host, p.user, p.domain, p.password, 15000, command);
+            const bool succeeded = reply.result == SessionQuery::Ok && reply.output.contains("##RCOK##");
+            QString err = reply.error;
+            if (!succeeded && err.isEmpty())
+                err = QString::fromUtf8(reply.output).simplified().left(200);
+            if (succeeded)
+                AccessLog::note(p, QStringLiteral("ServerConfigured"), p.displayUser(), QStringLiteral("auditpol 4778/4779"));
+
+            bool finished = false;
+            {
+                QMutexLocker lock(&batch->mutex);
+                if (succeeded)
+                    ++batch->ok;
+                else
+                    batch->failed << QStringLiteral("• %1: %2").arg(p.name, err.isEmpty() ? QStringLiteral("failed") : err);
+                finished = --batch->remaining == 0;
+            }
+            if (!finished)
+                return;
+
+            QMetaObject::invokeMethod(qApp, [self, batch] {
+                if (!self || self->m_quitting)
+                    return;
+                self->m_home->usage()->setConfiguringServers(false);
+                self->m_monitor->refreshEvents({});
+                auto *box = new QMessageBox(batch->failed.isEmpty() ? QMessageBox::Information : QMessageBox::Warning,
+                                            tr("Configure servers"), {}, QMessageBox::Ok, self->dialogParent());
+                box->setTextFormat(Qt::PlainText);
+                box->setText(tr("%1 of %2 servers configured.").arg(batch->ok).arg(batch->total));
+                if (!batch->failed.isEmpty())
+                    box->setInformativeText(batch->failed.join(QLatin1Char('\n')));
+                box->setAttribute(Qt::WA_DeleteOnClose);
+                box->open();
+            }, Qt::QueuedConnection);
+        });
+    }
 }
 
 // A warning from Threats, or a tampering event, as a Windows notification.

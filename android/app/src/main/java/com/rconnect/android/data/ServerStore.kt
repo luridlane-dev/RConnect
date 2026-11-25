@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
@@ -21,8 +22,9 @@ data class ServerEntry(
     val user: String,
     val password: String,
     val group: String = "",
-    /** Remote Desktop port. The phone only talks WinRM, but the number goes back into an export unchanged. */
+    /** Remote Desktop port, used for reachability checks and kept on export. */
     val port: Int = 3389,
+    val favorite: Boolean = false,
     /** Fields of an imported file the phone does not use (colour, notes, ...), kept as JSON so an export gives them back. */
     val extra: String = "",
 ) {
@@ -32,10 +34,18 @@ data class ServerEntry(
 /** Passwords are encrypted with a key that never leaves the phone's keystore. */
 private object Vault {
     private const val ALIAS = "rconnect_passwords"
+    private const val IV_BYTES = 12
+    private const val TAG_BYTES = 16
 
-    private fun key(): SecretKey {
+    @Synchronized
+    private fun key(recreate: Boolean = false): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        if (recreate) {
+            runCatching { store.deleteEntry(ALIAS) }
+        } else {
+            runCatching { store.getKey(ALIAS, null) as? SecretKey }.getOrNull()?.let { return it }
+            runCatching { if (store.containsAlias(ALIAS)) store.deleteEntry(ALIAS) }
+        }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(
             KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
@@ -47,19 +57,35 @@ private object Vault {
         return generator.generateKey()
     }
 
+    @Synchronized
     fun encrypt(plain: String): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val data = cipher.doFinal(plain.toByteArray())
+        if (plain.isEmpty()) return ""
+        return try {
+            seal(plain, key())
+        } catch (_: Exception) {
+            // The keystore key can be invalidated after a lock-screen or OS change; create a fresh one.
+            runCatching { seal(plain, key(recreate = true)) }.getOrDefault("")
+        }
+    }
+
+    private fun seal(plain: String, secret: SecretKey): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, secret) }
+        val data = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
         return Base64.encodeToString(cipher.iv + data, Base64.NO_WRAP)
     }
 
-    fun decrypt(encoded: String): String = try {
-        val raw = Base64.decode(encoded, Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            .apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw, 0, 12)) }
-        String(cipher.doFinal(raw, 12, raw.size - 12))
-    } catch (e: Exception) {
-        "" // key lost (for example after a restore): the person enters the password again
+    @Synchronized
+    fun decrypt(encoded: String): String {
+        if (encoded.isEmpty()) return ""
+        return try {
+            val raw = Base64.decode(encoded, Base64.NO_WRAP)
+            if (raw.size < IV_BYTES + TAG_BYTES) return ""
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                .apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BYTES * 8, raw, 0, IV_BYTES)) }
+            String(cipher.doFinal(raw, IV_BYTES, raw.size - IV_BYTES), Charsets.UTF_8)
+        } catch (_: Exception) {
+            "" // key lost (for example after a restore): the person enters the password again
+        }
     }
 }
 
@@ -73,7 +99,7 @@ class ClientNames(context: Context) {
     fun get(serverId: String, address: String): String = prefs.getString("$serverId|$address", "").orEmpty()
 
     fun put(serverId: String, address: String, name: String) {
-        if (get(serverId, address) != name) prefs.edit().putString("$serverId|$address", name).apply()
+        if (get(serverId, address) != name) prefs.edit { putString("$serverId|$address", name) }
     }
 }
 
@@ -82,14 +108,25 @@ class ServerStore(context: Context) {
 
     // One damaged entry must not take the whole list with it: the next save would write the shortened list back.
     fun load(): List<ServerEntry> {
-        val array = try { JSONArray(prefs.getString("list", "[]")) } catch (e: Exception) { return emptyList() }
+        val array = try { JSONArray(prefs.getString("list", "[]")) } catch (_: Exception) { return emptyList() }
         return (0 until array.length()).mapNotNull {
             try {
                 val o = array.getJSONObject(it)
-                ServerEntry(o.getString("id"), o.optString("name"), o.getString("host"), o.optString("user"),
-                    Vault.decrypt(o.optString("password")), o.optString("group"),
-                    o.optInt("port", 3389).takeIf { p -> p in 1..65535 } ?: 3389, o.optString("extra"))
-            } catch (e: Exception) {
+                val extraStr = o.optString("extra")
+                val favorite = if (o.has("favorite")) o.optBoolean("favorite", false)
+                else runCatching { JSONObject(extraStr).optBoolean("IsFavorite", false) }.getOrDefault(false)
+                ServerEntry(
+                    id = o.getString("id"),
+                    name = o.optString("name"),
+                    host = o.getString("host"),
+                    user = o.optString("user"),
+                    password = Vault.decrypt(o.optString("password")),
+                    group = o.optString("group"),
+                    port = o.optInt("port", 3389).takeIf { p -> p in 1..65535 } ?: 3389,
+                    favorite = favorite,
+                    extra = extraStr,
+                )
+            } catch (_: Exception) {
                 null
             }
         }
@@ -97,10 +134,18 @@ class ServerStore(context: Context) {
 
     fun save(servers: List<ServerEntry>) {
         val array = JSONArray()
-        for (s in servers) array.put(JSONObject().put("id", s.id).put("name", s.name).put("host", s.host)
-            .put("user", s.user).put("password", Vault.encrypt(s.password)).put("group", s.group)
-            .put("port", s.port).put("extra", s.extra))
-        // commit(), not apply(): the list is written before the app can be killed, e.g. right after an import.
-        prefs.edit().putString("list", array.toString()).commit()
+        for (s in servers) array.put(
+            JSONObject()
+                .put("id", s.id)
+                .put("name", s.name)
+                .put("host", s.host)
+                .put("user", s.user)
+                .put("password", Vault.encrypt(s.password))
+                .put("group", s.group)
+                .put("port", s.port)
+                .put("favorite", s.favorite)
+                .put("extra", s.extra),
+        )
+        prefs.edit(commit = true) { putString("list", array.toString()) }
     }
 }

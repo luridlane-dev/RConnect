@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.TimeUnit
@@ -47,25 +48,40 @@ class CheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
 
 /** One round over every server: who is connected now compared with the last round, and a notification for each change. */
 object ServerCheck {
+    private val running = Mutex()
+
     suspend fun run(context: Context) {
-        val prefs = NotificationPrefs(context)
-        if (!prefs.enabled || AppVisibility.inFront || !Notifier.canPost(context)) return
-        val servers = ServerStore(context).load()
-        if (servers.isEmpty()) return
-        val contacts = ContactStore(context).load()
-        val detector = ChangeDetector(context)
-        val parallel = Semaphore(4)
-        coroutineScope {
-            servers.map { server ->
-                async(Dispatchers.IO) {
-                    val snapshot = parallel.withPermit {
-                        runCatching { WinRmClient(server.host.trim(), server.user.trim(), server.password, timeoutMs = 15000).snapshot(false) }
+        if (!running.tryLock()) return
+        try {
+            val prefs = NotificationPrefs(context)
+            if (!prefs.enabled || AppVisibility.inFront || !Notifier.canPost(context)) return
+            val servers = ServerStore(context).load()
+            if (servers.isEmpty()) return
+            val contacts = ContactStore(context).load()
+            val detector = ChangeDetector(context)
+            val parallel = Semaphore(4)
+            coroutineScope {
+                servers.map { server ->
+                    async(Dispatchers.IO) {
+                        val snapshot = parallel.withPermit {
+                            runCatching {
+                                WinRmClient(
+                                    host = server.host.trim(),
+                                    user = server.user.trim(),
+                                    password = server.password,
+                                    timeoutMs = 15000,
+                                    rdpPort = server.port,
+                                ).snapshot(false)
+                            }
+                        }
+                        val changes = detector.detect(server.id, server.title, snapshot.isSuccess, snapshot.getOrNull()?.sessions, contacts)
+                        // The app may have been opened meanwhile; it then reports the changes itself.
+                        if (!AppVisibility.inFront) for (c in changes) if (prefs.wants(c)) Notifier.post(context, c)
                     }
-                    val changes = detector.detect(server.id, server.title, snapshot.isSuccess, snapshot.getOrNull()?.sessions, contacts)
-                    // The app may have been opened meanwhile; it then reports the changes itself.
-                    if (!AppVisibility.inFront) for (c in changes) if (prefs.wants(c)) Notifier.post(context, c)
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
+        } finally {
+            running.unlock()
         }
     }
 }

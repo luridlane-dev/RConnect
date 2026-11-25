@@ -1656,6 +1656,150 @@ Giriş sayısı: %3</translation>
         <source>Times use this PC’s clock. Simultaneous connections count separately.</source>
         <translation>Saatler bu bilgisayarın saat diliminde. Aynı anda açık bağlantılar ayrı ayrı toplanır.</translation>
     </message>
+    <message>
+        <source>Yesterday %1</source>
+        <translation>Dün %1</translation>
+    </message>
+    <message>
+        <source>Server connection time across all servers. Open a row to see each server or day and every connection.</source>
+        <translation>Tüm sunuculardaki bağlantı süreleri (uzak sunucu kayıtlarından hesaplanır). Sunucu ya da gün ayrıntısını ve tek tek bağlantıları görmek için satırı açın.</translation>
+    </message>
+    <message>
+        <source>Users</source>
+        <translation>Kullanıcı</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Aktif süre</translation>
+    </message>
+    <message>
+        <source>By server</source>
+        <translation>Sunuculara göre</translation>
+    </message>
+    <message>
+        <source>By day</source>
+        <translation>Günlere göre</translation>
+    </message>
+    <message>
+        <source>How each row is grouped when expanded.</source>
+        <translation>Satır açıldığında kayıtların neye göre gruplanacağı.</translation>
+    </message>
+    <message>
+        <source>User</source>
+        <translation>Kullanıcı</translation>
+    </message>
+    <message>
+        <source>Server connected time minus detected idle periods. Each moment counts once, even across several servers at the same time.</source>
+        <translation>Uzak sunucudaki bağlı süreden tespit edilen boşta aralıklar çıkarılarak hesaplanır. Aynı anda birden fazla sunucuya bağlı olunsa bile her an bir kez sayılır.</translation>
+    </message>
+    <message>
+        <source>Detected idle time (no keyboard or mouse input for %1 minutes or more).</source>
+        <translation>Tespit edilen boşta kalma süresi (%1 dakika veya daha uzun süre klavye ya da fare girdisi yok).</translation>
+    </message>
+    <message>
+        <source>Total connected time from the remote server logs.</source>
+        <translation>Uzak sunucu kayıtlarına göre toplam bağlı süre.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Server-based calculation.&lt;/b&gt; Sign-in, reconnect, disconnect and sign-out times are pulled directly from the remote Windows servers&apos; session logs. Connections are counted even when RConnect was not running.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Active.&lt;/b&gt; Server connected time minus detected idle stretches. When no keyboard or mouse input is detected for %1 minutes or more, that stretch counts as idle.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Several servers at once.&lt;/b&gt; Overlapping connections are merged so each minute counts once. If one server is active while another is idle, that minute counts as active. As a result, a row&apos;s total can be less than the sum of its individual servers.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Connected.&lt;/b&gt; Total connected time recorded by the remote servers. Disconnected time is never counted. Reconnections within %2 minutes are grouped as one connection, without the minutes in between.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Incomplete records.&lt;/b&gt; When the server log has no sign-in or sign-out for a connection, it is counted from or until the moment it was seen, and shown as a minimum (&quot;At least&quot;).&lt;/p&gt;&lt;p&gt;&lt;b&gt;Grouping.&lt;/b&gt; Uses the label from Contacts (numbered names like &quot;Ali&quot; and &quot;Ali-2&quot; are combined), else the computer name, else the IP address.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Sunucu tabanlı hesaplama.&lt;/b&gt; Giriş, yeniden bağlanma, kopma ve çıkış saatleri doğrudan uzak Windows sunucularının oturum kayıtlarından alınır. RConnect kapalıyken yapılan bağlantılar da eksiksiz sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Aktif süre.&lt;/b&gt; Sunucudaki bağlı süreden tespit edilen boşta aralıklar çıkarılarak hesaplanır. %1 dakika veya daha uzun süre klavye ya da fare girdisi tespit edilmezse o aralık boşta sayılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Aynı anda birden fazla sunucu.&lt;/b&gt; Çakışan bağlantılar birleştirilir ve her dakika bir kez sayılır. Bir sunucu aktifken diğeri boşta bekliyorsa o dakika aktif sayılır. Bu yüzden satır toplamı tek tek sunucuların toplamından az olabilir.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Bağlı süre.&lt;/b&gt; Uzak sunucuların kaydettiği toplam bağlı süre. Bağlantının kopuk olduğu süre sayılmaz. %2 dakika içinde yeniden bağlanmalar tek bağlantı olarak gruplanır, aradaki dakikalar sayılmaz.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Eksik kayıtlar.&lt;/b&gt; Sunucu kaydında bir bağlantının girişi veya çıkışı yoksa süre, bağlantının ilk veya son görüldüğü ana kadar sayılır ve en az süre (&quot;En az&quot;) olarak gösterilir.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Gruplama.&lt;/b&gt; Rehberdeki ad kullanılır (&quot;Ali&quot; ve &quot;Ali-2&quot; gibi numaralı adlar birleştirilir), yoksa bilgisayar adı, o da yoksa IP adresi gösterilir.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Connected now</source>
+        <translation>Şu an bağlı</translation>
+    </message>
+    <message>
+        <source>Computers: %1</source>
+        <translation>Bilgisayarlar: %1</translation>
+    </message>
+    <message>
+        <source>Addresses: %1</source>
+        <translation>Adresler: %1</translation>
+    </message>
+    <message>
+        <source>Accounts: %1</source>
+        <translation>Hesaplar: %1</translation>
+    </message>
+    <message>
+        <source>Servers: %1</source>
+        <translation>Sunucular: %1</translation>
+    </message>
+    <message>
+        <source>Days with time: %1</source>
+        <translation>Süre olan gün sayısı: %1</translation>
+    </message>
+    <message>
+        <source>Active: %1</source>
+        <translation>Aktif süre: %1</translation>
+    </message>
+    <message>
+        <source>%1 of overlapping time across simultaneous connections was counted once.</source>
+        <translation>Aynı anda açık bağlantılardaki %1 çakışan süre bir kez sayıldı.</translation>
+    </message>
+    <message>
+        <source>now</source>
+        <translation>şimdi</translation>
+    </message>
+    <message>
+        <source>Incomplete record</source>
+        <translation>Kayıt eksik</translation>
+    </message>
+    <message>
+        <source>Server: %1</source>
+        <translation>Sunucu: %1</translation>
+    </message>
+    <message>
+        <source>Computer: %1</source>
+        <translation>Bilgisayar: %1</translation>
+    </message>
+    <message>
+        <source>Address: %1</source>
+        <translation>Adres: %1</translation>
+    </message>
+    <message>
+        <source>No sign-in record: counted from %1, when it was first seen.</source>
+        <translation>Giriş kaydı yok: ilk görüldüğü %1 saatinden itibaren sayıldı.</translation>
+    </message>
+    <message>
+        <source>No sign-out record: counted until %1, when it was last seen.</source>
+        <translation>Çıkış kaydı yok: son görüldüğü %1 saatine kadar sayıldı.</translation>
+    </message>
+    <message>
+        <source>Idle %1 – %2 (%3)</source>
+        <translation>Boşta %1 – %2 (%3)</translation>
+    </message>
+    <message>
+        <source>Unmeasured %1 – %2 (%3)</source>
+        <translation>Ölçülemedi %1 – %2 (%3)</translation>
+    </message>
+    <message>
+        <source>%1 (%2 connected)</source>
+        <translation>%1 (%2 bağlı)</translation>
+    </message>
+    <message>
+        <source>Calculated from remote server logs. Overlapping connections are counted once. Times use this PC’s clock.</source>
+        <translation>Uzak sunucu kayıtlarından hesaplanır. Birden fazla sunucudaki çakışan bağlantılar bir kez sayılır. Saatler bu bilgisayarın saat dilimindedir.</translation>
+    </message>
+    <message>
+        <source>Unmeasured time happens when RConnect was closed or the PC was asleep during a connection; only connections while RConnect is running can be measured and matched to a computer on a shared IP.</source>
+        <translation>Ölçülemeyen süreler, bağlantı sırasında RConnect kapalıyken veya bilgisayar uykudayken oluşur; yalnızca RConnect açıkken yapılan bağlantılar ölçülebilir ve paylaşılan IP&apos;de bilgisayarla eşleştirilebilir.</translation>
+    </message>
+    <message>
+        <source>%1 (%2 computers)</source>
+        <translation>%1 (%2 bilgisayar)</translation>
+    </message>
+    <message>
+        <source>Configure servers</source>
+        <translation>Sunucuları hazırla</translation>
+    </message>
+    <message>
+        <source>Configuring…</source>
+        <translation>Hazırlanıyor…</translation>
+    </message>
+    <message>
+        <source>Enables built-in Windows client-name logging (4778/4779) and optional RDP idle disconnect on remote servers.</source>
+        <translation>Uzak sunucularda Windows&apos;un yerleşik istemci adı kaydını (4778/4779) ve isteğe bağlı boşta RDP bağlantısı kesme sınırını etkinleştirir.</translation>
+    </message>
 </context>
 <context>
     <name>WinRm</name>
@@ -1754,6 +1898,58 @@ Giriş sayısı: %3</translation>
 </context>
 <context>
     <name>Workspace</name>
+    <message>
+        <source>Configure servers</source>
+        <translation>Sunucuları hazırla</translation>
+    </message>
+    <message>
+        <source>No servers have WinRM session checks enabled.</source>
+        <translation>WinRM oturum kontrolü açık sunucu bulunamadı.</translation>
+    </message>
+    <message>
+        <source>Applies built-in Windows settings on %1 servers over WinRM (nothing is installed on the servers):
+
+1. Client computer name logging (Security 4778/4779): enables Windows’ built-in “Other Logon/Logoff Events” audit policy so every RDP connection records the client computer name, even behind a shared IP and when RConnect is closed.
+
+2. Idle RDP session limit (optional): disconnects an idle RDP session after the chosen duration so open programs keep running while idle time ends in the server log.</source>
+        <translation>%1 sunucuda WinRM üzerinden yalnızca Windows&apos;un kendi yerleşik ayarlarını uygular (sunuculara hiçbir program kurulmaz):
+
+1. İstemci bilgisayar adı kaydı (Security 4778/4779): Windows&apos;un yerleşik &quot;Diğer Oturum Açma/Kapatma Olayları&quot; denetimini açar; böylece ortak IP arkasında ve RConnect kapalıyken bile her RDP bağlantısında istemci bilgisayar adı kaydedilir.
+
+2. Boşta kalan RDP oturumu sınırı (isteğe bağlı): Seçilen süre boyunca hareketsiz kalan RDP bağlantısını keser; açık programlar kapanmaz, boşta geçen süre sunucu kaydında sonlanır.</translation>
+    </message>
+    <message>
+        <source>Idle RDP session disconnect limit:</source>
+        <translation>Boşta kalan RDP bağlantısını kesme süresi:</translation>
+    </message>
+    <message>
+        <source>20 minutes (recommended)</source>
+        <translation>20 dakika (önerilen)</translation>
+    </message>
+    <message>
+        <source>30 minutes</source>
+        <translation>30 dakika</translation>
+    </message>
+    <message>
+        <source>15 minutes</source>
+        <translation>15 dakika</translation>
+    </message>
+    <message>
+        <source>Disable (no limit)</source>
+        <translation>Kapat (sınır yok)</translation>
+    </message>
+    <message>
+        <source>Leave unchanged</source>
+        <translation>Değiştirme</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation>Uygula</translation>
+    </message>
+    <message>
+        <source>%1 of %2 servers configured.</source>
+        <translation>%2 sunucudan %1 tanesi hazırlandı.</translation>
+    </message>
     <message>
         <source>Checking who is connected…</source>
         <translation>Kimin bağlı olduğu kontrol ediliyor…</translation>

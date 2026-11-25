@@ -65,6 +65,7 @@ private:
     void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
     void sendMessage(const QString &id, int sessionId, const QString &user);
+    void configureServerLogging();
     void showAlert(const AccessRecord &alert);
     void showStranger(const QString &server, const QString &client, const QString &user);
     QSystemTrayIcon *tray();

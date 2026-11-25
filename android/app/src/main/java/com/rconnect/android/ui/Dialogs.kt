@@ -2,12 +2,13 @@ package com.rconnect.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,6 +28,8 @@ import com.rconnect.android.data.ServerEntry
 
 @Composable
 fun ServerDialog(existing: ServerEntry?, groups: List<String>, onDismiss: () -> Unit, onSave: (ServerEntry) -> Unit) {
+    val c = appColors
+    val fieldColors = desktopTextFieldColors()
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var host by remember { mutableStateOf(existing?.host.orEmpty()) }
     var user by remember { mutableStateOf(existing?.user.orEmpty()) }
@@ -37,69 +40,118 @@ fun ServerDialog(existing: ServerEntry?, groups: List<String>, onDismiss: () -> 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(if (existing == null) R.string.add_server else R.string.edit)) },
+        containerColor = c.solid,
+        shape = RadiusCard,
+        title = { Text(stringResource(if (existing == null) R.string.add_server else R.string.edit), color = c.text) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(host, { host = it }, label = { Text(stringResource(R.string.ip_address)) }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                OutlinedTextField(user, { user = it }, label = { Text(stringResource(R.string.user_name)) }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii))
                 OutlinedTextField(
-                    password, { password = it }, label = { Text(stringResource(R.string.password)) }, singleLine = true,
+                    host, { host = it },
+                    label = { Text(stringResource(R.string.ip_address)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                    colors = fieldColors,
+                    shape = RadiusControl,
+                )
+                OutlinedTextField(
+                    user, { user = it },
+                    label = { Text(stringResource(R.string.user_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
+                    colors = fieldColors,
+                    shape = RadiusControl,
+                )
+                OutlinedTextField(
+                    password, { password = it },
+                    label = { Text(stringResource(R.string.password)) },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
+                    colors = fieldColors,
+                    shape = RadiusControl,
                     trailingIcon = {
                         TextButton(onClick = { showPassword = !showPassword }) {
-                            Text(stringResource(if (showPassword) R.string.hide else R.string.show))
+                            Text(stringResource(if (showPassword) R.string.hide else R.string.show), color = c.text2)
                         }
                     },
                 )
-                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name_optional)) }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(group, { group = it }, label = { Text(stringResource(R.string.group_optional)) }, singleLine = true,
+                OutlinedTextField(
+                    name, { name = it },
+                    label = { Text(stringResource(R.string.name_optional)) },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    supportingText = if (groups.isNotEmpty()) ({ Text(groups.joinToString(", "), maxLines = 1) }) else null)
+                    colors = fieldColors,
+                    shape = RadiusControl,
+                )
+                OutlinedTextField(
+                    group, { group = it },
+                    label = { Text(stringResource(R.string.group_optional)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                    shape = RadiusControl,
+                    supportingText = if (groups.isNotEmpty()) ({ Text(groups.joinToString(", "), maxLines = 1, color = c.text3) }) else null,
+                )
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = {
-                onSave((existing ?: ServerEntry(name = "", host = "", user = "", password = ""))
-                    .copy(name = name.trim(), host = host.trim(), user = user.trim(), password = password, group = group.trim()))
-            }) { Text(stringResource(R.string.save)) }
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onSave(
+                        (existing ?: ServerEntry(name = "", host = "", user = "", password = ""))
+                            .copy(name = name.trim(), host = host.trim(), user = user.trim(), password = password, group = group.trim()),
+                    )
+                },
+            ) { Text(stringResource(R.string.save), color = if (valid) c.accentText else c.text3) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = c.text2) } },
     )
 }
 
 /** Paste a list (for example rows copied from a spreadsheet) to add many servers at once. */
 @Composable
 fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Pair<Int, Int>) {
+    val c = appColors
+    val fieldColors = desktopTextFieldColors()
     var text by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.import_title)) },
+        containerColor = c.solid,
+        shape = RadiusCard,
+        title = { Text(stringResource(R.string.import_title), color = c.text) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val done = result
                 if (done == null) {
-                    Text(stringResource(R.string.import_help), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.import_help), style = MaterialTheme.typography.bodySmall, color = c.text2)
                     OutlinedTextField(
-                        text, { text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+                        text, { text = it },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
                         placeholder = { Text("10.0.0.5;Administrator;password;SRV-01;Ankara") },
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                        colors = fieldColors,
+                        shape = RadiusControl,
                     )
                 } else {
-                    Text(stringResource(R.string.import_result, done.first, done.second))
+                    Text(stringResource(R.string.import_result, done.first, done.second), color = c.text)
                 }
             }
         },
         confirmButton = {
-            if (result == null) TextButton(enabled = text.isNotBlank(), onClick = { result = onImport(text) }) {
-                Text(stringResource(R.string.import_action))
-            } else TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
+            if (result == null) {
+                TextButton(enabled = text.isNotBlank(), onClick = { result = onImport(text) }) {
+                    Text(stringResource(R.string.import_action), color = if (text.isNotBlank()) c.accentText else c.text3)
+                }
+            } else {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.done), color = c.accentText) }
+            }
         },
-        dismissButton = { if (result == null) TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { if (result == null) TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = c.text2) } },
     )
 }

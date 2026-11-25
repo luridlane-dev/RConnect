@@ -21,6 +21,7 @@ public:
     explicit HomePage(ServerStore *store, QWidget *parent = nullptr);
 
     ServerPanel *panel() const { return m_panel; }
+    UsagePage *usage() const { return m_usage; }
     AccessLogPage *accessLog() const { return m_log; }
 
 signals:

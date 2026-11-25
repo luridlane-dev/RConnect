@@ -36,19 +36,19 @@ object ServerFile {
             val trimmed = text.trimStart(Char(0xFEFF)).trim()
             if (trimmed.startsWith("[")) JSONObject().put("Content", JSONObject().put("Connections", JSONArray(trimmed)))
             else JSONObject(trimmed)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return Read.Invalid
         }
         if (root.has("Format") && root.optString("Format") != FORMAT) return Read.Invalid
         val bundle = if (root.optBoolean("Encrypted")) {
             if (passphrase.isEmpty()) return Read.NeedPassphrase
             val plain = open(root, passphrase) ?: return Read.WrongPassphrase
-            try { JSONObject(String(plain, Charsets.UTF_8)) } catch (e: Exception) { return Read.Invalid }
+            try { JSONObject(String(plain, Charsets.UTF_8)) } catch (_: Exception) { return Read.Invalid }
         } else {
-            root.optJSONObject("Content") ?: return Read.Invalid
+            anyCaseObject(root, "Content") ?: return Read.Invalid
         }
-        val connections = bundle.optJSONArray("Connections") ?: return Read.Invalid
-        val secrets = bundle.optJSONObject("Secrets") ?: JSONObject()
+        val connections = anyCaseArray(bundle, "Connections") ?: return Read.Invalid
+        val secrets = anyCaseObject(bundle, "Secrets") ?: JSONObject()
         val servers = (0 until connections.length()).mapNotNull { toEntry(connections.optJSONObject(it) ?: return@mapNotNull null, secrets) }
         return Read.Ok(servers, connections.length() - servers.size)
     }
@@ -61,7 +61,7 @@ object ServerFile {
             // What the file had that the phone does not use goes back in; the phone's own fields win.
             val c = runCatching { JSONObject(s.extra) }.getOrDefault(JSONObject())
             c.put("Id", s.id).put("Name", s.title).put("Address", s.host).put("Port", s.port)
-                .put("UserName", user).put("Domain", domain)
+                .put("UserName", user).put("Domain", domain).put("IsFavorite", s.favorite)
             if (s.group.isNotEmpty()) c.put("Group", s.group) else c.remove("Group")
             connections.put(c)
             if (passphrase.isNotEmpty() && s.password.isNotEmpty()) secrets.put(s.id, s.password)
@@ -91,6 +91,12 @@ object ServerFile {
         val user = c.optString("UserName").trim()
         if (host.isEmpty() || user.isEmpty()) return null
         val domain = c.optString("Domain").trim()
+        val rawPort = c.opt("Port")
+        val portNum = when (rawPort) {
+            is Number -> rawPort.toInt()
+            is String -> rawPort.trim().toIntOrNull() ?: 3389
+            else -> 3389
+        }
         val extra = JSONObject(c.toString())
         for (known in OWN_FIELDS) extra.remove(known)
         return ServerEntry(
@@ -100,29 +106,51 @@ object ServerFile {
             user = if (domain.isNotEmpty()) "$domain\\$user" else user,
             password = secrets.optString(c.optString("Id")),
             group = c.optString("Group").trim(),
-            port = c.optInt("Port", 3389).takeIf { it in 1..65535 } ?: 3389,
+            port = portNum.takeIf { it in 1..65535 } ?: 3389,
+            favorite = c.optBoolean("IsFavorite", false),
             extra = if (extra.length() == 0) "" else extra.toString(),
         )
     }
 
     // The fields the phone keeps itself; everything else in an entry is carried in ServerEntry.extra.
-    private val OWN_FIELDS = listOf("Id", "Name", "Address", "Port", "UserName", "Domain", "Group")
+    private val OWN_FIELDS = listOf("Id", "Name", "Address", "Port", "UserName", "Domain", "Group", "IsFavorite")
+
+    private fun anyCaseKey(o: JSONObject, name: String): String? {
+        val it = o.keys()
+        while (it.hasNext()) {
+            val k = it.next()
+            if (k.equals(name, ignoreCase = true)) return k
+        }
+        return null
+    }
+
+    private fun anyCaseObject(o: JSONObject, name: String): JSONObject? = anyCaseKey(o, name)?.let { o.optJSONObject(it) }
+    private fun anyCaseArray(o: JSONObject, name: String): JSONArray? = anyCaseKey(o, name)?.let { o.optJSONArray(it) }
+    private fun anyCaseString(o: JSONObject, name: String): String = anyCaseKey(o, name)?.let { o.optString(it) }.orEmpty()
+    private fun anyCaseInt(o: JSONObject, name: String, default: Int): Int {
+        val raw = anyCaseKey(o, name)?.let { o.opt(it) } ?: return default
+        return when (raw) {
+            is Number -> raw.toInt()
+            is String -> raw.trim().toIntOrNull() ?: default
+            else -> default
+        }
+    }
 
     private fun derive(passphrase: String, salt: ByteArray, iterations: Int, algorithm: String): ByteArray =
         SecretKeyFactory.getInstance(algorithm).generateSecret(PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)).encoded
 
     /** The decrypted bundle, or null when no combination authenticates (a wrong passphrase). */
     private fun open(root: JSONObject, passphrase: String): ByteArray? {
-        val salt = decode(root.optString("Salt"))
-        val payload = decode(root.optString("Payload"))
-        val iterations = root.optInt("Iterations", ITERATIONS).takeIf { it > 0 } ?: ITERATIONS
+        val salt = decode(anyCaseString(root, "Salt"))
+        val payload = decode(anyCaseString(root, "Payload"))
+        val iterations = anyCaseInt(root, "Iterations", ITERATIONS).takeIf { it > 0 } ?: ITERATIONS
         if (salt.isEmpty() || payload.size < NONCE + TAG) return null
         val nonce = payload.copyOfRange(0, NONCE)
         // The usual variants of the old program's settings: the passphrase as typed or trimmed, PBKDF2 with
         // SHA-256, SHA-1 or SHA-512, and the tag before or after the ciphertext.
         for (pass in listOf(passphrase, passphrase.trim()).distinct()) {
             for (algorithm in listOf("PBKDF2WithHmacSHA256", "PBKDF2WithHmacSHA1", "PBKDF2WithHmacSHA512")) {
-                val key = try { derive(pass, salt, iterations, algorithm) } catch (e: Exception) { continue }
+                val key = try { derive(pass, salt, iterations, algorithm) } catch (_: Exception) { continue }
                 for (tagLast in listOf(false, true)) {
                     val body = payload.copyOfRange(NONCE, payload.size)
                     val sealed = if (tagLast) body else body.copyOfRange(TAG, body.size) + body.copyOfRange(0, TAG)
@@ -130,7 +158,7 @@ object ServerFile {
                         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG * 8, nonce))
                         return cipher.doFinal(sealed)
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // not this combination
                     }
                 }
@@ -141,7 +169,7 @@ object ServerFile {
 
     private fun decode(text: String): ByteArray = try {
         Base64.getDecoder().decode(text.trim())
-    } catch (e: IllegalArgumentException) {
-        try { Base64.getUrlDecoder().decode(text.trim()) } catch (e2: IllegalArgumentException) { ByteArray(0) }
+    } catch (_: IllegalArgumentException) {
+        try { Base64.getUrlDecoder().decode(text.trim()) } catch (_: IllegalArgumentException) { ByteArray(0) }
     }
 }

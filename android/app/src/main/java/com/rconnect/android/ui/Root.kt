@@ -15,6 +15,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
@@ -24,12 +25,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -47,15 +43,15 @@ fun RConnectApp(vm: AppViewModel) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val servers by vm.servers.collectAsStateWithLifecycle()
     val tab by vm.tab.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val bg = appColors.bg
 
-    // Everything is re-checked every minute while the app is on screen (servers answered in the last 30 s are skipped).
+    // Everything is re-checked every 20 seconds while the app is on screen.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 vm.refreshAll()
-                selected?.let { vm.refresh(it, force = true) }
+                vm.selected.value?.let { vm.refresh(it, force = true) }
                 delay(REFRESH_MS)
             }
         }
@@ -63,7 +59,7 @@ fun RConnectApp(vm: AppViewModel) {
 
     BackHandler(enabled = selected != null) { vm.select(null) }
 
-    Box(Modifier.fillMaxSize().background(Palette.Background)) {
+    Box(Modifier.fillMaxSize().background(bg)) {
         // A server page slides in over the lists; going back slides it out again.
         AnimatedContent(
             targetState = selected,
@@ -79,7 +75,7 @@ fun RConnectApp(vm: AppViewModel) {
             label = "page",
         ) { id ->
             val entry = servers.firstOrNull { it.id == id }
-            Box(Modifier.fillMaxSize().background(Palette.Background).statusBarsPadding()) {
+            Box(Modifier.fillMaxSize().background(bg).statusBarsPadding().displayCutoutPadding()) {
                 if (entry != null) DetailScreen(vm, entry) else MainTabs(vm, tab)
             }
         }
@@ -99,8 +95,8 @@ private fun MainTabs(vm: AppViewModel, tab: Tab) {
                 targetState = tab,
                 transitionSpec = {
                     val forward = targetState.ordinal > initialState.ordinal
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (forward) it / 12 else -it / 12 } + scaleIn(tween(260), 0.98f)) togetherWith
-                        (fadeOut(tween(140)) + scaleOut(tween(200), 0.98f))
+                    (fadeIn(tween(200)) + slideInHorizontally(tween(240)) { if (forward) it / 14 else -it / 14 } + scaleIn(tween(240), 0.99f)) togetherWith
+                        (fadeOut(tween(130)) + scaleOut(tween(180), 0.99f))
                 },
                 label = "tab",
             ) { t ->

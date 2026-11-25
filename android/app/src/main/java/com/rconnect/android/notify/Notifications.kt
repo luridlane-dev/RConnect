@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.rconnect.android.MainActivity
 import com.rconnect.android.R
 import com.rconnect.android.data.Contact
@@ -18,6 +19,7 @@ import com.rconnect.android.data.ContactBook
 import com.rconnect.android.winrm.RemoteSession
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 /** What the person wants to be told about. Everything is off until they turn it on in the app. */
 class NotificationPrefs(context: Context) {
@@ -25,23 +27,23 @@ class NotificationPrefs(context: Context) {
 
     var enabled: Boolean
         get() = prefs.getBoolean("enabled", false)
-        set(v) = prefs.edit().putBoolean("enabled", v).apply()
+        set(v) = prefs.edit { putBoolean("enabled", v) }
     var onConnect: Boolean
         get() = prefs.getBoolean("connect", true)
-        set(v) = prefs.edit().putBoolean("connect", v).apply()
+        set(v) = prefs.edit { putBoolean("connect", v) }
     var onLeave: Boolean
         get() = prefs.getBoolean("leave", true)
-        set(v) = prefs.edit().putBoolean("leave", v).apply()
+        set(v) = prefs.edit { putBoolean("leave", v) }
     var onProblem: Boolean
         get() = prefs.getBoolean("problem", true)
-        set(v) = prefs.edit().putBoolean("problem", v).apply()
+        set(v) = prefs.edit { putBoolean("problem", v) }
 
     var watch: Boolean
         get() = prefs.getBoolean("watch", true)
-        set(v) = prefs.edit().putBoolean("watch", v).apply()
+        set(v) = prefs.edit { putBoolean("watch", v) }
     var onStranger: Boolean
         get() = prefs.getBoolean("stranger", true)
-        set(v) = prefs.edit().putBoolean("stranger", v).apply()
+        set(v) = prefs.edit { putBoolean("stranger", v) }
 
     fun wants(change: Change) = enabled && when (change.kind) {
         Change.Kind.Connected -> onConnect
@@ -69,63 +71,64 @@ class ChangeDetector(context: Context) {
      * person look like one who left and another who connected. A session also has to be missing from [MISSES_BEFORE_LEFT]
      * answers in a row before it counts as gone, so one incomplete answer does not report anybody leaving.
      */
-    @Synchronized
-    fun detect(serverId: String, title: String, ok: Boolean, sessions: List<RemoteSession>?, contacts: List<Contact>): List<Change> {
-        val previous = prefs.getString(serverId, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
-        val keys = sessions.orEmpty().filter { it.connected }.associateBy { key(it.id, it.user) }
-        // Files written by an earlier version also had the sign-in time in the key.
-        val oldRaw = previous?.optJSONArray("s")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
-        val oldKeys = oldRaw.map(::normalize).distinct()
-        val oldClients = HashMap<String, String>()
-        previous?.optJSONObject("c")?.let { o -> o.keys().forEach { oldClients[normalize(it)] = o.optString(it) } }
-        val oldMisses = previous?.optJSONObject("m")
+    fun detect(serverId: String, title: String, ok: Boolean, sessions: List<RemoteSession>?, contacts: List<Contact>): List<Change> =
+        synchronized(lock) {
+            val previous = prefs.getString(serverId, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val keys = sessions.orEmpty().filter { it.connected }.associateBy { key(it.id, it.user) }
+            // Files written by an earlier version also had the sign-in time in the key.
+            val oldRaw = previous?.optJSONArray("s")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+            val oldKeys = oldRaw.map(::normalize).distinct()
+            val oldClients = HashMap<String, String>()
+            previous?.optJSONObject("c")?.let { o -> o.keys().forEach { oldClients[normalize(it)] = o.optString(it) } }
+            val oldMisses = previous?.optJSONObject("m")
 
-        // A failed check does not say who is connected: keep what was known.
-        val kept = ArrayList<String>()
-        val clients = JSONObject()
-        val misses = JSONObject()
-        val gone = ArrayList<String>()
-        if (ok) {
-            for ((k, s) in keys) { kept += k; clients.put(k, s.client) }
-            for (k in oldKeys) if (k !in keys) {
-                val n = (oldMisses?.optInt(k, 0) ?: 0) + 1
-                if (n >= MISSES_BEFORE_LEFT) { gone += k; continue }
-                kept += k; misses.put(k, n); clients.put(k, oldClients[k].orEmpty())
+            // A failed check does not say who is connected: keep what was known.
+            val kept = ArrayList<String>()
+            val clients = JSONObject()
+            val misses = JSONObject()
+            val gone = ArrayList<String>()
+            if (ok) {
+                for ((k, s) in keys) { kept += k; clients.put(k, s.client) }
+                for (k in oldKeys) if (k !in keys) {
+                    val n = (oldMisses?.optInt(k, 0) ?: 0) + 1
+                    if (n >= MISSES_BEFORE_LEFT) { gone += k; continue }
+                    kept += k; misses.put(k, n); clients.put(k, oldClients[k].orEmpty())
+                }
+            } else {
+                for (k in oldKeys) { kept += k; clients.put(k, oldClients[k].orEmpty()); oldMisses?.optInt(k, 0)?.let { misses.put(k, it) } }
             }
-        } else {
-            for (k in oldKeys) { kept += k; clients.put(k, oldClients[k].orEmpty()); oldMisses?.optInt(k, 0)?.let { misses.put(k, it) } }
-        }
-        val stored = JSONObject().put("ok", ok).put("s", JSONArray(kept)).put("c", clients).put("m", misses)
-        prefs.edit().putString(serverId, stored.toString()).apply()
-        if (previous == null) return emptyList()
+            val stored = JSONObject().put("ok", ok).put("s", JSONArray(kept)).put("c", clients).put("m", misses)
+            prefs.edit { putString(serverId, stored.toString()) }
+            if (previous == null) return emptyList()
 
-        val changes = ArrayList<Change>()
-        val wasOk = previous.optBoolean("ok", true)
-        when {
-            wasOk && !ok -> changes += Change(Change.Kind.Problem, serverId, title)
-            !wasOk && ok -> changes += Change(Change.Kind.Recovered, serverId, title)
-        }
-        if (ok && wasOk) {
-            for ((k, s) in keys) if (k !in oldKeys) {
-                // Someone whose computer is in nobody's address book: worth a louder message. With an empty address
-                // book everyone would be a stranger, so it stays quiet then.
-                val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && ContactBook.nameFor(contacts, s.client, s.user) == null
-                changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, who(s, contacts))
+            val changes = ArrayList<Change>()
+            val wasOk = previous.optBoolean("ok", true)
+            when {
+                wasOk && !ok -> changes += Change(Change.Kind.Problem, serverId, title)
+                !wasOk && ok -> changes += Change(Change.Kind.Recovered, serverId, title)
             }
-            for (k in gone) changes += Change(Change.Kind.Left, serverId, title, whoLeft(k, oldClients[k].orEmpty(), contacts))
+            if (ok && wasOk) {
+                for ((k, s) in keys) if (k !in oldKeys) {
+                    // Someone whose computer is in nobody's address book: worth a louder message. With an empty address
+                    // book everyone would be a stranger, so it stays quiet then.
+                    val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && ContactBook.nameFor(contacts, s.client, s.user) == null
+                    changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, who(s, contacts))
+                }
+                for (k in gone) changes += Change(Change.Kind.Left, serverId, title, whoLeft(k, oldClients[k].orEmpty(), contacts))
+            }
+            changes
         }
-        return changes
-    }
 
-    private fun key(id: Int, user: String) = "$id|${user.lowercase()}"
+    private fun key(id: Int, user: String) = "$id|${user.lowercase(Locale.ROOT)}"
 
     // "id|user|signInTime" of an earlier version becomes "id|user".
-    private fun normalize(key: String) = key.split('|').let { if (it.size > 2) it[0] + "|" + it[1].lowercase() else key }
+    private fun normalize(key: String) = key.split('|').let { if (it.size > 2) it[0] + "|" + it[1].lowercase(Locale.ROOT) else key.lowercase(Locale.ROOT) }
 
-    fun forget(serverId: String) = prefs.edit().remove(serverId).apply()
+    fun forget(serverId: String) = synchronized(lock) { prefs.edit { remove(serverId) } }
 
     private companion object {
         const val MISSES_BEFORE_LEFT = 2
+        val lock = Any()
     }
 
     private fun who(s: RemoteSession, contacts: List<Contact>) =
@@ -180,12 +183,12 @@ object Notifier {
             .setAutoCancel(true)
             .setCategory(if (problem) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
             .setPriority(if (problem) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
-            .setColor(0xFF4A86C8.toInt())
+            .setColor(0xFF414EB3.toInt())
             .build()
         // One notification per server and kind: a flapping server replaces its own message instead of piling up.
         try {
             NotificationManagerCompat.from(context).notify("${c.serverId}|${c.kind}|${c.who}", 1, n)
-        } catch (e: SecurityException) {
+        } catch (_: SecurityException) {
             // permission withdrawn meanwhile
         }
     }
@@ -210,7 +213,6 @@ object Notifier {
     }
 
     private fun createChannels(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ACTIVITY, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_DEFAULT))

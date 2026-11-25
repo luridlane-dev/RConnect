@@ -9,13 +9,22 @@ class QTimer;
 class QTreeView;
 namespace UsageEngine { struct Report; }
 
-// Who was on which server, and for how long, day by day (see UsageLog and UsageEngine). A row per day,
-// server and computer; open it to see each visit with its start and end, and under that the stretches
-// that were away or not known.
+// Server connection and active time per user (see UsageLog and UsageEngine). One row per user with
+// their deduplicated active time over all servers; open it for each server (or each day), and under
+// that every connection with its start and end.
 class UsagePage : public QWidget {
     Q_OBJECT
 public:
     explicit UsagePage(QWidget *parent = nullptr);
+
+public slots:
+    void onServerSynced(const QString &serverId, const QString &serverName, bool busy,
+                        const QStringList &failedSources, const QString &error);
+    void setConfiguringServers(bool busy);
+
+signals:
+    void syncRequested(const QString &serverId);
+    void configureServersRequested();
 
 protected:
     void showEvent(QShowEvent *e) override;
@@ -38,7 +47,9 @@ private:
     QLabel *m_metricLabels[4] = {};
     QLabel *m_metricValues[4] = {};
     QComboBox *m_range;
+    QComboBox *m_breakdown;
     QPushButton *m_refresh;
+    QPushButton *m_configure;
     QPushButton *m_rebuild;
     QPushButton *m_help;
     QTimer *m_timer;

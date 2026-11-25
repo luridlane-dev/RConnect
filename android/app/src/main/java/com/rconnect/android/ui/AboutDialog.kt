@@ -20,25 +20,28 @@ private const val REPOSITORY = "https://github.com/luridlane-dev/RConnect"
 /** Who made the app, and where to find it. */
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {
+    val c = appColors
     val context = LocalContext.current
     val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.app_name)) },
+        containerColor = c.solid,
+        shape = RadiusCard,
+        title = { Text(stringResource(R.string.app_name), color = c.text) },
         text = {
             Column {
-                Text(stringResource(R.string.about_version, version), color = Palette.LabelSecondary)
+                Text(stringResource(R.string.about_version, version), color = c.text2)
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.about_by))
+                Text(stringResource(R.string.about_by), color = c.text)
                 Spacer(Modifier.height(4.dp))
-                Text(REPOSITORY.removePrefix("https://"), color = Palette.Accent)
+                Text(REPOSITORY.removePrefix("https://"), color = c.accentText)
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, REPOSITORY.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            }) { Text(stringResource(R.string.about_open)) }
+            }) { Text(stringResource(R.string.about_open), color = c.accentText) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done), color = c.text2) } },
     )
 }

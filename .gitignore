@@ -7,5 +7,9 @@ CMakeUserPresets.json
 .vs/
 .vscode/
 *.user
+*.pfx
+*.p12
+*.jks
+*.keystore
 /src/assets/flags
 src/assets/geoip.bin

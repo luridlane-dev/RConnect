@@ -5,10 +5,13 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rconnect.android.notify.AppVisibility
 import com.rconnect.android.notify.Notifier
 import com.rconnect.android.notify.WatchService
@@ -20,16 +23,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        applySystemBars(viewModel.themeMode.value)
         // Server addresses and who is signed in are sensitive: no screenshots or task-switcher previews in release builds.
         if (!BuildConfig.DEBUG) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
-            RConnectTheme { RConnectApp(viewModel) }
+            val mode by viewModel.themeMode.collectAsStateWithLifecycle()
+            LaunchedEffect(mode) { applySystemBars(mode) }
+            RConnectTheme(mode = mode) { RConnectApp(viewModel) }
         }
         openServerFrom(intent)
+    }
+
+    private fun applySystemBars(mode: ThemeMode) {
+        val bar = if (mode == ThemeMode.Light) {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
     }
 
     override fun onStart() {

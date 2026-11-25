@@ -8,6 +8,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.Base64
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -21,33 +22,38 @@ class WinRmClient(
     private val domain: String = "",
     private val timeoutMs: Int = 25000,
     private val port: Int = 5985,
+    private val rdpPort: Int = RDP_PORT,
 ) {
     private class Response(val status: Int, val authenticate: List<String>, val contentType: String, val body: ByteArray)
 
-    private lateinit var socket: Socket
+    private var socket: Socket? = null
     private lateinit var input: InputStream
     private lateinit var output: OutputStream
     private val ntlm = Ntlm(user, domain, password)
     private val hostHeader = (if (host.contains(':')) "[$host]" else host) + ":" + port
     private val to = "http://$hostHeader/wsman"
     private var startedAt = 0L
+    private var lastLatencyMs = -1
 
     /** The server's sessions, and (when [withEvents]) the session events after [lookbackMs] ago. */
     fun snapshot(withEvents: Boolean, lookbackMs: Long = DEFAULT_LOOKBACK_MS): ServerSnapshot {
         val text = run(sessionCommand(if (withEvents) lookbackMs else null))
-        return Parsing.snapshot(text, withEvents)
+        return Parsing.snapshot(text, withEvents).copy(latencyMs = lastLatencyMs)
     }
 
     fun run(command: String): String {
         startedAt = System.currentTimeMillis()
+        lastLatencyMs = -1
         try {
             connect()
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            if (e !is IOException && e !is IllegalArgumentException) throw e
             // One lost connection attempt is not an outage (mobile networks drop some); try once more.
             try {
                 Thread.sleep(RETRY_DELAY_MS)
                 connect()
-            } catch (e: IOException) {
+            } catch (e2: Exception) {
+                if (e2 !is IOException && e2 !is IllegalArgumentException) throw e2
                 throw WinRmException.Unreachable("Could not reach the server's remote management service (port $port).", rdpOpen())
             }
         }
@@ -59,26 +65,35 @@ class WinRmClient(
         } catch (e: IOException) {
             throw WinRmException.Failed("The connection to the server was lost.")
         } finally {
-            try { socket.close() } catch (_: IOException) {}
+            try { socket?.close() } catch (_: IOException) {}
+            socket = null
         }
     }
 
     // ---- connection -------------------------------------------------------------------------
 
     private fun connect() {
-        socket = Socket()
-        socket.connect(InetSocketAddress(host, port), minOf(timeoutMs, 5000))
-        socket.soTimeout = timeoutMs
-        socket.tcpNoDelay = true
-        input = socket.getInputStream().buffered()
-        output = socket.getOutputStream()
+        val s = Socket()
+        try {
+            val t0 = System.nanoTime()
+            s.connect(InetSocketAddress(host, port), minOf(timeoutMs, 5000))
+            lastLatencyMs = ((System.nanoTime() - t0) / 1_000_000L).toInt().coerceAtLeast(1)
+            s.soTimeout = timeoutMs
+            s.tcpNoDelay = true
+            socket = s
+            input = s.getInputStream().buffered()
+            output = s.getOutputStream()
+        } catch (e: Exception) {
+            try { s.close() } catch (_: IOException) {}
+            throw e
+        }
     }
 
     /** Whether the server answers on the Remote Desktop port, which is how the desktop program tells it is up. */
     private fun rdpOpen(): Boolean = try {
-        Socket().use { it.connect(InetSocketAddress(host, RDP_PORT), 3000) }
+        Socket().use { it.connect(InetSocketAddress(host, rdpPort), 3000) }
         true
-    } catch (e: IOException) {
+    } catch (_: Exception) {
         false
     }
 
@@ -115,7 +130,11 @@ class WinRmClient(
     }
 
     private fun receive(): Response {
-        val status = readLine().split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+        var status = readLine().split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+        while (status == 100) {
+            while (readLine().isNotEmpty()) {}
+            status = readLine().split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+        }
         val authenticate = ArrayList<String>()
         var contentType = ""
         var length = 0
@@ -125,20 +144,28 @@ class WinRmClient(
             if (line.isEmpty()) break
             val colon = line.indexOf(':')
             if (colon < 0) continue
-            val name = line.substring(0, colon).trim().lowercase()
+            val name = line.substring(0, colon).trim().lowercase(Locale.ROOT)
             val value = line.substring(colon + 1).trim()
             when (name) {
                 "www-authenticate" -> authenticate += value
                 "content-type" -> contentType = value
                 "content-length" -> length = value.toIntOrNull() ?: 0
-                "transfer-encoding" -> chunked = value.lowercase().contains("chunked")
+                "transfer-encoding" -> chunked = value.lowercase(Locale.ROOT).contains("chunked")
             }
         }
-        if (!chunked) return Response(status, authenticate, contentType, readBytes(length))
+        if (!chunked) {
+            if (length < 0 || length > MAX_RESPONSE_BYTES) throw IOException("invalid content length")
+            return Response(status, authenticate, contentType, readBytes(length))
+        }
         val body = ByteArrayOutputStream()
         while (true) {
-            val size = readLine().substringBefore(';').trim().toInt(16)
-            if (size == 0) { readLine(); break }
+            val size = readLine().substringBefore(';').trim().toIntOrNull(16)
+                ?: throw IOException("invalid chunk size")
+            if (size < 0 || body.size() + size > MAX_RESPONSE_BYTES) throw IOException("chunk too large")
+            if (size == 0) {
+                while (readLine().isNotEmpty()) {}
+                break
+            }
             body.write(readBytes(size))
             readLine()
         }
@@ -210,7 +237,7 @@ class WinRmClient(
             "<s:Header><a:To>${escape(to)}</a:To>" +
             "<a:ReplyTo><a:Address s:mustUnderstand=\"true\">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address></a:ReplyTo>" +
             "<w:MaxEnvelopeSize s:mustUnderstand=\"true\">153600</w:MaxEnvelopeSize>" +
-            "<a:MessageID>uuid:${UUID.randomUUID().toString().uppercase()}</a:MessageID>" +
+            "<a:MessageID>uuid:${UUID.randomUUID().toString().uppercase(Locale.ROOT)}</a:MessageID>" +
             "<w:Locale xml:lang=\"en-US\" s:mustUnderstand=\"false\"/><p:DataLocale xml:lang=\"en-US\" s:mustUnderstand=\"false\"/>" +
             "<w:OperationTimeout>PT${seconds}S</w:OperationTimeout>" +
             "<w:ResourceURI s:mustUnderstand=\"true\">$SHELL_URI</w:ResourceURI>" +
@@ -259,7 +286,9 @@ class WinRmClient(
         }
         val stdout = ByteArrayOutputStream()
         for (m in Regex("<[\\w:]*Stream\\s+([^>]*)>([^<]*)</[\\w:]*Stream>").findAll(xml))
-            if (m.groupValues[1].contains("Name=\"stdout\"")) stdout.write(Base64.getMimeDecoder().decode(m.groupValues[2]))
+            if (m.groupValues[1].contains("Name=\"stdout\"")) {
+                runCatching { Base64.getMimeDecoder().decode(m.groupValues[2]) }.getOrNull()?.let(stdout::write)
+            }
         return Reply(
             shellId = shellId,
             commandId = first(Regex("<[\\w:]*CommandId>([^<]*)</[\\w:]*CommandId>")),
@@ -283,6 +312,7 @@ class WinRmClient(
         // Receive timed out with no output yet; ask again.
         private const val TIMED_OUT_CODE = "2150858793"
         private const val MAX_EVENTS = 100
+        private const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
         fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 

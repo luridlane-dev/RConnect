@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -28,15 +29,34 @@ class WatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val prefs = NotificationPrefs(this)
-        if (!prefs.enabled || !prefs.watch || !Notifier.canPost(this)) {
+        // Enter foreground before deciding whether to stop, as required after startForegroundService().
+        val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        } else {
+            0
+        }
+        try {
+            ServiceCompat.startForeground(this, Notifier.WATCH_ID, Notifier.watching(this), fgsType)
+        } catch (_: Exception) {
             stopSelf()
             return START_NOT_STICKY
         }
-        ServiceCompat.startForeground(this, Notifier.WATCH_ID, Notifier.watching(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        if (job == null) {
+
+        val prefs = NotificationPrefs(this)
+        if (!prefs.enabled || !prefs.watch || !Notifier.canPost(this)) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (job == null || job?.isActive != true) {
             job = scope.launch {
                 while (isActive) {
+                    val livePrefs = NotificationPrefs(applicationContext)
+                    if (!livePrefs.enabled || !livePrefs.watch || !Notifier.canPost(applicationContext)) {
+                        ServiceCompat.stopForeground(this@WatchService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                        break
+                    }
                     runCatching { ServerCheck.run(applicationContext) }
                     delay(INTERVAL_MS)
                 }
@@ -60,15 +80,21 @@ class WatchService : Service() {
             if (prefs.enabled && prefs.watch && Notifier.canPost(context)) {
                 runCatching { ContextCompat.startForegroundService(context, intent) }
             } else {
-                context.stopService(intent)
+                runCatching { context.stopService(intent) }
             }
         }
     }
 }
 
-/** Starts the watching again after the phone has restarted. */
+/** Restores background checks after the phone restarts. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) WatchService.sync(context)
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            val prefs = NotificationPrefs(context)
+            if (prefs.enabled) {
+                CheckWorker.schedule(context)
+                WatchService.sync(context)
+            }
+        }
     }
 }

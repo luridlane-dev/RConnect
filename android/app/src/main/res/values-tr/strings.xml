@@ -5,44 +5,54 @@
     <string name="more">Daha fazla</string>
     <string name="clear">Temizle</string>
     <string name="add_server">Sunucu ekle</string>
+    <string name="add_server_cta">+ Sunucu ekle</string>
     <string name="edit">Düzenle</string>
     <string name="delete">Sil</string>
     <string name="back">Geri</string>
     <string name="save">Kaydet</string>
     <string name="done">Tamam</string>
-    <string name="cancel">Vazgeç</string>
+    <string name="cancel">İptal</string>
     <string name="show">Göster</string>
     <string name="hide">Gizle</string>
     <string name="delete_title">%1$s silinsin mi?</string>
-    <string name="empty_hint">Kimin bağlı olduğunu görmek için IP adresi, kullanıcı adı ve şifreyle bir sunucu ekleyin. Çok sayıda sunucuyu birden eklemek için ⋮ → Sunucuları içe aktar.</string>
-    <string name="ip_address">IP adresi</string>
+    <string name="empty_hint">Henüz sunucu yok.\nBaşlamak için “+ Sunucu ekle” düğmesini ya da ⋮ → Sunucuları içe aktar seçeneğini kullanın.</string>
+    <string name="ip_address">IP adresi veya sunucu adı</string>
     <string name="user_name">Kullanıcı adı (yönetici)</string>
     <string name="password">Şifre</string>
     <string name="name_optional">Ad (isteğe bağlı)</string>
     <string name="group_optional">Grup, örneğin bir lokasyon (isteğe bağlı)</string>
-    <string name="no_group">Grupsuz</string>
+    <string name="no_group">Diğer</string>
+    <string name="favorite">Favori</string>
+
+    <string name="menu_switch_to_light">Görünüm: Açık</string>
+    <string name="menu_switch_to_dark">Görünüm: Koyu</string>
 
     <string name="tab_servers">Sunucular</string>
     <string name="tab_people">Kişiler</string>
     <string name="tile_all">Tümü</string>
+    <string name="tile_favorites">Favoriler</string>
+    <string name="tile_available">Müsait</string>
     <string name="tile_in_use">Kullanımda</string>
-    <string name="tile_free">Boş</string>
-    <string name="tile_problem">Sorunlu</string>
-    <string name="search_servers">Sunucu, grup veya kişi ara</string>
+    <string name="tile_offline">Çevrimdışı</string>
+    <string name="search_servers">Sunucu ara</string>
     <string name="search_people">Kişi, bilgisayar veya sunucu ara</string>
     <string name="no_match">Eşleşen sunucu yok.</string>
     <string name="group_in_use">%1$d kullanımda</string>
-    <string name="group_problems">%1$d sorunlu</string>
+    <plurals name="group_problems">
+        <item quantity="one">%1$d sorunlu</item>
+        <item quantity="other">%1$d sorunlu</item>
+    </plurals>
+    <string name="ms_format">%1$d ms</string>
 
     <string name="status_pending">Kontrol ediliyor…</string>
-    <string name="status_free">Boş</string>
+    <string name="status_free">Müsait</string>
     <string name="status_in_use">Kullanımda · %1$d</string>
-    <string name="status_unreachable">Ulaşılamıyor</string>
-    <string name="status_no_winrm">Açık · kim bağlı görünmüyor</string>
+    <string name="status_unreachable">Çevrimdışı</string>
+    <string name="status_no_winrm">WinRM bağlantısı kurulamadı</string>
     <string name="status_auth">Giriş reddedildi</string>
-    <string name="status_error">Hata</string>
+    <string name="status_error">Oturum sorgusu başarısız</string>
 
-    <string name="people_title">Kim bağlı</string>
+    <string name="people_title">Kimler bağlı</string>
     <string name="people_summary">%1$d kişi bağlı · %3$d sunucunun %2$d tanesi yanıt verdi</string>
     <string name="nobody_anywhere">Hiçbir sunucuda bağlı kimse yok.</string>
 
@@ -51,8 +61,14 @@
     <string name="connected_at">bağlandı: %1$s</string>
     <string name="since">giriş: %1$s</string>
     <string name="active">Şu an kullanıyor</string>
+    <string name="active_short">Etkin</string>
     <string name="idle_min">%1$d dk boşta</string>
     <string name="idle_hours">%1$d sa boşta</string>
+    <string name="connected_duration">%1$s bağlı</string>
+    <string name="dur_under_min">&lt;1 dk</string>
+    <string name="dur_min">%1$d dk</string>
+    <string name="dur_hm">%1$d sa %2$d dk</string>
+    <string name="dur_dh">%1$d g %2$d sa</string>
     <string name="not_connected">Bağlantı kopuk</string>
     <string name="just_now">az önce</string>
     <string name="min_ago">%1$d dk önce</string>
@@ -64,9 +80,10 @@
     <string name="tab_failed">Başarısız (%1$d)</string>
     <string name="no_history">Son 2 günde giriş kaydı yok</string>
     <string name="no_failed">Son 2 günde başarısız giriş denemesi yok</string>
+    <string name="no_details_on_error">Sunucudan ayrıntılar okunamadı.</string>
     <string name="failed_note">Yanlış parola ve bilinmeyen kullanıcılar, en yeni üstte. Farklı adreslerden çok sayıda deneme genelde sunucunun internetten saldırı altında olduğu anlamına gelir.</string>
-    <string name="ev_signin">Giriş yaptı</string>
-    <string name="ev_signout">Çıkış yaptı</string>
+    <string name="ev_signin">Oturum açıldı</string>
+    <string name="ev_signout">Oturum kapatıldı</string>
     <string name="ev_disconnect">Bağlantı koptu</string>
     <string name="ev_reconnect">Yeniden bağlandı</string>
     <string name="ev_failed">Başarısız giriş</string>
@@ -74,15 +91,12 @@
     <string name="import_action">İçe aktar</string>
     <string name="import_help">Her satırda bir sunucu: IP;kullanıcı;şifre;ad;grup. Ad ve grup isteğe bağlıdır. Tablodan kopyalanan satırlar da yapıştırılabilir.</string>
     <string name="import_result">%1$d eklendi, %2$d atlandı (eksik ya da listede zaten var).</string>
+    <string name="working">İşleniyor…</string>
 
     <string name="err_unreachable">Sunucuya ulaşılamıyor (port 5985). Adresi, WinRM\'in açık olduğunu ve telefonun aynı ağda ya da VPN\'de olduğunu kontrol edin.</string>
     <string name="err_no_winrm">Sunucu çalışıyor, ama kimin bağlı olduğunu göstermiyor. Sunucuda bir ayar kapalı; sunucuyu yöneten kişiye haber verin.</string>
     <string name="err_auth">Giriş reddedildi. Sunucunun yönetici hesaplarından birini kullanın.</string>
     <string name="err_other">Sunucu yanıt vermedi.</string>
-    <plurals name="group_count">
-        <item quantity="one">%1$d sunucu</item>
-        <item quantity="other">%1$d sunucu</item>
-    </plurals>
     <string name="tab_contacts">Rehber</string>
     <string name="contacts_title">Rehber</string>
     <string name="contacts_add">Kişi ekle</string>
@@ -137,4 +151,5 @@
     <string name="notify_problem">Bir sunucu yanıt vermeyi bıraktığında</string>
     <string name="notifications_help">Değişiklikler Android bildirimi olarak gelir. Arka plan kontrolü açıkken telefon 30 saniyede bir bakar ve kalıcı bir bildirim gösterir; kapalıyken yaklaşık 15 dakikada bir bakar (pil tasarrufunda daha seyrek).</string>
     <string name="notifications_denied">Android bildirimlere izin vermedi. Telefonun ayarlarından bu uygulama için izin verebilirsiniz.</string>
+    <string name="open_settings">Ayarları aç</string>
 </resources>

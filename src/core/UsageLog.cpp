@@ -36,7 +36,7 @@ QHash<QString, qint64> g_beat; // server id -> last line written
 constexpr qint64 kDisconnectedHeartbeatMs = 30 * 60 * 1000;
 constexpr qint64 kHeartbeatMs = 5 * 60 * 1000;
 
-const char *const kEventsHeader = "time_utc,server_id,server,event,user,address,session_id,record_id\r\n";
+const char *const kEventsHeader = "time_utc,server_id,server,event,user,address,session_id,record_id,client\r\n";
 const char *const kSamplesHeader = "time_utc,server_id,server,session_id,user,state,idle_min,client\r\n";
 
 QString dir()
@@ -125,8 +125,58 @@ QString eventKey(const QString &serverId, qint64 recordId, const QString &timeUt
     return serverId + QLatin1Char('|') + QString::number(recordId) + QLatin1Char('|') + timeUtc + QLatin1Char('|') + name;
 }
 
+struct ClientHint {
+    qint64 ms = 0;
+    QString serverId, address, account, client;
+};
+
+// Collects real client computer names recorded by Windows Security log (4778/4779/4624).
+QList<ClientHint> clientHintsFrom(const QList<AccessRecord> &records)
+{
+    QList<ClientHint> hints;
+    for (const AccessRecord &r : records) {
+        if (r.source != QLatin1String("SEC") || r.client.isEmpty())
+            continue;
+        if (r.event != QLatin1String("SecurityReconnect") && r.event != QLatin1String("SecurityDisconnect")
+            && r.event != QLatin1String("SecurityLogon"))
+            continue;
+        // 4624 LogonType 10 sometimes writes the server's own hostname as WorkstationName.
+        const qsizetype slash = r.user.lastIndexOf(QLatin1Char('\\'));
+        if (slash > 0 && r.client.compare(r.user.left(slash), Qt::CaseInsensitive) == 0)
+            continue;
+        const qint64 ms = parseUtcMs(r.timeUtc);
+        if (ms == 0)
+            continue;
+        hints << ClientHint{ms, r.serverId, r.address, UsageEngine::accountOf(r.user), r.client};
+    }
+    return hints;
+}
+
+QString matchClientHint(const Event &e, const QList<ClientHint> &hints)
+{
+    if (hints.isEmpty())
+        return {};
+    const QString account = UsageEngine::accountOf(e.user);
+    qint64 bestDiff = 15001;
+    QString best;
+    for (const ClientHint &h : hints) {
+        if (h.serverId != e.serverId)
+            continue;
+        if (!e.address.isEmpty() && !h.address.isEmpty() && h.address != e.address)
+            continue;
+        if (!account.isEmpty() && !h.account.isEmpty() && h.account.compare(account, Qt::CaseInsensitive) != 0)
+            continue;
+        const qint64 diff = qAbs(h.ms - e.ms);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = h.client;
+        }
+    }
+    return best;
+}
+
 // Converts an access log record; false if it is not a session event.
-bool toEvent(const AccessRecord &r, Event &e, QByteArray &line, QString &key)
+bool toEvent(const AccessRecord &r, const QList<ClientHint> &hints, Event &e, QByteArray &line, QString &key)
 {
     Event::Kind kind;
     if (r.source != QLatin1String("LSM") || !kindOf(r.event, kind))
@@ -141,9 +191,11 @@ bool toEvent(const AccessRecord &r, Event &e, QByteArray &line, QString &key)
     e.user = r.user;
     e.address = r.address;
     e.recordId = r.recordId;
+    e.client = matchClientHint(e, hints);
     key = eventKey(r.serverId, r.recordId, r.timeUtc, r.event);
     const QStringList fields = {quoted(r.timeUtc), quoted(r.serverId), quoted(r.server), quoted(r.event), quoted(r.user),
-                                quoted(r.address), QString::number(r.sessionId), QString::number(r.recordId)};
+                                quoted(r.address), QString::number(r.sessionId), QString::number(r.recordId),
+                                quoted(e.client)};
     line = fields.join(QLatin1Char(',')).toUtf8() + "\r\n";
     return true;
 }
@@ -172,6 +224,7 @@ int rebuildLocked()
         QFile::remove(UsageLog::eventsPath() + QStringLiteral(".bak"));
         QFile::copy(UsageLog::eventsPath(), UsageLog::eventsPath() + QStringLiteral(".bak"));
     }
+    const QList<ClientHint> hints = clientHintsFrom(records);
     QList<Event> events;
     QSet<QString> keys;
     QByteArray lines;
@@ -179,7 +232,7 @@ int rebuildLocked()
         Event e;
         QByteArray line;
         QString key;
-        if (!toEvent(r, e, line, key) || keys.contains(key))
+        if (!toEvent(r, hints, e, line, key) || keys.contains(key))
             continue;
         keys.insert(key);
         events << e;
@@ -226,6 +279,8 @@ void load()
                 e.address = c.at(5);
                 e.sessionId = c.at(6).toInt();
                 e.recordId = c.at(7).toLongLong();
+                if (c.size() >= 9)
+                    e.client = c.at(8);
                 const QString key = eventKey(e.serverId, e.recordId, c.at(0), c.at(3));
                 if (g_eventKeys.contains(key))
                     continue;
@@ -286,12 +341,13 @@ void UsageLog::recordEvents(const QList<AccessRecord> &written)
 {
     QMutexLocker lock(&g_mutex);
     load();
+    const QList<ClientHint> hints = clientHintsFrom(written);
     QByteArray eventLines;
     for (const AccessRecord &r : written) {
         Event e;
         QByteArray line;
         QString key;
-        if (!toEvent(r, e, line, key) || g_eventKeys.contains(key))
+        if (!toEvent(r, hints, e, line, key) || g_eventKeys.contains(key))
             continue;
         g_eventKeys.insert(key);
         g_events << e;

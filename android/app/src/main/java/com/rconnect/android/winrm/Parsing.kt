@@ -1,6 +1,8 @@
 package com.rconnect.android.winrm
 
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.util.Locale
 
 /** Reads what the commands in [WinRmClient] print. Pure code, no network. */
 object Parsing {
@@ -117,13 +119,19 @@ object Parsing {
         return days * 1440 + minutes
     }
 
-    // 2026-10-31T08:15:30.1234567Z, or with fewer fraction digits. Milliseconds are enough.
-    fun parseTime(text: String): Long? = try {
-        val dot = text.indexOf('.')
-        val ms = if (dot < 0) text.trimEnd('Z') + ".000" else text.substring(0, dot) + "." + text.substring(dot + 1).trimEnd('Z').padEnd(3, '0').take(3)
-        Instant.parse(ms + "Z").toEpochMilli()
-    } catch (e: Exception) {
-        null
+    // 2026-10-31T08:15:30.1234567Z, with or without fraction digits or timezone offset.
+    fun parseTime(text: String): Long? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        return try {
+            Instant.parse(trimmed).toEpochMilli()
+        } catch (_: Exception) {
+            try {
+                OffsetDateTime.parse(trimmed).toInstant().toEpochMilli()
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 
     /** "##RCLOG:<source>##" followed by that log's wevtutil XML; each event is read on its own. */
@@ -212,8 +220,8 @@ object Parsing {
     )
 
     private fun failureReason(status: String, subStatus: String): String {
-        val sub = subStatus.lowercase()
-        val key = if (sub.isEmpty() || sub == "0x0") status.lowercase() else sub
+        val sub = subStatus.lowercase(Locale.ROOT)
+        val key = if (sub.isEmpty() || sub == "0x0") status.lowercase(Locale.ROOT) else sub
         return reasons[key] ?: key
     }
 }

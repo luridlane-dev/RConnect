@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.SecureRandom
+import java.util.Locale
 
 /**
  * NTLMv2 with message sealing, as WinRM over HTTP uses it (MS-NLMP). Sign-in is Negotiate -> Challenge ->
@@ -59,6 +60,9 @@ class Ntlm(
         val serverChallenge = challenge.copyOfRange(24, 32)
         val tiLen = c.getShort(40).toInt() and 0xFFFF
         val tiOff = c.getInt(44)
+        require(tiOff >= 0 && tiOff <= challenge.size && tiLen <= challenge.size - tiOff) {
+            "Malformed NTLM target info"
+        }
         val targetInfo = challenge.copyOfRange(tiOff, tiOff + tiLen)
         val needed = NEG_SEAL or NEG_SIGN or NEG_ESS or NEG_UNICODE or NEG_KEY_EXCH
         require(serverFlags and needed == needed) { "The server does not support NTLM message encryption" }
@@ -67,7 +71,7 @@ class Ntlm(
 
         // The response proves the password without sending it.
         val ntHash = md4(password.toByteArray(Charsets.UTF_16LE))
-        val ntowf = hmacMd5(ntHash, (user.uppercase() + domain).toByteArray(Charsets.UTF_16LE))
+        val ntowf = hmacMd5(ntHash, (user.uppercase(Locale.ROOT) + domain).toByteArray(Charsets.UTF_16LE))
         val clientChallenge = random(8)
         val (info, serverTime) = withMicFlag(targetInfo)
         val time = serverTime ?: nowFileTime()
@@ -144,7 +148,7 @@ class Ntlm(
         while (b.remaining() >= 4) {
             val id = b.getShort().toInt() and 0xFFFF
             val len = b.getShort().toInt() and 0xFFFF
-            if (id == AV_EOL) break
+            if (id == AV_EOL || len > b.remaining()) break
             val value = ByteArray(len).also { b.get(it) }
             if (id == AV_TIMESTAMP && len == 8) timestamp = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN).getLong()
             if (id == AV_FLAGS && len == 4) {

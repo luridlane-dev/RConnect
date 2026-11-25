@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QTimeZone>
 
+#include <functional>
+
 // Turns session events and quser samples into visits and per-day totals. Pure code: no files, no
 // network, same input gives the same output.
 //
@@ -47,6 +49,7 @@ struct Event {
     int sessionId = 0;
     QString user;
     QString address;    // client IP address
+    QString client;     // client computer name, when the server's event log recorded it (4778/4779/4624)
     qint64 recordId = 0;
 };
 
@@ -144,11 +147,71 @@ struct Report {
 
 Report compute(const QList<Event> &events, const QList<Sample> &samples, qint64 nowMs, const QTimeZone &zone);
 
+// ---- Per person -------------------------------------------------------------------------------
+//
+// A person may be on several servers (and in several sessions) at the same time. Their time is the
+// union of all their connections: every moment counts once. When the connections disagree about a
+// moment, Active beats Unknown beats Afk: being active on one server while another sits idle counts
+// as active, and a moment nobody measured is never taken as idle.
+
+struct Time {
+    qint64 activeMs = 0, afkMs = 0, unknownMs = 0;
+    qint64 netMs() const { return activeMs + unknownMs; } // server connected time minus detected idle
+    qint64 totalMs() const { return activeMs + afkMs + unknownMs; }
+};
+
+// Parts may overlap; see above.
+Time unionOf(const QList<Part> &parts);
+
+// One connection on one day.
+struct Entry {
+    int visit = 0;            // index into Report::visits
+    QDate day;
+    DayVisit slice;
+    bool uncertain = false;   // start or end missing from the log: the time is a minimum
+};
+
+// One server (by server) or one day (by day) of a person.
+struct Share {
+    QString serverId, server; // by server
+    QDate day;                // by day
+    Time time;                // union of the entries
+    qint64 lastEnd = 0;
+    bool open = false, uncertain = false;
+    QList<Entry> entries;     // oldest first
+};
+
+struct Person {
+    QString key, name;
+    QStringList computers, addresses, accounts, servers;
+    Time time;                // union of every connection in the range
+    qint64 overlapMs = 0;     // overlapping net time on simultaneous connections, counted once in time.netMs()
+    qint64 lastEnd = 0;
+    int days = 0;             // days with time
+    bool open = false, uncertain = false;
+    QList<Share> shares;
+};
+
+struct Who {
+    QString key, name;
+};
+using WhoOf = std::function<Who(const Visit &)>;
+
+enum class Breakdown { ByServer, ByDay };
+
+// Everybody with time between the local days from and to (both included), most active time first.
+// who() says which person a visit belongs to.
+QList<Person> people(const Report &report, const QDate &from, const QDate &to, const WhoOf &who, Breakdown by);
+
 // Local day of a moment, and the start of the next one.
 QDate dayOf(qint64 ms, const QTimeZone &zone);
 qint64 nextDayStart(qint64 ms, const QTimeZone &zone);
 
 // "SERVER\Administrator" -> "Administrator".
 QString accountOf(const QString &user);
+
+// Strips trailing device numbering so "Emre", "Emre-2", "Emre 3", "Emre (2)" belong to the same person "Emre".
+// Leaves IP addresses and plain names unchanged.
+QString personNameOf(const QString &alias);
 
 } // namespace UsageEngine

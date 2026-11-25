@@ -1,8 +1,10 @@
 package com.rconnect.android.data
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -21,7 +23,7 @@ data class Contact(
 }
 
 object ContactBook {
-    private fun norm(s: String) = s.trim().lowercase()
+    private fun norm(s: String) = s.trim().lowercase(Locale.ROOT)
     private fun shortUser(s: String) = norm(s.substringAfterLast('\\'))
 
     /** The entry that fits best: the one with the most fields filled in, all of which match. */
@@ -88,6 +90,6 @@ class ContactStore(context: Context) {
     fun load(): List<Contact> = ContactJson.read(prefs.getString("list", "").orEmpty()).orEmpty()
 
     fun save(list: List<Contact>) {
-        prefs.edit().putString("list", ContactJson.write(list)).apply()
+        prefs.edit { putString("list", ContactJson.write(list)) }
     }
 }

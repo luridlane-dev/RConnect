@@ -5,6 +5,7 @@
     <string name="more">More</string>
     <string name="clear">Clear</string>
     <string name="add_server">Add server</string>
+    <string name="add_server_cta">+ Add server</string>
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
     <string name="back">Back</string>
@@ -14,33 +15,42 @@
     <string name="show">Show</string>
     <string name="hide">Hide</string>
     <string name="delete_title">Delete %1$s?</string>
-    <string name="empty_hint">Add a server with its IP address, user name and password to see who is connected. To add many at once, use ⋮ → Import servers.</string>
-    <string name="ip_address">IP address</string>
+    <string name="empty_hint">No servers yet.\nUse “+ Add server” to get started, or ⋮ → Import servers.</string>
+    <string name="ip_address">IP address or host name</string>
     <string name="user_name">User name (administrator)</string>
     <string name="password">Password</string>
     <string name="name_optional">Name (optional)</string>
     <string name="group_optional">Group, for example a site (optional)</string>
-    <string name="no_group">No group</string>
+    <string name="no_group">Other</string>
+    <string name="favorite">Favourite</string>
+
+    <string name="menu_switch_to_light">Appearance: Light</string>
+    <string name="menu_switch_to_dark">Appearance: Dark</string>
 
     <string name="tab_servers">Servers</string>
     <string name="tab_people">People</string>
     <string name="tile_all">All</string>
+    <string name="tile_favorites">Favourites</string>
+    <string name="tile_available">Available</string>
     <string name="tile_in_use">In use</string>
-    <string name="tile_free">Free</string>
-    <string name="tile_problem">Problem</string>
-    <string name="search_servers">Search server, group or person</string>
+    <string name="tile_offline">Offline</string>
+    <string name="search_servers">Search servers</string>
     <string name="search_people">Search person, computer or server</string>
-    <string name="no_match">No server matches.</string>
+    <string name="no_match">No matching servers.</string>
     <string name="group_in_use">%1$d in use</string>
-    <string name="group_problems">%1$d problem</string>
+    <plurals name="group_problems">
+        <item quantity="one">%1$d problem</item>
+        <item quantity="other">%1$d problems</item>
+    </plurals>
+    <string name="ms_format">%1$d ms</string>
 
     <string name="status_pending">Checking…</string>
-    <string name="status_free">Free</string>
+    <string name="status_free">Available</string>
     <string name="status_in_use">In use · %1$d</string>
-    <string name="status_unreachable">Unreachable</string>
-    <string name="status_no_winrm">Running · can\'t see who is on</string>
+    <string name="status_unreachable">Offline</string>
+    <string name="status_no_winrm">WinRM unavailable</string>
     <string name="status_auth">Sign-in refused</string>
-    <string name="status_error">Error</string>
+    <string name="status_error">Session query failed</string>
 
     <string name="people_title">Who is connected</string>
     <string name="people_summary">%1$d connected · %2$d of %3$d servers answered</string>
@@ -51,8 +61,14 @@
     <string name="connected_at">connected %1$s</string>
     <string name="since">since %1$s</string>
     <string name="active">Using it now</string>
+    <string name="active_short">Active</string>
     <string name="idle_min">Idle %1$d min</string>
     <string name="idle_hours">Idle %1$d h</string>
+    <string name="connected_duration">Connected %1$s</string>
+    <string name="dur_under_min">&lt;1 min</string>
+    <string name="dur_min">%1$d min</string>
+    <string name="dur_hm">%1$d h %2$d min</string>
+    <string name="dur_dh">%1$d d %2$d h</string>
     <string name="not_connected">Disconnected</string>
     <string name="just_now">just now</string>
     <string name="min_ago">%1$d min ago</string>
@@ -64,6 +80,7 @@
     <string name="tab_failed">Failed (%1$d)</string>
     <string name="no_history">No sign-ins in the last 2 days</string>
     <string name="no_failed">No failed sign-in attempts in the last 2 days</string>
+    <string name="no_details_on_error">Could not read details from the server.</string>
     <string name="failed_note">Wrong passwords and unknown users, newest first. Many attempts from different addresses usually mean the server is being attacked from the internet.</string>
     <string name="ev_signin">Signed in</string>
     <string name="ev_signout">Signed out</string>
@@ -74,15 +91,12 @@
     <string name="import_action">Import</string>
     <string name="import_help">One server per line: IP;user;password;name;group. Name and group are optional. You can paste rows from a spreadsheet.</string>
     <string name="import_result">%1$d added, %2$d skipped (incomplete or already in the list).</string>
+    <string name="working">Working…</string>
 
     <string name="err_unreachable">Cannot reach the server (port 5985). Check the address, that WinRM is on, and that this phone is on the same network or VPN.</string>
     <string name="err_no_winrm">The server is running, but it does not show who is connected. A setting is off on the server; tell whoever manages it.</string>
     <string name="err_auth">Sign-in refused. Use one of the server\'s administrator accounts.</string>
     <string name="err_other">The server did not answer.</string>
-    <plurals name="group_count">
-        <item quantity="one">%1$d server</item>
-        <item quantity="other">%1$d servers</item>
-    </plurals>
     <string name="tab_contacts">Contacts</string>
     <string name="contacts_title">Contacts</string>
     <string name="contacts_add">Add contact</string>
@@ -137,4 +151,5 @@
     <string name="notify_problem">A server stops answering</string>
     <string name="notifications_help">Changes arrive as Android notifications. With background checking on, the phone looks every 30 seconds and shows a permanent notification; without it, about every 15 minutes (less often when saving battery).</string>
     <string name="notifications_denied">Android did not allow notifications. You can allow them in the phone\'s settings for this app.</string>
+    <string name="open_settings">Open settings</string>
 </resources>

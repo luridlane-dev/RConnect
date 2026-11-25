@@ -155,8 +155,10 @@ void scanFile(const std::function<void(AccessRecord &&)> &each, bool *legacy = n
     }
     while (!f.atEnd()) {
         const QByteArray raw = f.readLine();
-        // Cheap test on the bytes first: the other sources are not session events.
-        if (mode == Scan::SessionEvents && !header && !oldFormat && !raw.contains("\"LSM\""))
+        // Cheap test on the bytes first: keep LSM session events and Security events that carry client computer names.
+        if (mode == Scan::SessionEvents && !header && !oldFormat
+            && !raw.contains("\"LSM\"") && !raw.contains("\"SecurityReconnect\"")
+            && !raw.contains("\"SecurityDisconnect\"") && !raw.contains("\"SecurityLogon\""))
             continue;
         if (mode == Scan::WithoutFailed && !header && !oldFormat && raw.contains("\"FailedLogon\""))
             continue;

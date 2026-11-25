@@ -29,6 +29,7 @@ data class ServerSnapshot(
     val sessions: List<RemoteSession>,
     val events: List<AccessEvent>,   // newest first
     val serverNowUtcMs: Long,        // the server's own clock, 0 if unknown
+    val latencyMs: Int = -1,         // TCP connect time in ms, -1 if unknown
 )
 
 sealed class WinRmException(message: String) : Exception(message) {

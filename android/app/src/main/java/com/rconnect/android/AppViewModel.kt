@@ -1,6 +1,8 @@
 package com.rconnect.android
 
 import android.app.Application
+import android.content.Context
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rconnect.android.data.ClientNames
@@ -27,17 +29,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 enum class Health { Pending, Free, InUse, Problem }
+
+enum class ThemeMode { Dark, Light }
+
+enum class ServerFilter { All, Favorites, Available, InUse, Offline }
 
 /** What the last check of one server found. */
 data class ServerState(
     val sessions: List<RemoteSession>? = null,   // null: never answered
     val events: List<AccessEvent>? = null,
     val checkedAt: Long = 0,                     // phone clock, ms
+    val serverNowUtcMs: Long = 0,                // server clock, ms
+    val latencyMs: Int = -1,                     // TCP connect time, ms
     val checking: Boolean = false,
     val error: String? = null,
     val errorKind: ErrorKind = ErrorKind.None,
@@ -62,9 +73,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val names = ClientNames(app)
     private val contactStore = ContactStore(app)
     private val detector = ChangeDetector(app)
+    private val uiPrefs = app.getSharedPreferences("ui", Context.MODE_PRIVATE)
     val notificationPrefs = NotificationPrefs(app)
 
     private val parallel = Semaphore(MAX_PARALLEL)
+    private val saveMutex = Mutex()
+    private val pendingEvents = java.util.Collections.synchronizedSet(HashSet<String>())
 
     private val _servers = MutableStateFlow(store.load())
     val servers: StateFlow<List<ServerEntry>> = _servers
@@ -75,31 +89,66 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _states = MutableStateFlow<Map<String, ServerState>>(emptyMap())
     val states: StateFlow<Map<String, ServerState>> = _states
 
+    private val _themeMode = MutableStateFlow(
+        if (uiPrefs.getString("theme", "dark") == "light") ThemeMode.Light else ThemeMode.Dark,
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode
+
+    private val _listView = MutableStateFlow(uiPrefs.getBoolean("list_view", false))
+    val listView: StateFlow<Boolean> = _listView
+
     /** The server whose page is open, or null for the lists. */
     private val _selected = MutableStateFlow<String?>(null)
     val selected: StateFlow<String?> = _selected
 
     val tab = MutableStateFlow(Tab.Servers)
-    /** Null: all servers. */
-    val filter = MutableStateFlow<Health?>(null)
-    val query = MutableStateFlow("")
+    val filter = MutableStateFlow(ServerFilter.All)
+    val serverQuery = MutableStateFlow("")
+    val peopleQuery = MutableStateFlow("")
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        uiPrefs.edit { putString("theme", if (mode == ThemeMode.Light) "light" else "dark") }
+    }
+
+    fun setListView(list: Boolean) {
+        _listView.value = list
+        uiPrefs.edit { putBoolean("list_view", list) }
+    }
 
     fun select(id: String?) {
         _selected.value = id
         if (id != null) refresh(id, force = true)
     }
 
+    private fun persistServers(snapshot: List<ServerEntry>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            saveMutex.withLock { store.save(snapshot) }
+        }
+    }
+
     fun save(entry: ServerEntry) {
-        _servers.update { list -> if (list.any { it.id == entry.id }) list.map { if (it.id == entry.id) entry else it } else list + entry }
-        store.save(_servers.value)
+        val updated = _servers.value.let { list ->
+            if (list.any { it.id == entry.id }) list.map { if (it.id == entry.id) entry else it } else list + entry
+        }
+        _servers.value = updated
+        persistServers(updated)
         refresh(entry.id, force = true)
     }
 
+    fun toggleFavorite(id: String) {
+        val updated = _servers.value.map { if (it.id == id) it.copy(favorite = !it.favorite) else it }
+        _servers.value = updated
+        persistServers(updated)
+    }
+
     fun delete(id: String) {
-        _servers.update { list -> list.filter { it.id != id } }
+        val updated = _servers.value.filter { it.id != id }
+        _servers.value = updated
         _states.update { it - id }
+        pendingEvents.remove(id)
         detector.forget(id)
-        store.save(_servers.value)
+        persistServers(updated)
         if (_selected.value == id) _selected.value = null
     }
 
@@ -107,8 +156,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun import(text: String): Pair<Int, Int> {
         val result = ServerImport.parse(text, _servers.value)
         if (result.servers.isNotEmpty()) {
-            _servers.update { it + result.servers }
-            store.save(_servers.value)
+            val updated = _servers.value + result.servers
+            _servers.value = updated
+            persistServers(updated)
             for (s in result.servers) refresh(s.id)
         }
         return result.servers.size to result.skipped
@@ -146,13 +196,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportContacts(): String = ContactJson.write(_contacts.value)
 
-    /** Adds servers read from a file; returns how many were added and how many were already in the list. */
     /**
      * Adds what is not in the list yet. Returns how many were added and how many were left out: already there, or
      * [unusable] in the file. A server that is already there but has no saved password takes the file's password.
      */
     fun addServers(list: List<ServerEntry>, unusable: Int = 0): Pair<Int, Int> {
-        fun key(s: ServerEntry) = s.host.trim().lowercase() + "|" + s.user.trim().lowercase()
+        fun key(s: ServerEntry) = s.host.trim().lowercase(Locale.ROOT) + "|" + s.user.trim().lowercase(Locale.ROOT)
         val known = _servers.value.map(::key).toMutableSet()
         val fresh = ArrayList<ServerEntry>()
         val filled = HashMap<String, String>() // key -> password
@@ -166,15 +215,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (it.password.isEmpty() && pw != null) { changed = true; it.copy(password = pw) } else it
         }
         if (changed) {
-            _servers.value = current + fresh
-            store.save(_servers.value)
+            val updated = current + fresh
+            _servers.value = updated
+            persistServers(updated)
             for (s in fresh) refresh(s.id)
             for (s in current) if (filled.containsKey(key(s))) refresh(s.id, true)
         }
         return fresh.size to (list.size - fresh.size + unusable)
     }
 
-    fun exportServers(passphrase: String): String = ServerFile.write(_servers.value, passphrase)
+    suspend fun exportServersAsync(passphrase: String): String = withContext(Dispatchers.Default) {
+        ServerFile.write(_servers.value, passphrase)
+    }
+
+    suspend fun readServerFileAsync(text: String, passphrase: String = ""): ServerFile.Read = withContext(Dispatchers.Default) {
+        ServerFile.read(text, passphrase)
+    }
 
     /** Turns the background check on or off together with the notifications. */
     fun setNotificationsEnabled(on: Boolean) {
@@ -199,22 +255,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh(id: String, force: Boolean = false) {
         val server = _servers.value.firstOrNull { it.id == id } ?: return
         val current = _states.value[id]
-        if (current?.checking == true) return
         val withEvents = _selected.value == id
+        if (current?.checking == true) {
+            if (withEvents) pendingEvents.add(id)
+            return
+        }
         if (!force && !withEvents && current != null && System.currentTimeMillis() - current.checkedAt < STALE_MS) return
+        if (withEvents) pendingEvents.remove(id)
         setState(id) { it.copy(checking = true) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 parallel.withPermit {
                     try {
-                        val client = WinRmClient(server.host.trim(), server.user.trim(), server.password,
-                            timeoutMs = if (withEvents) 30000 else 15000)
+                        val client = WinRmClient(
+                            host = server.host.trim(),
+                            user = server.user.trim(),
+                            password = server.password,
+                            timeoutMs = if (withEvents) 30000 else 15000,
+                            rdpPort = server.port,
+                        )
                         Result.success(client.snapshot(withEvents))
                     } catch (e: Exception) {
                         Result.failure(e)
                     }
                 }
             }
+            if (_servers.value.none { it.id == id }) return@launch
             val snapshot = result.getOrNull()?.let { withNames(id, it) }
             viewModelScope.launch(Dispatchers.Default) {
                 for (c in detector.detect(id, server.title, snapshot != null, snapshot?.sessions, _contacts.value))
@@ -230,7 +296,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         if (s.connectedUtcMs == 0L && before != null) s.copy(connectedUtcMs = before.connectedUtcMs) else s
                     }
-                    ServerState(sessions, if (withEvents) snapshot.events else it.events, System.currentTimeMillis())
+                    ServerState(
+                        sessions = sessions,
+                        events = if (withEvents) snapshot.events else it.events,
+                        checkedAt = System.currentTimeMillis(),
+                        serverNowUtcMs = snapshot.serverNowUtcMs,
+                        latencyMs = if (snapshot.latencyMs >= 0) snapshot.latencyMs else it.latencyMs,
+                    )
                 }
             } else {
                 val e = result.exceptionOrNull()
@@ -239,7 +311,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     is WinRmException.AuthFailed -> ServerState.ErrorKind.AuthFailed
                     else -> ServerState.ErrorKind.Other
                 }
-                setState(id) { it.copy(checking = false, error = e?.message ?: "", errorKind = kind, checkedAt = System.currentTimeMillis()) }
+                setState(id) {
+                    it.copy(
+                        checking = false,
+                        error = e?.message ?: "",
+                        errorKind = kind,
+                        checkedAt = System.currentTimeMillis(),
+                    )
+                }
+            }
+            if (pendingEvents.remove(id) && _selected.value == id && !withEvents) {
+                refresh(id, force = true)
             }
         }
     }
