@@ -71,6 +71,7 @@ private:
     QHash<QString, qint64> m_eventsAt;
     QHash<QString, qint64> m_usageAt;
     QHash<QString, qint64> m_sessionTimesAt;
+    QHash<QString, qint64> m_serverClockOffsetMs; // serverNowUtcMs - localNowMs
     QHash<QString, std::shared_ptr<SessionCheck>> m_sessionChecks;
     QThreadPool m_probePool;
     QThreadPool m_sessionPool;

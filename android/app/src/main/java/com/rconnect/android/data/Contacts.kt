@@ -22,9 +22,52 @@ data class Contact(
     val valid get() = name.isNotBlank() && hasMatch
 }
 
+/** O(1) lookup index matching [ContactBook.match] semantics exactly, for lists and sorting. */
+class ContactIndex(contacts: List<Contact>) {
+    private class Entry(val contact: Contact, val order: Int)
+
+    private val byBoth = HashMap<String, Contact>()
+    private val byDevice = HashMap<String, Entry>()
+    private val byUser = HashMap<String, Entry>()
+    val isEmpty: Boolean = contacts.isEmpty()
+
+    init {
+        for (i in contacts.indices) {
+            val c = contacts[i]
+            val d = c.device.trim().lowercase(Locale.ROOT)
+            val u = c.user.substringAfterLast('\\').trim().lowercase(Locale.ROOT)
+            when {
+                d.isNotEmpty() && u.isNotEmpty() -> byBoth.putIfAbsent("$d\u0000$u", c)
+                d.isNotEmpty() -> byDevice.putIfAbsent(d, Entry(c, i))
+                u.isNotEmpty() -> byUser.putIfAbsent(u, Entry(c, i))
+            }
+        }
+    }
+
+    fun match(device: String, user: String): Contact? {
+        if (isEmpty) return null
+        val d = device.trim().lowercase(Locale.ROOT)
+        val u = user.substringAfterLast('\\').trim().lowercase(Locale.ROOT)
+        if (d.isNotEmpty() && u.isNotEmpty()) {
+            byBoth["$d\u0000$u"]?.let { return it }
+        }
+        val devHit = if (d.isNotEmpty()) byDevice[d] else null
+        val userHit = if (u.isNotEmpty()) byUser[u] else null
+        return when {
+            devHit != null && userHit != null -> if (devHit.order < userHit.order) devHit.contact else userHit.contact
+            devHit != null -> devHit.contact
+            else -> userHit?.contact
+        }
+    }
+
+    fun nameFor(device: String, user: String): String? = match(device, user)?.name
+}
+
 object ContactBook {
     private fun norm(s: String) = s.trim().lowercase(Locale.ROOT)
     private fun shortUser(s: String) = norm(s.substringAfterLast('\\'))
+
+    fun matchKey(c: Contact): String = "${norm(c.device)}\u0000${shortUser(c.user)}"
 
     /** The entry that fits best: the one with the most fields filled in, all of which match. */
     fun match(list: List<Contact>, device: String, user: String): Contact? {

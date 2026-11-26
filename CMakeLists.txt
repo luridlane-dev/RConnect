@@ -34,6 +34,7 @@ add_executable(RConnect WIN32
     src/core/Contacts.h          src/core/Contacts.cpp
     src/core/GeoIp.h             src/core/GeoIp.cpp
     src/core/HostNames.h         src/core/HostNames.cpp
+    src/core/JumpList.h          src/core/JumpList.cpp
     src/core/Language.h          src/core/Language.cpp
     src/core/LocalCache.h        src/core/LocalCache.cpp
     src/core/Log.h               src/core/Log.cpp
@@ -75,7 +76,7 @@ target_compile_definitions(RConnect PRIVATE
     RCONNECT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(RConnect PRIVATE
     Qt6::Widgets Qt6::AxContainer Qt6::Sql Qt6::Network
-    bcrypt crypt32 dwmapi mpr ole32 oleaut32 secur32 wtsapi32 ws2_32)
+    bcrypt crypt32 dwmapi mpr ole32 oleaut32 secur32 shell32 wtsapi32 ws2_32)
 
 if(MSVC)
     target_compile_options(RConnect PRIVATE /utf-8 /W3 /MP)

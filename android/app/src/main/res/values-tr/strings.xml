@@ -3,6 +3,7 @@
     <string name="refresh">Yenile</string>
     <string name="refresh_all">Tüm sunucuları şimdi kontrol et</string>
     <string name="more">Daha fazla</string>
+    <string name="settings">Ayarlar</string>
     <string name="clear">Temizle</string>
     <string name="add_server">Sunucu ekle</string>
     <string name="add_server_cta">+ Sunucu ekle</string>
@@ -15,8 +16,9 @@
     <string name="show">Göster</string>
     <string name="hide">Gizle</string>
     <string name="delete_title">%1$s silinsin mi?</string>
-    <string name="empty_hint">Henüz sunucu yok.\nBaşlamak için “+ Sunucu ekle” düğmesini ya da ⋮ → Sunucuları içe aktar seçeneğini kullanın.</string>
+    <string name="empty_hint">Henüz sunucu yok.\nBaşlamak için “+ Sunucu ekle” düğmesini ya da Ayarlar → Sunucuları içe aktar seçeneğini kullanın.</string>
     <string name="ip_address">IP adresi veya sunucu adı</string>
+    <string name="rdp_port">RDP portu</string>
     <string name="user_name">Kullanıcı adı (yönetici)</string>
     <string name="password">Şifre</string>
     <string name="name_optional">Ad (isteğe bağlı)</string>
@@ -24,11 +26,14 @@
     <string name="no_group">Diğer</string>
     <string name="favorite">Favori</string>
 
-    <string name="menu_switch_to_light">Görünüm: Açık</string>
-    <string name="menu_switch_to_dark">Görünüm: Koyu</string>
+    <string name="appearance">Görünüm</string>
+    <string name="theme_dark">Koyu</string>
+    <string name="theme_light">Açık</string>
 
     <string name="tab_servers">Sunucular</string>
     <string name="tab_people">Kişiler</string>
+    <string name="tab_logs">Loglar</string>
+    <string name="tab_contacts">Rehber</string>
     <string name="tile_all">Tümü</string>
     <string name="tile_favorites">Favoriler</string>
     <string name="tile_available">Müsait</string>
@@ -56,14 +61,34 @@
     <string name="people_summary">%1$d kişi bağlı · %3$d sunucunun %2$d tanesi yanıt verdi</string>
     <string name="nobody_anywhere">Hiçbir sunucuda bağlı kimse yok.</string>
 
+    <string name="logs_title">Etkinlik geçmişi</string>
+    <string name="logs_search">Sunucu, kişi, IP veya ayrıntı ara</string>
+    <string name="logs_fetch">Sunuculardan getir</string>
+    <string name="logs_export_csv">CSV dışa aktar</string>
+    <string name="logs_export_done">Etkinlik geçmişi CSV olarak dışa aktarıldı</string>
+    <string name="logs_clear">Kayıtlı logları temizle</string>
+    <string name="logs_cleared">Kayıtlı loglar temizlendi</string>
+    <string name="logs_empty">Henüz kayıt yok. Sunuculardan son 7 günün loglarını getirmek için yenileye dokunun.</string>
+    <string name="logs_no_match">Eşleşen kayıt yok.</string>
+    <string name="logs_cat_all">Tümü</string>
+    <string name="logs_cat_signins">Girişler</string>
+    <string name="logs_cat_failed">Başarısız</string>
+    <string name="logs_cat_leaves">Çıkışlar</string>
+    <string name="logs_cat_security">Güvenlik</string>
+    <string name="logs_period_1h">1 sa</string>
+    <string name="logs_period_24h">24 sa</string>
+    <string name="logs_period_7d">7 gün</string>
+    <string name="logs_period_all">Tümü</string>
+    <string name="logs_all_servers">Tüm sunucular</string>
+
     <string name="nobody">Oturum açmış kimse yok</string>
     <string name="checking">Kontrol ediliyor…</string>
     <string name="connected_at">bağlandı: %1$s</string>
-    <string name="since">giriş: %1$s</string>
     <string name="active">Şu an kullanıyor</string>
-    <string name="active_short">Etkin</string>
-    <string name="idle_min">%1$d dk boşta</string>
-    <string name="idle_hours">%1$d sa boşta</string>
+    <string name="active_short">Aktif</string>
+    <string name="idle_min">Uzakta: %1$d dk</string>
+    <string name="idle_hours">Uzakta: %1$d sa</string>
+    <string name="idle_unknown">Bağlı</string>
     <string name="connected_duration">%1$s bağlı</string>
     <string name="dur_under_min">&lt;1 dk</string>
     <string name="dur_min">%1$d dk</string>
@@ -78,8 +103,8 @@
     <string name="tab_now">Şu an (%1$d)</string>
     <string name="tab_history">Geçmiş</string>
     <string name="tab_failed">Başarısız (%1$d)</string>
-    <string name="no_history">Son 2 günde giriş kaydı yok</string>
-    <string name="no_failed">Son 2 günde başarısız giriş denemesi yok</string>
+    <string name="no_history">Son 7 günde giriş kaydı yok</string>
+    <string name="no_failed">Son 7 günde başarısız giriş denemesi yok</string>
     <string name="no_details_on_error">Sunucudan ayrıntılar okunamadı.</string>
     <string name="failed_note">Yanlış parola ve bilinmeyen kullanıcılar, en yeni üstte. Farklı adreslerden çok sayıda deneme genelde sunucunun internetten saldırı altında olduğu anlamına gelir.</string>
     <string name="ev_signin">Oturum açıldı</string>
@@ -87,6 +112,40 @@
     <string name="ev_disconnect">Bağlantı koptu</string>
     <string name="ev_reconnect">Yeniden bağlandı</string>
     <string name="ev_failed">Başarısız giriş</string>
+    <string name="ev_user_created">Kullanıcı hesabı oluşturuldu</string>
+    <string name="ev_group_added">Yetkili gruba eklendi</string>
+    <string name="ev_task_created">Zamanlanmış görev oluşturuldu</string>
+    <string name="ev_service_installed">Servis kuruldu</string>
+    <string name="ev_log_cleared">Olay günlüğü temizlendi</string>
+
+    <string name="fail_unknown_user">Bilinmeyen kullanıcı adı</string>
+    <string name="fail_wrong_password">Yanlış şifre</string>
+    <string name="fail_logon_failed">Giriş başarısız</string>
+    <string name="fail_account_restriction">Hesap kısıtlaması</string>
+    <string name="fail_outside_hours">İzin verilen saatlerin dışında</string>
+    <string name="fail_workstation_restriction">Bu cihazdan girişe izin yok</string>
+    <string name="fail_password_expired">Şifrenin süresi dolmuş</string>
+    <string name="fail_account_disabled">Hesap devre dışı</string>
+    <string name="fail_clocks_skew">Saatler uyumsuz</string>
+    <string name="fail_logon_type">Bu giriş türüne izin yok</string>
+    <string name="fail_account_expired">Hesabın süresi dolmuş</string>
+    <string name="fail_account_locked">Hesap kilitli</string>
+
+    <string name="send_message">Mesaj gönder</string>
+    <string name="send_message_hint">%1$s için mesaj (kullanıcının ekranında görünür)</string>
+    <string name="send_action">Gönder</string>
+    <string name="message_sent">Mesaj gönderildi</string>
+    <string name="message_failed">Mesaj gönderilemedi</string>
+    <string name="copy_diagnostics">Tanılama bilgilerini kopyala</string>
+    <string name="copied">Kopyalandı</string>
+
+    <string name="settings_data">Sunucular ve rehber</string>
+    <string name="settings_groups">Gruplar</string>
+    <string name="settings_no_groups">Henüz grup yok.</string>
+    <string name="rename">Ad değiştir</string>
+    <string name="remove">Kaldır</string>
+    <string name="rename_group_title">Grubu yeniden adlandır</string>
+    <string name="group_name">Grup adı</string>
 
     <string name="import_action">İçe aktar</string>
     <string name="import_help">Her satırda bir sunucu: IP;kullanıcı;şifre;ad;grup. Ad ve grup isteğe bağlıdır. Tablodan kopyalanan satırlar da yapıştırılabilir.</string>
@@ -97,7 +156,6 @@
     <string name="err_no_winrm">Sunucu çalışıyor, ama kimin bağlı olduğunu göstermiyor. Sunucuda bir ayar kapalı; sunucuyu yöneten kişiye haber verin.</string>
     <string name="err_auth">Giriş reddedildi. Sunucunun yönetici hesaplarından birini kullanın.</string>
     <string name="err_other">Sunucu yanıt vermedi.</string>
-    <string name="tab_contacts">Rehber</string>
     <string name="contacts_title">Rehber</string>
     <string name="contacts_add">Kişi ekle</string>
     <string name="contacts_edit">Kişiyi düzenle</string>

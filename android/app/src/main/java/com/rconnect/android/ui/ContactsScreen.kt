@@ -64,8 +64,8 @@ fun ContactsScreen(vm: AppViewModel) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             scope.launch {
-                val data = vm.exportContacts().toByteArray(Charsets.UTF_8)
                 val ok = withContext(Dispatchers.IO) {
+                    val data = vm.exportContacts().toByteArray(Charsets.UTF_8)
                     runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(data) } != null }.getOrDefault(false)
                 }
                 if (!ok) Toast.makeText(context, R.string.contacts_file_error, Toast.LENGTH_LONG).show()
@@ -76,9 +76,13 @@ fun ContactsScreen(vm: AppViewModel) {
         if (uri != null) {
             scope.launch {
                 val text = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openInputStream(uri)?.use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            readBoundedBytes(stream)?.let { String(it, Charsets.UTF_8) }
+                        }
+                    }.getOrNull()
                 }
-                val count = text?.let { vm.importContacts(it) }
+                val count = text?.let { withContext(Dispatchers.Default) { vm.importContacts(it) } }
                 Toast.makeText(
                     context,
                     if (count == null) resources.getString(R.string.contacts_not_a_list) else resources.getString(R.string.contacts_imported, count),
@@ -88,10 +92,15 @@ fun ContactsScreen(vm: AppViewModel) {
         }
     }
 
-    val needle = query.trim().lowercase(Locale.ROOT)
-    val shown = contacts.filter {
-        needle.isEmpty() || listOf(it.name, it.device, it.user).any { f -> f.lowercase(Locale.ROOT).contains(needle) }
-    }.sortedWith { a, b -> naturalCompare(a.name, b.name) }
+    val shown = remember(contacts, query) {
+        val needle = query.trim().lowercase(Locale.ROOT)
+        contacts.filter {
+            needle.isEmpty() ||
+                it.name.lowercase(Locale.ROOT).contains(needle) ||
+                it.device.lowercase(Locale.ROOT).contains(needle) ||
+                it.user.lowercase(Locale.ROOT).contains(needle)
+        }.sortedWith { a, b -> naturalCompare(a.name, b.name) }
+    }
 
     Column(Modifier.fillMaxSize()) {
         LargeTitleBar(stringResource(R.string.contacts_title)) {

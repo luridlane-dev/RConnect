@@ -33,7 +33,8 @@ public:
     ~Workspace() override;
 
     // startMinimized: opened by Windows at sign-in; stays in the taskbar and keeps watching the servers.
-    void start(bool startMinimized = false);
+    // initialServerId: optional server ID passed via "--connect" (e.g. taskbar Jump List).
+    void start(bool startMinimized = false, const QString &initialServerId = {});
 
     SessionWindow *activeSessionWindow() const;
 
@@ -64,13 +65,15 @@ private:
     void updateLiveSessions();
     void explainEnd(RdpSession *s);
     void refreshOpenMarkers();
+    void recordRecentServer(const QString &serverId);
+    void updateJumpList();
     void sendMessage(const QString &id, int sessionId, const QString &user);
     void configureServerLogging();
     void showAlert(const AccessRecord &alert);
     void showStranger(const QString &server, const QString &client, const QString &user);
     QSystemTrayIcon *tray();
     // Detailed logging only: what was done in RConnect, written to the activity history.
-    static void audit(const ServerProfile &p, const QString &event, const QString &detail = {});
+    void audit(const ServerProfile &p, const QString &event, const QString &detail = {});
 
     // manual: started from the Settings menu, so it also reports "up to date" and errors.
     void checkForUpdates(bool manual);
@@ -94,5 +97,6 @@ private:
     QHash<QString, RdpSession *> m_sessions;
     QHash<QString, QMessageBox *> m_pendingOpens;
     QThreadPool m_connectLogPool;
+    qint64 m_lastPopupRefreshMs = 0;
     bool m_quitting = false;
 };

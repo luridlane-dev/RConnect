@@ -24,8 +24,11 @@ QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 
 QJsonObject toJson(const Contact &c)
 {
-    return {{QStringLiteral("Id"), c.id}, {QStringLiteral("Name"), c.name}, {QStringLiteral("Device"), c.device},
-            {QStringLiteral("User"), c.user}};
+    QJsonObject o{{QStringLiteral("Id"), c.id}, {QStringLiteral("Name"), c.name}, {QStringLiteral("Device"), c.device},
+                  {QStringLiteral("User"), c.user}};
+    if (!c.address.isEmpty())
+        o.insert(QStringLiteral("Address"), c.address);
+    return o;
 }
 
 Contact fromJson(const QJsonObject &o)
@@ -34,6 +37,7 @@ Contact fromJson(const QJsonObject &o)
     c.id = o.value(QLatin1String("Id")).toString();
     c.name = o.value(QLatin1String("Name")).toString().trimmed();
     c.device = o.value(QLatin1String("Device")).toString().trimmed();
+    c.address = o.value(QLatin1String("Address")).toString().trimmed();
     c.user = o.value(QLatin1String("User")).toString().trimmed();
     return c;
 }
@@ -63,11 +67,6 @@ bool parse(const QByteArray &bytes, QList<Contact> &out)
     return true;
 }
 
-bool sameMatch(const Contact &a, const Contact &b)
-{
-    return norm(a.device) == norm(b.device) && shortUser(a.user) == shortUser(b.user);
-}
-
 } // namespace
 
 Contacts &Contacts::instance()
@@ -83,6 +82,14 @@ QString Contacts::filePath()
     return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/contacts.json");
 }
 
+void Contacts::rebuildIndex()
+{
+    m_norm.clear();
+    m_norm.reserve(m_contacts.size());
+    for (const Contact &c : std::as_const(m_contacts))
+        m_norm.append({norm(c.device), norm(c.address), shortUser(c.user)});
+}
+
 void Contacts::load()
 {
     QFile f(filePath());
@@ -93,6 +100,7 @@ void Contacts::load()
     for (Contact &c : m_contacts)
         if (c.id.isEmpty())
             c.id = newId();
+    rebuildIndex();
 }
 
 void Contacts::write() const
@@ -113,34 +121,47 @@ const Contact *Contacts::find(const QString &id) const
     return nullptr;
 }
 
-const Contact *Contacts::match(const QString &device, const QString &user) const
+const Contact *Contacts::match(const QString &device, const QString &user, const QString &address) const
 {
-    const QString d = norm(device), u = shortUser(user);
+    if (m_contacts.isEmpty())
+        return nullptr;
+    const QString d = norm(device), a = norm(address), u = shortUser(user);
     const Contact *best = nullptr;
-    int bestFields = 0;
-    for (const Contact &c : m_contacts) {
-        int fields = 0;
-        if (!c.device.isEmpty()) {
-            if (norm(c.device) != d)
+    int bestScore = 0;
+    for (qsizetype i = 0; i < m_contacts.size(); ++i) {
+        const Normalized &n = m_norm.at(i);
+        int score = 0;
+        if (!n.device.isEmpty()) {
+            if (!d.isEmpty() && n.device == d)
+                score += 4;
+            else if (d.isEmpty() && n.address.isEmpty() && !a.isEmpty() && n.device == a)
+                score += 2; // legacy entries where an IP was typed into the Computer field
+            else
                 continue;
-            ++fields;
         }
-        if (!c.user.isEmpty()) {
-            if (shortUser(c.user) != u)
+        if (!n.address.isEmpty()) {
+            if (a.isEmpty() || n.address != a)
                 continue;
-            ++fields;
+            score += 2;
         }
-        if (fields > bestFields) {
-            best = &c;
-            bestFields = fields;
+        if (!n.user.isEmpty()) {
+            if (u.isEmpty() || n.user != u)
+                continue;
+            score += 1;
+        }
+        if (score > bestScore) {
+            best = &m_contacts.at(i);
+            bestScore = score;
+            if (bestScore == 7)
+                break; // cannot beat device + address + user
         }
     }
     return best;
 }
 
-QString Contacts::nameFor(const QString &device, const QString &user) const
+QString Contacts::nameFor(const QString &device, const QString &user, const QString &address) const
 {
-    const Contact *c = match(device, user);
+    const Contact *c = match(device, user, address);
     return c ? c->name : QString();
 }
 
@@ -154,9 +175,9 @@ QStringList Contacts::names() const
     return names;
 }
 
-QString Contacts::label(const QString &device, const QString &user) const
+QString Contacts::label(const QString &device, const QString &user, const QString &address) const
 {
-    const QString name = nameFor(device, user);
+    const QString name = nameFor(device, user, address);
     if (name.isEmpty())
         return device;
     return device.isEmpty() ? name : QStringLiteral("%1 (%2)").arg(name, device);
@@ -165,18 +186,25 @@ QString Contacts::label(const QString &device, const QString &user) const
 void Contacts::save(Contact c)
 {
     c.name = c.name.trimmed();
+    c.device = c.device.trimmed();
+    c.address = c.address.trimmed();
+    c.user = c.user.trimmed();
     if (c.name.isEmpty() || !c.hasMatch())
         return;
     if (c.id.isEmpty())
         c.id = newId();
     bool replaced = false;
-    for (Contact &existing : m_contacts)
-        if (existing.id == c.id) {
-            existing = c;
+    for (qsizetype i = 0; i < m_contacts.size(); ++i)
+        if (m_contacts.at(i).id == c.id) {
+            m_contacts[i] = c;
+            m_norm[i] = {norm(c.device), norm(c.address), shortUser(c.user)};
             replaced = true;
+            break;
         }
-    if (!replaced)
+    if (!replaced) {
         m_contacts << c;
+        m_norm.append({norm(c.device), norm(c.address), shortUser(c.user)});
+    }
     write();
     emit changed();
 }
@@ -186,6 +214,7 @@ void Contacts::remove(const QString &id)
     for (qsizetype i = 0; i < m_contacts.size(); ++i)
         if (m_contacts.at(i).id == id) {
             m_contacts.removeAt(i);
+            m_norm.removeAt(i);
             write();
             emit changed();
             return;
@@ -207,22 +236,45 @@ int Contacts::importFrom(const QString &path)
     QList<Contact> incoming;
     if (!f.open(QIODevice::ReadOnly) || !parse(f.readAll(), incoming))
         return -1;
+    QHash<QString, qsizetype> byMatch;
+    byMatch.reserve(m_contacts.size());
+    const auto matchKey = [](const QString &d, const QString &a, const QString &u) {
+        return d + QLatin1Char('\0') + a + QLatin1Char('\0') + u;
+    };
+    for (qsizetype i = 0; i < m_norm.size(); ++i)
+        byMatch.insert(matchKey(m_norm.at(i).device, m_norm.at(i).address, m_norm.at(i).user), i);
+
     int count = 0;
     for (Contact &c : incoming) {
-        // The same computer, address and account is the same entry, whatever its id was on the other device.
-        c.id.clear();
-        for (const Contact &mine : std::as_const(m_contacts))
-            if (sameMatch(mine, c)) {
-                if (mine.name == c.name)
-                    c.id = QStringLiteral("-"); // nothing new
-                else
-                    c.id = mine.id;
-                break;
-            }
-        if (c.id == QLatin1String("-"))
+        c.name = c.name.trimmed();
+        c.device = c.device.trimmed();
+        c.address = c.address.trimmed();
+        c.user = c.user.trimmed();
+        if (c.name.isEmpty() || !c.hasMatch())
             continue;
-        save(c);
+        const Normalized n{norm(c.device), norm(c.address), shortUser(c.user)};
+        const QString mk = matchKey(n.device, n.address, n.user);
+        const auto it = byMatch.constFind(mk);
+        if (it != byMatch.cend()) {
+            Contact &mine = m_contacts[it.value()];
+            if (mine.name == c.name)
+                continue;
+            mine.name = c.name;
+            mine.device = c.device;
+            mine.address = c.address;
+            mine.user = c.user;
+            m_norm[it.value()] = n;
+        } else {
+            c.id = newId();
+            byMatch.insert(mk, m_contacts.size());
+            m_contacts.append(c);
+            m_norm.append(n);
+        }
         ++count;
+    }
+    if (count > 0) {
+        write();
+        emit changed();
     }
     return count;
 }

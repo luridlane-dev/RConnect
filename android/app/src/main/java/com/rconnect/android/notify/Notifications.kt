@@ -15,7 +15,7 @@ import androidx.core.content.edit
 import com.rconnect.android.MainActivity
 import com.rconnect.android.R
 import com.rconnect.android.data.Contact
-import com.rconnect.android.data.ContactBook
+import com.rconnect.android.data.ContactIndex
 import com.rconnect.android.winrm.RemoteSession
 import org.json.JSONArray
 import org.json.JSONObject
@@ -73,7 +73,8 @@ class ChangeDetector(context: Context) {
      */
     fun detect(serverId: String, title: String, ok: Boolean, sessions: List<RemoteSession>?, contacts: List<Contact>): List<Change> =
         synchronized(lock) {
-            val previous = prefs.getString(serverId, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val previousRaw = prefs.getString(serverId, null)
+            val previous = previousRaw?.let { runCatching { JSONObject(it) }.getOrNull() }
             val keys = sessions.orEmpty().filter { it.connected }.associateBy { key(it.id, it.user) }
             // Files written by an earlier version also had the sign-in time in the key.
             val oldRaw = previous?.optJSONArray("s")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
@@ -97,8 +98,10 @@ class ChangeDetector(context: Context) {
             } else {
                 for (k in oldKeys) { kept += k; clients.put(k, oldClients[k].orEmpty()); oldMisses?.optInt(k, 0)?.let { misses.put(k, it) } }
             }
-            val stored = JSONObject().put("ok", ok).put("s", JSONArray(kept)).put("c", clients).put("m", misses)
-            prefs.edit { putString(serverId, stored.toString()) }
+            val serialized = JSONObject().put("ok", ok).put("s", JSONArray(kept)).put("c", clients).put("m", misses).toString()
+            if (serialized != previousRaw) {
+                prefs.edit { putString(serverId, serialized) }
+            }
             if (previous == null) return emptyList()
 
             val changes = ArrayList<Change>()
@@ -108,13 +111,17 @@ class ChangeDetector(context: Context) {
                 !wasOk && ok -> changes += Change(Change.Kind.Recovered, serverId, title)
             }
             if (ok && wasOk) {
-                for ((k, s) in keys) if (k !in oldKeys) {
+                val oldKeySet = oldKeys.toHashSet()
+                val contactIndex = if (keys.any { it.key !in oldKeySet } || gone.isNotEmpty()) ContactIndex(contacts) else null
+                for ((k, s) in keys) if (k !in oldKeySet) {
                     // Someone whose computer is in nobody's address book: worth a louder message. With an empty address
                     // book everyone would be a stranger, so it stays quiet then.
-                    val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && ContactBook.nameFor(contacts, s.client, s.user) == null
-                    changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, who(s, contacts))
+                    val nick = contactIndex?.nameFor(s.client, s.user)
+                    val stranger = contacts.isNotEmpty() && s.client.isNotBlank() && nick == null
+                    val label = nick ?: s.client.ifBlank { s.user.substringAfter('\\') }
+                    changes += Change(if (stranger) Change.Kind.Stranger else Change.Kind.Connected, serverId, title, label)
                 }
-                for (k in gone) changes += Change(Change.Kind.Left, serverId, title, whoLeft(k, oldClients[k].orEmpty(), contacts))
+                for (k in gone) changes += Change(Change.Kind.Left, serverId, title, whoLeft(k, oldClients[k].orEmpty(), contactIndex))
             }
             changes
         }
@@ -131,13 +138,10 @@ class ChangeDetector(context: Context) {
         val lock = Any()
     }
 
-    private fun who(s: RemoteSession, contacts: List<Contact>) =
-        ContactBook.nameFor(contacts, s.client, s.user) ?: s.client.ifBlank { s.user.substringAfter('\\') }
-
     // A session that left: the computer it was connected from, as remembered; the account only if that was never known.
-    private fun whoLeft(key: String, client: String, contacts: List<Contact>): String {
+    private fun whoLeft(key: String, client: String, contacts: ContactIndex?): String {
         val user = key.split('|').getOrElse(1) { "" }
-        return ContactBook.nameFor(contacts, client, user) ?: client.ifBlank { user.substringAfter('\\') }
+        return contacts?.nameFor(client, user) ?: client.ifBlank { user.substringAfter('\\') }
     }
 }
 
@@ -212,13 +216,21 @@ object Notifier {
             .build()
     }
 
+    @Volatile
+    private var channelsReady = false
+
     private fun createChannels(context: Context) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ACTIVITY, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_DEFAULT))
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_PROBLEMS, context.getString(R.string.channel_problems), NotificationManager.IMPORTANCE_HIGH))
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_WATCH, context.getString(R.string.channel_watch), NotificationManager.IMPORTANCE_MIN))
+        if (channelsReady) return
+        synchronized(this) {
+            if (channelsReady) return
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ACTIVITY, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_DEFAULT))
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_PROBLEMS, context.getString(R.string.channel_problems), NotificationManager.IMPORTANCE_HIGH))
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_WATCH, context.getString(R.string.channel_watch), NotificationManager.IMPORTANCE_MIN))
+            channelsReady = true
+        }
     }
 }

@@ -13,6 +13,8 @@
 #include <QStandardPaths>
 #include <QTimeZone>
 
+#include <algorithm>
+
 namespace {
 
 using UsageEngine::Event;
@@ -30,6 +32,7 @@ struct Last {
 };
 QHash<QString, Last> g_last; // "server id|session id" -> last line written
 QHash<QString, qint64> g_beat; // server id -> last line written
+QHash<QString, qint64> g_clockOffset; // server id -> serverNowUtcMs - localNowMs
 
 // Unchanged disconnected sessions, and servers with no lines, are written again after this long,
 // so the file shows when RConnect was watching.
@@ -53,9 +56,10 @@ QString quoted(QString text)
     return QLatin1Char('"') + text + QLatin1Char('"');
 }
 
-QStringList splitLine(const QString &text)
+QStringList splitLine(QStringView text)
 {
     QStringList fields;
+    fields.reserve(9);
     QString field;
     bool inQuotes = false;
     for (qsizetype i = 0; i < text.size(); ++i) {
@@ -82,11 +86,48 @@ QStringList splitLine(const QString &text)
     return fields;
 }
 
-// "2026-11-01T17:34:22.4134708Z" -> ms since epoch (UTC); 0 if it is not a time.
-qint64 parseUtcMs(const QString &text)
+// Fast zero-allocation ISO-8601 UTC parser ("2026-11-01T17:34:22.4134708Z" -> ms since epoch UTC; 0 if invalid).
+qint64 parseUtcMs(QStringView s)
 {
-    const QDateTime t = QDateTime::fromString(text.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-    return t.isValid() ? t.toMSecsSinceEpoch() : 0;
+    if (s.size() < 19)
+        return 0;
+    const auto dig2 = [&](qsizetype i, int &out) {
+        const ushort c0 = s.at(i).unicode() - '0';
+        const ushort c1 = s.at(i + 1).unicode() - '0';
+        if (c0 > 9 || c1 > 9)
+            return false;
+        out = c0 * 10 + c1;
+        return true;
+    };
+    if (s.at(4) != QLatin1Char('-') || s.at(7) != QLatin1Char('-')
+        || (s.at(10) != QLatin1Char('T') && s.at(10) != QLatin1Char(' '))
+        || s.at(13) != QLatin1Char(':') || s.at(16) != QLatin1Char(':'))
+        return 0;
+    int yHi = 0, yLo = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    if (!dig2(0, yHi) || !dig2(2, yLo) || !dig2(5, mo) || !dig2(8, d)
+        || !dig2(11, h) || !dig2(14, mi) || !dig2(17, se))
+        return 0;
+    const int y = yHi * 100 + yLo;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59)
+        return 0;
+    int ms = 0;
+    if (s.size() > 19 && s.at(19) == QLatin1Char('.')) {
+        int mul = 100;
+        for (qsizetype i = 20; i < s.size() && mul >= 1; ++i) {
+            const ushort c = s.at(i).unicode() - '0';
+            if (c > 9)
+                break;
+            ms += int(c) * mul;
+            mul /= 10;
+        }
+    }
+    const qint64 yr = y - (mo <= 2 ? 1 : 0);
+    const qint64 era = (yr >= 0 ? yr : yr - 399) / 400;
+    const qint64 yoe = yr - era * 400;
+    const qint64 doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const qint64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const qint64 days = era * 146097 + doe - 719468;
+    return ((days * 86400 + qint64(h) * 3600 + qint64(mi) * 60 + se) * 1000) + ms;
 }
 
 QString isoUtc(qint64 ms)
@@ -127,13 +168,15 @@ QString eventKey(const QString &serverId, qint64 recordId, const QString &timeUt
 
 struct ClientHint {
     qint64 ms = 0;
-    QString serverId, address, account, client;
+    QString address, account, client;
 };
+using ClientHintIndex = QHash<QString, QList<ClientHint>>;
 
-// Collects real client computer names recorded by Windows Security log (4778/4779/4624).
-QList<ClientHint> clientHintsFrom(const QList<AccessRecord> &records)
+// Collects real client computer names recorded by Windows Security log (4778/4779/4624),
+// indexed by serverId and sorted by timestamp for O(log M) binary search lookup.
+ClientHintIndex clientHintsFrom(const QList<AccessRecord> &records)
 {
-    QList<ClientHint> hints;
+    ClientHintIndex hints;
     for (const AccessRecord &r : records) {
         if (r.source != QLatin1String("SEC") || r.client.isEmpty())
             continue;
@@ -142,26 +185,34 @@ QList<ClientHint> clientHintsFrom(const QList<AccessRecord> &records)
             continue;
         // 4624 LogonType 10 sometimes writes the server's own hostname as WorkstationName.
         const qsizetype slash = r.user.lastIndexOf(QLatin1Char('\\'));
-        if (slash > 0 && r.client.compare(r.user.left(slash), Qt::CaseInsensitive) == 0)
+        if (slash > 0 && r.client.compare(QStringView(r.user).left(slash), Qt::CaseInsensitive) == 0)
             continue;
         const qint64 ms = parseUtcMs(r.timeUtc);
         if (ms == 0)
             continue;
-        hints << ClientHint{ms, r.serverId, r.address, UsageEngine::accountOf(r.user), r.client};
+        hints[r.serverId] << ClientHint{ms, r.address, UsageEngine::accountOf(r.user), r.client};
+    }
+    for (auto it = hints.begin(); it != hints.end(); ++it) {
+        std::sort(it.value().begin(), it.value().end(),
+                  [](const ClientHint &a, const ClientHint &b) { return a.ms < b.ms; });
     }
     return hints;
 }
 
-QString matchClientHint(const Event &e, const QList<ClientHint> &hints)
+QString matchClientHint(const Event &e, const ClientHintIndex &hintsByServer)
 {
-    if (hints.isEmpty())
+    const auto serverIt = hintsByServer.constFind(e.serverId);
+    if (serverIt == hintsByServer.cend() || serverIt.value().isEmpty())
         return {};
+    const QList<ClientHint> &hints = serverIt.value();
     const QString account = UsageEngine::accountOf(e.user);
-    qint64 bestDiff = 15001;
+    constexpr qint64 kWindowMs = 15000;
+    qint64 bestDiff = kWindowMs + 1;
     QString best;
-    for (const ClientHint &h : hints) {
-        if (h.serverId != e.serverId)
-            continue;
+    auto it = std::lower_bound(hints.cbegin(), hints.cend(), e.ms - kWindowMs,
+                               [](const ClientHint &h, qint64 t) { return h.ms < t; });
+    for (; it != hints.cend() && it->ms <= e.ms + kWindowMs; ++it) {
+        const ClientHint &h = *it;
         if (!e.address.isEmpty() && !h.address.isEmpty() && h.address != e.address)
             continue;
         if (!account.isEmpty() && !h.account.isEmpty() && h.account.compare(account, Qt::CaseInsensitive) != 0)
@@ -176,7 +227,7 @@ QString matchClientHint(const Event &e, const QList<ClientHint> &hints)
 }
 
 // Converts an access log record; false if it is not a session event.
-bool toEvent(const AccessRecord &r, const QList<ClientHint> &hints, Event &e, QByteArray &line, QString &key)
+bool toEvent(const AccessRecord &r, const ClientHintIndex &hints, Event &e, QByteArray &line, QString &key)
 {
     Event::Kind kind;
     if (r.source != QLatin1String("LSM") || !kindOf(r.event, kind))
@@ -224,7 +275,7 @@ int rebuildLocked()
         QFile::remove(UsageLog::eventsPath() + QStringLiteral(".bak"));
         QFile::copy(UsageLog::eventsPath(), UsageLog::eventsPath() + QStringLiteral(".bak"));
     }
-    const QList<ClientHint> hints = clientHintsFrom(records);
+    const ClientHintIndex hints = clientHintsFrom(records);
     QList<Event> events;
     QSet<QString> keys;
     QByteArray lines;
@@ -321,6 +372,16 @@ void load()
                 s.idleMin = -1;
             s.client = c.at(7);
             g_samples << s;
+            if (s.ms > g_beat.value(s.serverId))
+                g_beat[s.serverId] = s.ms;
+            if (s.state != Sample::Heartbeat) {
+                const QString key = s.serverId + QLatin1Char('|') + QString::number(s.sessionId);
+                Last &last = g_last[key];
+                if (s.ms >= last.wroteMs) {
+                    last.state = s.state;
+                    last.wroteMs = s.ms;
+                }
+            }
         }
     }
 }
@@ -341,7 +402,7 @@ void UsageLog::recordEvents(const QList<AccessRecord> &written)
 {
     QMutexLocker lock(&g_mutex);
     load();
-    const QList<ClientHint> hints = clientHintsFrom(written);
+    const ClientHintIndex hints = clientHintsFrom(written);
     QByteArray eventLines;
     for (const AccessRecord &r : written) {
         Event e;
@@ -360,7 +421,12 @@ void UsageLog::sampled(const ServerProfile &server, const QList<RemoteSession> &
 {
     QMutexLocker lock(&g_mutex);
     load();
-    const qint64 now = serverNowUtcMs > 0 ? serverNowUtcMs : QDateTime::currentMSecsSinceEpoch();
+    const qint64 localNow = QDateTime::currentMSecsSinceEpoch();
+    if (serverNowUtcMs > 0)
+        g_clockOffset.insert(server.id, serverNowUtcMs - localNow);
+    const qint64 now = serverNowUtcMs > 0
+        ? serverNowUtcMs
+        : (g_clockOffset.contains(server.id) ? localNow + g_clockOffset.value(server.id) : localNow);
     if (now <= g_beat.value(server.id))
         return;
 
@@ -424,11 +490,17 @@ UsageEngine::Report UsageLog::report()
 {
     QList<Event> events;
     QList<Sample> samples;
+    QHash<QString, qint64> offsets;
     {
         QMutexLocker lock(&g_mutex);
         load();
         events = g_events;
         samples = g_samples;
+        offsets = g_clockOffset;
     }
-    return UsageEngine::compute(events, samples, QDateTime::currentMSecsSinceEpoch(), QTimeZone::systemTimeZone());
+    const qint64 localNow = QDateTime::currentMSecsSinceEpoch();
+    QHash<QString, qint64> serverNow;
+    for (auto it = offsets.cbegin(); it != offsets.cend(); ++it)
+        serverNow.insert(it.key(), localNow + it.value());
+    return UsageEngine::compute(events, samples, localNow, QTimeZone::systemTimeZone(), serverNow);
 }

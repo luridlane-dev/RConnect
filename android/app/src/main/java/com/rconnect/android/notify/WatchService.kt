@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
@@ -44,20 +46,25 @@ class WatchService : Service() {
 
         val prefs = NotificationPrefs(this)
         if (!prefs.enabled || !prefs.watch || !Notifier.canPost(this)) {
+            isRunning = false
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
+        isRunning = true
         if (job == null || job?.isActive != true) {
             job = scope.launch {
                 while (isActive) {
                     val livePrefs = NotificationPrefs(applicationContext)
                     if (!livePrefs.enabled || !livePrefs.watch || !Notifier.canPost(applicationContext)) {
+                        isRunning = false
                         ServiceCompat.stopForeground(this@WatchService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                         stopSelf()
                         break
                     }
-                    runCatching { ServerCheck.run(applicationContext) }
+                    if (!AppVisibility.inFront && hasNetwork(applicationContext)) {
+                        runCatching { ServerCheck.run(applicationContext) }
+                    }
                     delay(INTERVAL_MS)
                 }
             }
@@ -66,6 +73,7 @@ class WatchService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         scope.cancel()
         super.onDestroy()
     }
@@ -73,12 +81,27 @@ class WatchService : Service() {
     companion object {
         private const val INTERVAL_MS = 30_000L
 
+        @Volatile
+        private var isRunning = false
+
+        private fun hasNetwork(context: Context): Boolean = runCatching {
+            val cm = context.getSystemService(ConnectivityManager::class.java) ?: return true
+            val net = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(net) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }.getOrDefault(true)
+
         /** Starts or stops the service to match the settings. */
         fun sync(context: Context) {
             val prefs = NotificationPrefs(context)
             val intent = Intent(context, WatchService::class.java)
             if (prefs.enabled && prefs.watch && Notifier.canPost(context)) {
-                runCatching { ContextCompat.startForegroundService(context, intent) }
+                if (!isRunning) {
+                    runCatching { ContextCompat.startForegroundService(context, intent) }
+                }
+            } else if (isRunning) {
+                isRunning = false
+                runCatching { context.stopService(intent) }
             } else {
                 runCatching { context.stopService(intent) }
             }
@@ -92,8 +115,12 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             val prefs = NotificationPrefs(context)
             if (prefs.enabled) {
-                CheckWorker.schedule(context)
-                WatchService.sync(context)
+                if (prefs.watch) {
+                    CheckWorker.cancel(context)
+                    WatchService.sync(context)
+                } else {
+                    CheckWorker.schedule(context)
+                }
             }
         }
     }

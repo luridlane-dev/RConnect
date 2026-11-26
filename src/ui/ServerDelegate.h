@@ -13,10 +13,10 @@ class ServerDelegate : public QStyledItemDelegate {
 public:
     explicit ServerDelegate(QAbstractItemView *view);
 
-    static constexpr int kCardHeight = 76;
-    static constexpr int kRowHeight = 46;
+    static constexpr int kCardHeight = 84;
+    static constexpr int kRowHeight = 52;
     static constexpr int kHeaderHeight = 34;
-    static constexpr int kMinCardWidth = 330;
+    static constexpr int kMinCardWidth = 340;
 
     bool setOpenSessionIds(const QSet<QString> &open);
     void setHovered(const QModelIndex &index);

@@ -28,6 +28,7 @@ signals:
     void updateCheckRequested();
     void importRequested();
     void exportRequested();
+    void serverLayoutChanged();
 
 protected:
     void changeEvent(QEvent *e) override;

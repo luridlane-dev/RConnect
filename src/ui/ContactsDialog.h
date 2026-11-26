@@ -14,9 +14,9 @@ public:
 
     // Edits `contact` in a small dialog and saves it to the address book. Returns false if cancelled.
     static bool edit(Contact contact, QWidget *parent);
-    // For the person behind a session or an activity line: edits the entry that matches, or starts a new
-    // one filled in with what is known.
-    static void editFor(const QString &device, const QString &user, QWidget *parent);
+    // For the person behind a session, usage entry, or activity line: edits the entry that matches, or starts a new
+    // one filled in with what is known (computer name, or IP address when computer name is missing).
+    static void editFor(const QString &device, const QString &user, QWidget *parent, const QString &address = {});
 
 private:
     void reload();

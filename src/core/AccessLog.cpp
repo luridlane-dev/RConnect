@@ -13,6 +13,7 @@
 #include <QSettings>
 #include <QSet>
 #include <QStandardPaths>
+#include <QTimeZone>
 
 #include <functional>
 
@@ -31,11 +32,9 @@ constexpr qint64 kLookbackMarginMs = 120000;
 
 // Computer names remembered by address; a flood of addresses from the internet must not grow it forever.
 constexpr qsizetype kMaxKnownClients = 20000;
-// Failed sign-ins from one address in one check: this many lines are written, the rest become one summary line.
-constexpr int kMaxFailedLinesPerAddress = 3;
-// Failed sign-ins this close together from one address are one run.
-constexpr qint64 kRunGapSecs = 600;
-constexpr int kKeepFailedDays = 30;
+// Failed sign-ins within this window from one address are folded into a single summary line.
+constexpr qint64 kRunGapSecs = 3600;
+constexpr int kKeepFailedDays = 14;
 constexpr int kKeepOtherDays = 400;
 
 // The summary line of a folded run has "|more=N" after its detail: N attempts besides the line itself.
@@ -93,23 +92,69 @@ QString quoted(QString text)
     return QLatin1Char('"') + text + QLatin1Char('"');
 }
 
+// Fast zero-allocation ISO-8601 UTC parser ("YYYY-MM-DDTHH:MM:SS(.mmm...)Z" -> ms since epoch, or 0).
+qint64 parseUtcMs(QStringView s)
+{
+    if (s.size() < 19)
+        return 0;
+    const auto dig2 = [&](qsizetype i, int &out) {
+        const ushort c0 = s.at(i).unicode() - '0';
+        const ushort c1 = s.at(i + 1).unicode() - '0';
+        if (c0 > 9 || c1 > 9)
+            return false;
+        out = c0 * 10 + c1;
+        return true;
+    };
+    if (s.at(4) != QLatin1Char('-') || s.at(7) != QLatin1Char('-')
+        || (s.at(10) != QLatin1Char('T') && s.at(10) != QLatin1Char(' '))
+        || s.at(13) != QLatin1Char(':') || s.at(16) != QLatin1Char(':'))
+        return 0;
+    int yHi = 0, yLo = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    if (!dig2(0, yHi) || !dig2(2, yLo) || !dig2(5, mo) || !dig2(8, d)
+        || !dig2(11, h) || !dig2(14, mi) || !dig2(17, se))
+        return 0;
+    const int y = yHi * 100 + yLo;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59)
+        return 0;
+    int ms = 0;
+    if (s.size() > 19 && s.at(19) == QLatin1Char('.')) {
+        int mul = 100;
+        for (qsizetype i = 20; i < s.size() && mul >= 1; ++i) {
+            const ushort c = s.at(i).unicode() - '0';
+            if (c > 9)
+                break;
+            ms += int(c) * mul;
+            mul /= 10;
+        }
+    }
+    const qint64 yr = y - (mo <= 2 ? 1 : 0);
+    const qint64 era = (yr >= 0 ? yr : yr - 399) / 400;
+    const qint64 yoe = yr - era * 400;
+    const qint64 doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const qint64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const qint64 days = era * 146097 + doe - 719468;
+    return ((days * 86400 + qint64(h) * 3600 + qint64(mi) * 60 + se) * 1000) + ms;
+}
+
 // Within the last ten minutes: new enough for a session number to still mean the same session.
 bool recent(const QString &timeUtc)
 {
-    const QDateTime utc = QDateTime::fromString(timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-    return utc.isValid() && qAbs(utc.secsTo(QDateTime::currentDateTimeUtc())) <= 600;
+    const qint64 ms = parseUtcMs(timeUtc);
+    return ms != 0 && qAbs(QDateTime::currentMSecsSinceEpoch() - ms) <= 600000;
 }
 
 QString localTime(const QString &timeUtc)
 {
-    const QDateTime utc = QDateTime::fromString(timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-    return utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QString();
+    const qint64 ms = parseUtcMs(timeUtc);
+    return ms != 0 ? QDateTime::fromMSecsSinceEpoch(ms, QTimeZone::LocalTime).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                   : QString();
 }
 
 // One CSV line without its line break; fields may be quoted.
-QStringList splitLine(const QString &line)
+QStringList splitLine(QStringView line)
 {
     QStringList fields;
+    fields.reserve(14);
     QString field;
     bool inQuotes = false;
     for (qsizetype i = 0; i < line.size(); ++i) {
@@ -389,9 +434,8 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
     QHash<QString, QMultiHash<QString, qint64>> writtenIds; // by key: time -> record ids
     QList<AccessRecord> records;
     QByteArray lines;
-    struct Folded { qint64 more = 0; QString timeUtc, user, detail, client; qint64 recordId = 0; };
-    QHash<QString, int> failedKept;      // address -> failed sign-in lines written in this check
-    QHash<QString, Folded> folded;       // address -> the ones left out
+    struct Folded { qint64 count = 0; QString timeUtc, user, detail, client, address; qint64 recordId = 0; };
+    QHash<QString, Folded> folded;       // address (or client) -> folded failed sign-ins in this check
     int added = 0;
     for (const AccessEvent &e : events) {
         const QString k = key(server.id, e.source);
@@ -415,16 +459,18 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
             client = g_clientByAddress.value(e.address);
         if (!client.isEmpty() && !e.address.isEmpty() && g_clientByAddress.size() < kMaxKnownClients)
             g_clientByAddress.insert(e.address, client);
-        // Password guessing from the internet is thousands of failed sign-ins a day: only the first few of each
-        // address are written, the rest are counted in one summary line (the alerts below still see them all).
-        if (e.kind == AccessEvent::FailedLogon && failedKept[e.address]++ >= kMaxFailedLinesPerAddress) {
-            Folded &f = folded[e.address];
-            ++f.more;
-            if (e.timeUtc >= f.timeUtc) {
+        // Password guessing from the internet produces thousands of failed sign-ins a day: fold all failed
+        // attempts from the same address within one check into a single line (Threats still sees every event).
+        if (e.kind == AccessEvent::FailedLogon) {
+            const QString foldKey = !e.address.isEmpty() ? e.address : (QStringLiteral("C:") + client);
+            Folded &f = folded[foldKey];
+            ++f.count;
+            if (f.count == 1 || e.timeUtc >= f.timeUtc) {
                 f.timeUtc = e.timeUtc;
                 f.user = e.user;
                 f.detail = e.detail;
                 f.client = client;
+                f.address = e.address;
                 f.recordId = e.recordId;
             }
         } else {
@@ -453,10 +499,10 @@ int AccessLog::polled(const ServerProfile &server, const QList<AccessEvent> &eve
         ++added;
     }
     for (auto it = folded.cbegin(); it != folded.cend(); ++it) {
-        // The line stands for itself and the others: N events in all, so N - 1 besides it.
         const Folded &f = it.value();
-        lines += line(server, f.timeUtc, QStringLiteral("SEC"), QStringLiteral("FailedLogon"), f.user, it.key(), f.client,
-                      f.detail + QLatin1String(kMoreMarker) + QString::number(f.more - 1), {}, 0, f.recordId);
+        const QString detail = f.count > 1 ? f.detail + QLatin1String(kMoreMarker) + QString::number(f.count - 1) : f.detail;
+        lines += line(server, f.timeUtc, QStringLiteral("SEC"), QStringLiteral("FailedLogon"), f.user, f.address, f.client,
+                      detail, {}, 0, f.recordId);
     }
     if (added > 0 && !write(lines))
         return -1;
@@ -503,7 +549,7 @@ void AccessLog::maintain()
 {
     QMutexLocker lock(&g_mutex);
     QFile in(path());
-    constexpr qint64 kLookAtLeast = 2 * 1024 * 1024; // a small file needs nothing
+    constexpr qint64 kLookAtLeast = 256 * 1024; // compact once the log grows past 256 KB
     if (in.size() < kLookAtLeast || !in.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
     QSaveFile out(path());
@@ -511,26 +557,31 @@ void AccessLog::maintain()
         return;
 
     struct Run {
-        QDateTime last;
-        int kept = 0;
-        qint64 more = 0;
-        QStringList newest; // the fields of the newest folded line
+        qint64 lastMs = 0;
+        qint64 total = 0;   // total attempts represented
+        qint64 lines = 0;   // source CSV lines merged into this run
+        QStringList newest; // fields of the newest line, with |more= stripped from detail
     };
     QHash<QString, Run> runs; // server id | address
-    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    constexpr qint64 kDayMs = 86400LL * 1000;
+    constexpr qint64 kRunGapMs = kRunGapSecs * 1000;
     qint64 dropped = 0;
 
-    const auto flush = [&](Run &run, const QString &address) {
-        if (run.more <= 0)
+    const auto flush = [&](Run &run) {
+        if (run.total <= 0 || run.newest.isEmpty())
             return;
         QStringList c = run.newest;
-        c[8] = address;
-        c[10] = c.at(10) + QLatin1String(kMoreMarker) + QString::number(run.more - 1);
+        if (run.total > 1)
+            c[10] = c.at(10) + QLatin1String(kMoreMarker) + QString::number(run.total - 1);
         QStringList quotedFields;
+        quotedFields.reserve(c.size());
         for (int i = 0; i < c.size(); ++i)
             quotedFields << (i >= 12 ? c.at(i) : quoted(c.at(i)));
         out.write(quotedFields.join(QLatin1Char(',')).toUtf8() + "\r\n");
-        run.more = 0;
+        if (run.lines > 1)
+            dropped += run.lines - 1;
+        run = {};
     };
 
     bool header = true;
@@ -542,42 +593,42 @@ void AccessLog::maintain()
             continue;
         }
         const bool failed = raw.contains("\"FailedLogon\"");
-        const QStringList c = splitLine(QString::fromUtf8(raw).trimmed());
+        const QString lineText = QString::fromUtf8(raw);
+        QStringList c = splitLine(QStringView(lineText).trimmed());
         if (c.size() < 14) {
             out.write(raw);
             continue;
         }
-        const QDateTime time = QDateTime::fromString(c.at(0).left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-        const qint64 ageDays = time.isValid() ? time.daysTo(now) : 0;
-        if (ageDays > (failed ? kKeepFailedDays : kKeepOtherDays)) {
+        const qint64 timeMs = parseUtcMs(c.at(0));
+        const qint64 ageMs = timeMs != 0 ? (nowMs - timeMs) : 0;
+        if (ageMs > qint64(failed ? kKeepFailedDays : kKeepOtherDays) * kDayMs) {
             ++dropped;
             continue;
         }
-        if (!failed || c.at(5) != QLatin1String("SEC") || c.at(10).contains(QLatin1String(kMoreMarker)) || !time.isValid()) {
+        if (!failed || c.at(5) != QLatin1String("SEC") || timeMs == 0) {
             out.write(raw);
             continue;
         }
-        const QString key = c.at(2) + QLatin1Char('|') + c.at(8);
+        qint64 standsFor = 1;
+        if (const qsizetype marker = c.at(10).indexOf(QLatin1String(kMoreMarker)); marker >= 0) {
+            standsFor += qMax<qint64>(0, QStringView(c.at(10)).mid(marker + 6).toLongLong());
+            c[10].truncate(marker);
+        }
+        const QString addrKey = !c.at(8).isEmpty() ? c.at(8) : (QStringLiteral("C:") + c.at(9));
+        const QString key = c.at(2) + QLatin1Char('|') + addrKey;
         Run &run = runs[key];
-        if (!run.last.isValid() || qAbs(run.last.secsTo(time)) > kRunGapSecs) {
-            flush(run, c.at(8));
-            run.kept = 0;
-        }
-        run.last = time;
-        if (run.kept < kMaxFailedLinesPerAddress) {
-            ++run.kept;
-            out.write(raw);
-        } else {
-            ++run.more;
-            ++dropped;
-            if (run.newest.isEmpty() || c.at(0) >= run.newest.at(0))
-                run.newest = c;
-        }
+        if (run.lastMs != 0 && qAbs(run.lastMs - timeMs) > kRunGapMs)
+            flush(run);
+        run.lastMs = timeMs;
+        run.total += standsFor;
+        ++run.lines;
+        if (run.newest.isEmpty() || c.at(0) >= run.newest.at(0))
+            run.newest = std::move(c);
         // Runs that ended long ago are written out so the table stays small.
         if (runs.size() > 50000) {
             for (auto it = runs.begin(); it != runs.end();) {
-                if (qAbs(it->last.secsTo(time)) > kRunGapSecs) {
-                    flush(it.value(), it.key().section(QLatin1Char('|'), 1));
+                if (qAbs(it->lastMs - timeMs) > kRunGapMs) {
+                    flush(it.value());
                     it = runs.erase(it);
                 } else {
                     ++it;
@@ -586,7 +637,7 @@ void AccessLog::maintain()
         }
     }
     for (auto it = runs.begin(); it != runs.end(); ++it)
-        flush(it.value(), it.key().section(QLatin1Char('|'), 1));
+        flush(it.value());
 
     in.close();
     if (dropped == 0) {
@@ -612,10 +663,15 @@ QList<AccessRecord> AccessLog::readSessionEvents()
 {
     QMutexLocker lock(&g_mutex);
     QList<AccessRecord> events;
-    for (const AccessRecord &r : readFile(nullptr, 0, true))
-        if (r.source == QLatin1String("LSM")
+    for (const AccessRecord &r : readFile(nullptr, 0, true)) {
+        const bool lsmSession = r.source == QLatin1String("LSM")
             && (r.event == QLatin1String("Logon") || r.event == QLatin1String("Logoff")
-                || r.event == QLatin1String("Disconnect") || r.event == QLatin1String("Reconnect")))
+                || r.event == QLatin1String("Disconnect") || r.event == QLatin1String("Reconnect"));
+        const bool secClientHint = r.source == QLatin1String("SEC") && !r.client.isEmpty()
+            && (r.event == QLatin1String("SecurityReconnect") || r.event == QLatin1String("SecurityDisconnect")
+                || r.event == QLatin1String("SecurityLogon"));
+        if (lsmSession || secClientHint)
             events << r;
+    }
     return events;
 }

@@ -84,6 +84,7 @@ private:
 
     ServerProfile m_profile;
     QAxWidget *m_ax = nullptr;
+    void *m_innerHwnd = nullptr; // cached IHWindowClass HWND for focusRemote()
     QStackedLayout *m_stack = nullptr;
     SessionOverlay *m_overlay = nullptr;
     State m_state = Idle;

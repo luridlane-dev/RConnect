@@ -13,15 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -48,13 +45,19 @@ import com.rconnect.android.Health
 import com.rconnect.android.R
 import com.rconnect.android.ServerFilter
 import com.rconnect.android.ServerState
-import com.rconnect.android.ThemeMode
-import com.rconnect.android.data.Contact
-import com.rconnect.android.data.ContactBook
+import com.rconnect.android.data.ContactIndex
 import com.rconnect.android.data.ServerEntry
 import java.util.Locale
 
 private data class ServerItem(val entry: ServerEntry, val state: ServerState)
+private data class ServerSummaryCounts(
+    val rows: List<ServerItem>,
+    val favCount: Int,
+    val availableCount: Int,
+    val inUseCount: Int,
+    val offlineCount: Int,
+    val checking: Int,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,100 +68,83 @@ fun ServersScreen(vm: AppViewModel) {
     val states by vm.states.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
     val query by vm.serverQuery.collectAsStateWithLifecycle()
-    val themeMode by vm.themeMode.collectAsStateWithLifecycle()
     val listView by vm.listView.collectAsStateWithLifecycle()
 
     var adding by remember { mutableStateOf(false) }
     var transfer by remember { mutableStateOf<Transfer?>(null) }
     var notifying by remember { mutableStateOf(false) }
     var about by remember { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
+    var settings by remember { mutableStateOf(false) }
     val collapsed = remember { mutableStateListOf<String>() }
     var pulled by remember { mutableStateOf(false) }
 
-    val rows = servers.map { ServerItem(it, states[it.id] ?: ServerState()) }
-    val favCount = rows.count { it.entry.favorite }
-    val availableCount = rows.count { it.state.health == Health.Free }
-    val inUseCount = rows.count { it.state.health == Health.InUse }
-    val offlineCount = rows.count { it.state.health == Health.Problem }
-    val checking = rows.count { it.state.checking }
-
-    val needle = query.trim().lowercase(Locale.ROOT)
-    val visible = rows.filter { r ->
-        val modeOk = when (filter) {
-            ServerFilter.All -> true
-            ServerFilter.Favorites -> r.entry.favorite
-            ServerFilter.Available -> r.state.health == Health.Free
-            ServerFilter.InUse -> r.state.health == Health.InUse
-            ServerFilter.Offline -> r.state.health == Health.Problem
-        }
-        modeOk && (needle.isEmpty() || matches(r, needle, contacts))
-    }.sortedWith(
-        Comparator { a, b ->
-            // Named groups first, favourites at the top of each group, then natural order by name.
-            val ga = a.entry.group
-            val gb = b.entry.group
-            if (ga != gb) {
-                if (ga.isEmpty() || gb.isEmpty()) return@Comparator if (gb.isEmpty()) -1 else 1
-                val gc = naturalCompare(ga, gb)
-                if (gc != 0) return@Comparator gc
+    val contactIndex = remember(contacts) { ContactIndex(contacts) }
+    val summary = remember(servers, states) {
+        val list = ArrayList<ServerItem>(servers.size)
+        var fav = 0
+        var avail = 0
+        var inUse = 0
+        var offline = 0
+        var chk = 0
+        for (s in servers) {
+            val st = states[s.id] ?: ServerState()
+            list += ServerItem(s, st)
+            if (s.favorite) fav++
+            when (st.health) {
+                Health.Free -> avail++
+                Health.InUse -> inUse++
+                Health.Problem -> offline++
+                Health.Pending -> {}
             }
-            if (a.entry.favorite != b.entry.favorite) return@Comparator if (a.entry.favorite) -1 else 1
-            naturalCompare(a.entry.title, b.entry.title)
-        },
-    )
+            if (st.checking) chk++
+        }
+        ServerSummaryCounts(list, fav, avail, inUse, offline, chk)
+    }
+    val rows = summary.rows
+    val favCount = summary.favCount
+    val availableCount = summary.availableCount
+    val inUseCount = summary.inUseCount
+    val offlineCount = summary.offlineCount
+    val checking = summary.checking
+
+    val visible = remember(rows, filter, query, contactIndex) {
+        val needle = query.trim().lowercase(Locale.ROOT)
+        rows.filter { r ->
+            val modeOk = when (filter) {
+                ServerFilter.All -> true
+                ServerFilter.Favorites -> r.entry.favorite
+                ServerFilter.Available -> r.state.health == Health.Free
+                ServerFilter.InUse -> r.state.health == Health.InUse
+                ServerFilter.Offline -> r.state.health == Health.Problem
+            }
+            modeOk && (needle.isEmpty() || matches(r, needle, contactIndex))
+        }.sortedWith(
+            Comparator { a, b ->
+                // Named groups first, favourites at the top of each group, then natural order by name.
+                val ga = a.entry.group
+                val gb = b.entry.group
+                if (ga != gb) {
+                    if (ga.isEmpty() || gb.isEmpty()) return@Comparator if (gb.isEmpty()) -1 else 1
+                    val gc = naturalCompare(ga, gb)
+                    if (gc != 0) return@Comparator gc
+                }
+                if (a.entry.favorite != b.entry.favorite) return@Comparator if (a.entry.favorite) -1 else 1
+                naturalCompare(a.entry.title, b.entry.title)
+            },
+        )
+    }
     LaunchedEffect(checking) { if (checking == 0) pulled = false }
-    val grouped = visible.groupBy { it.entry.group }
-    val showGroups = servers.any { it.group.isNotBlank() }
+    val grouped = remember(visible) { visible.groupBy { it.entry.group } }
+    val showGroups = remember(servers) { servers.any { it.group.isNotBlank() } }
+    val allGroups = remember(servers) { servers.map { it.group }.filter { it.isNotBlank() }.distinct().sorted() }
 
     Column(Modifier.fillMaxSize()) {
         LargeTitleBar(stringResource(R.string.tab_servers)) {
             PrimaryActionButton(stringResource(R.string.add_server_cta), onClick = { adding = true })
-            Box {
-                ToolButton(Icons.Default.MoreVert, stringResource(R.string.more)) { menu = true }
-                DropdownMenu(
-                    expanded = menu,
-                    onDismissRequest = { menu = false },
-                    containerColor = c.solid,
-                    shape = RadiusControl,
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.refresh_all), color = c.text) },
-                        onClick = { menu = false; vm.refreshAll(force = true) },
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(if (themeMode == ThemeMode.Dark) R.string.menu_switch_to_light else R.string.menu_switch_to_dark),
-                                color = c.text,
-                            )
-                        },
-                        onClick = {
-                            menu = false
-                            vm.setThemeMode(if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark)
-                        },
-                    )
-                    HorizontalDivider(color = c.border)
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.import_title), color = c.text) },
-                        onClick = { menu = false; transfer = Transfer.Import },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.export_title), color = if (servers.isNotEmpty()) c.text else c.text3) },
-                        enabled = servers.isNotEmpty(),
-                        onClick = { menu = false; transfer = Transfer.Export },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.notifications_title), color = c.text) },
-                        onClick = { menu = false; notifying = true },
-                    )
-                    HorizontalDivider(color = c.border)
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_about), color = c.text) },
-                        onClick = { menu = false; about = true },
-                    )
-                }
+            if (servers.isNotEmpty()) {
+                ToolButton(Icons.Default.Refresh, stringResource(R.string.refresh_all)) { vm.refreshAll(force = true) }
             }
+            ToolButton(Icons.Default.Settings, stringResource(R.string.settings)) { settings = true }
         }
 
         if (checking > 0) {
@@ -247,7 +233,7 @@ fun ServersScreen(vm: AppViewModel) {
                                             ServerListRow(
                                                 server = r.entry,
                                                 state = r.state,
-                                                contacts = contacts,
+                                                contacts = contactIndex,
                                                 onFavorite = { vm.toggleFavorite(r.entry.id) },
                                                 onClick = { vm.select(r.entry.id) },
                                             )
@@ -257,7 +243,7 @@ fun ServersScreen(vm: AppViewModel) {
                                             ServerCard(
                                                 server = r.entry,
                                                 state = r.state,
-                                                contacts = contacts,
+                                                contacts = contactIndex,
                                                 onFavorite = { vm.toggleFavorite(r.entry.id) },
                                                 onClick = { vm.select(r.entry.id) },
                                             )
@@ -272,13 +258,21 @@ fun ServersScreen(vm: AppViewModel) {
         }
     }
 
-    if (adding) ServerDialog(null, vm.groups(), onDismiss = { adding = false }) { vm.save(it); adding = false }
+    if (adding) ServerDialog(null, allGroups, onDismiss = { adding = false }) { vm.save(it); adding = false }
+    if (settings) SettingsDialog(
+        vm = vm,
+        onDismiss = { settings = false },
+        onImportServers = { transfer = Transfer.Import },
+        onExportServers = { transfer = Transfer.Export },
+        onNotifications = { notifying = true },
+        onAbout = { about = true },
+    )
     transfer?.let { TransferHost(vm, it) { transfer = null } }
     if (notifying) NotificationsDialog(vm) { notifying = false }
     if (about) AboutDialog { about = false }
 }
 
-private fun matches(r: ServerItem, needle: String, contacts: List<Contact>): Boolean =
+private fun matches(r: ServerItem, needle: String, contacts: ContactIndex): Boolean =
     r.entry.title.lowercase(Locale.ROOT).contains(needle) ||
         r.entry.host.lowercase(Locale.ROOT).contains(needle) ||
         r.entry.group.lowercase(Locale.ROOT).contains(needle) ||
@@ -286,14 +280,14 @@ private fun matches(r: ServerItem, needle: String, contacts: List<Contact>): Boo
         r.state.sessions.orEmpty().any {
             it.user.lowercase(Locale.ROOT).contains(needle) ||
                 it.client.lowercase(Locale.ROOT).contains(needle) ||
-                ContactBook.nameFor(contacts, it.client, it.user).orEmpty().lowercase(Locale.ROOT).contains(needle)
+                contacts.nameFor(it.client, it.user).orEmpty().lowercase(Locale.ROOT).contains(needle)
         }
 
 @Composable
 private fun ServerCard(
     server: ServerEntry,
     state: ServerState,
-    contacts: List<Contact>,
+    contacts: ContactIndex,
     onFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -358,7 +352,7 @@ private fun ServerCard(
 private fun ServerListRow(
     server: ServerEntry,
     state: ServerState,
-    contacts: List<Contact>,
+    contacts: ContactIndex,
     onFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -388,16 +382,13 @@ private fun ServerListRow(
                     Text(stringResource(R.string.ms_format, state.latencyMs), fontSize = 11.sp, color = c.text3, maxLines = 1)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (server.port == 3389) server.host else "${server.host}:${server.port}",
-                    fontSize = 12.sp,
-                    color = c.text2,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            Text(
+                if (server.port == 3389) server.host else "${server.host}:${server.port}",
+                fontSize = 12.sp,
+                color = c.text2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(2.dp))
             ServerStatusLine(state = state, contacts = contacts)
         }
@@ -406,13 +397,13 @@ private fun ServerListRow(
 }
 
 @Composable
-private fun ServerStatusLine(state: ServerState, contacts: List<Contact>) {
+private fun ServerStatusLine(state: ServerState, contacts: ContactIndex) {
     val c = appColors
     when (state.health) {
         Health.InUse -> {
             val first = state.connected.firstOrNull()
             if (first != null) {
-                val primaryName = ContactBook.nameFor(contacts, first.client, first.user)
+                val primaryName = contacts.nameFor(first.client, first.user)
                     ?: first.client.ifBlank { first.user.substringAfter('\\') }
                 val who = if (state.connected.size > 1) "$primaryName +${state.connected.size - 1}" else primaryName
                 val activity = compactActivityText(first, state.serverNowUtcMs)

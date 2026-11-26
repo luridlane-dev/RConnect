@@ -29,6 +29,7 @@ object ServerFile {
     private const val ITERATIONS = 210_000
     private const val NONCE = 12
     private const val TAG = 16
+    private val secureRandom = SecureRandom()
 
     fun read(text: String, passphrase: String = ""): Read {
         val root = try {
@@ -71,9 +72,8 @@ object ServerFile {
         if (passphrase.isEmpty()) return root.put("Encrypted", false).put("Content", bundle).toString(2)
 
         bundle.put("Secrets", secrets)
-        val random = SecureRandom()
-        val salt = ByteArray(16).also(random::nextBytes)
-        val nonce = ByteArray(NONCE).also(random::nextBytes)
+        val salt = ByteArray(16).also(secureRandom::nextBytes)
+        val nonce = ByteArray(NONCE).also(secureRandom::nextBytes)
         val key = derive(passphrase, salt, ITERATIONS, "PBKDF2WithHmacSHA256")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG * 8, nonce))

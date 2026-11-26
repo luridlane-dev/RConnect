@@ -1,17 +1,18 @@
 #pragma once
+#include "core/UsageEngine.h"
+
+#include <QDate>
 #include <QWidget>
 
 class QComboBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QStandardItemModel;
 class QTimer;
 class QTreeView;
-namespace UsageEngine { struct Report; }
 
-// Server connection and active time per user (see UsageLog and UsageEngine). One row per user with
-// their deduplicated active time over all servers; open it for each server (or each day), and under
-// that every connection with its start and end.
+// Daily server connection, active, and idle time per user.
 class UsagePage : public QWidget {
     Q_OBJECT
 public:
@@ -34,25 +35,35 @@ protected:
 private:
     void retranslate();
     void reload();
+    void renderCurrent();
     void showReport(const UsageEngine::Report &report);
-    void rebuild();
-    void explain();
+    void showContextMenu(const QPoint &pos);
+    void updateContactButton();
+    void editSelectedContact();
 
-    QStandardItemModel *m_model;
-    QTreeView *m_view;
-    QLabel *m_title;
-    QLabel *m_subtitle;
-    QLabel *m_warning;
-    QLabel *m_total;
+    QStandardItemModel *m_model = nullptr;
+    QTreeView *m_view = nullptr;
+    QLabel *m_title = nullptr;
+    QLabel *m_subtitle = nullptr;
+    QLabel *m_total = nullptr;
     QLabel *m_metricLabels[4] = {};
     QLabel *m_metricValues[4] = {};
-    QComboBox *m_range;
-    QComboBox *m_breakdown;
-    QPushButton *m_refresh;
-    QPushButton *m_configure;
-    QPushButton *m_rebuild;
-    QPushButton *m_help;
-    QTimer *m_timer;
+    QComboBox *m_range = nullptr;
+    QLineEdit *m_search = nullptr;
+    QPushButton *m_refresh = nullptr;
+    QPushButton *m_addContact = nullptr;
+    QPushButton *m_configure = nullptr;
+    QTimer *m_timer = nullptr;
+    QTimer *m_searchTimer = nullptr;
+    QTimer *m_syncReloadTimer = nullptr;
+    UsageEngine::Report m_lastReport;
+    QList<UsageEngine::Person> m_cachedPeople;
+    int m_cachedRange = -1;
+    QDate m_cachedToday;
+    bool m_peopleValid = false;
+    QString m_activeMetricStyle;
+    QString m_idleMetricStyle;
+    bool m_hasReport = false;
     bool m_reading = false;
     bool m_readAgain = false;
 };

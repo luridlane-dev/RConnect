@@ -9,6 +9,7 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
+#include <QStyle>
 #include <QToolButton>
 
 namespace {
@@ -16,24 +17,27 @@ namespace {
 constexpr int kDetachDistance = 28;
 
 // Used instead of the "not allowed" cursor over empty space.
-QPixmap arrowCursor()
+const QPixmap &arrowCursor()
 {
-    QPixmap pm(20, 22);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    QPainterPath arrow;
-    arrow.moveTo(1, 1);
-    arrow.lineTo(1, 17);
-    arrow.lineTo(5, 13);
-    arrow.lineTo(8, 20);
-    arrow.lineTo(11, 19);
-    arrow.lineTo(8, 12);
-    arrow.lineTo(13, 12);
-    arrow.closeSubpath();
-    p.fillPath(arrow, Qt::white);
-    p.setPen(QPen(Qt::black, 1.2));
-    p.drawPath(arrow);
+    static const QPixmap pm = [] {
+        QPixmap pmap(20, 22);
+        pmap.fill(Qt::transparent);
+        QPainter p(&pmap);
+        p.setRenderHint(QPainter::Antialiasing);
+        QPainterPath arrow;
+        arrow.moveTo(1, 1);
+        arrow.lineTo(1, 17);
+        arrow.lineTo(5, 13);
+        arrow.lineTo(8, 20);
+        arrow.lineTo(11, 19);
+        arrow.lineTo(8, 12);
+        arrow.lineTo(13, 12);
+        arrow.closeSubpath();
+        p.fillPath(arrow, Qt::white);
+        p.setPen(QPen(Qt::black, 1.2));
+        p.drawPath(arrow);
+        return pmap;
+    }();
     return pm;
 }
 
@@ -54,6 +58,8 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
     setFixedHeight(kHeight);
     setAcceptDrops(true);
 
+    setProperty("selectionVisible", true);
+
     m_add = new QToolButton(this);
     m_add->setObjectName(QStringLiteral("menuButton"));
     m_add->setText(QStringLiteral("+"));
@@ -66,7 +72,15 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
     m_anim.setEasingCurve(QEasingCurve::OutCubic);
     m_anim.setStartValue(0.0);
     m_anim.setEndValue(1.0);
-    connect(&m_anim, &QVariantAnimation::valueChanged, this, [this] { update(); });
+    connect(&m_anim, &QVariantAnimation::valueChanged, this, [this] {
+        const int idx = currentIndex();
+        if (idx >= 0) {
+            const QRect dirty = m_current.toAlignedRect().united(tabRect(idx)).united(m_from.toAlignedRect()).adjusted(-2, 0, 2, 0);
+            update(dirty);
+        } else {
+            update();
+        }
+    });
     connect(this, &QTabBar::currentChanged, this, &AnimatedTabBar::slideTo);
     placeAddButton();
 }
@@ -84,14 +98,16 @@ void AnimatedTabBar::placeAddButton()
         return;
     int x = count() > 0 ? tabRect(count() - 1).right() + 1 : 0;
     x = qMax(0, qMin(x, width() - m_add->width()));
-    m_add->move(x, 0);
-    m_add->raise();
+    if (m_add->x() != x || m_add->y() != 0)
+        m_add->move(x, 0);
 }
 
 void AnimatedTabBar::tabInserted(int index)
 {
     QTabBar::tabInserted(index);
     placeAddButton();
+    if (m_add)
+        m_add->raise();
 }
 
 void AnimatedTabBar::tabRemoved(int index)
@@ -124,6 +140,11 @@ void AnimatedTabBar::setSelectionVisible(bool visible)
     if (m_selectionVisible == visible)
         return;
     m_selectionVisible = visible;
+    setProperty("selectionVisible", visible);
+    if (style()) {
+        style()->unpolish(this);
+        style()->polish(this);
+    }
     if (!visible) {
         m_anim.stop();
         m_from = {};
@@ -154,10 +175,11 @@ void AnimatedTabBar::paintEvent(QPaintEvent *e)
                            from.width() + (target.width() - from.width()) * t,
                            target.height());
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        const QRectF pill = m_current.adjusted(2.0, 4.0, -2.0, -4.0);
         p.setPen(Qt::NoPen);
         p.setBrush(Theme::kTabActive);
-        p.drawRoundedRect(m_current.adjusted(2, 5, -2, -5), 3, 3);
+        p.drawRect(pill);
     }
 
     QTabBar::paintEvent(e);

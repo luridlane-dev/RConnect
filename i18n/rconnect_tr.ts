@@ -17,27 +17,27 @@
     </message>
     <message>
         <source>Signed in</source>
-        <translation>Oturum açıldı</translation>
+        <translation>Giriş yaptı</translation>
     </message>
     <message>
         <source>Signed out</source>
-        <translation>Oturum kapatıldı</translation>
+        <translation>Çıkış yaptı</translation>
     </message>
     <message>
         <source>Disconnected</source>
-        <translation>Bağlantı koptu</translation>
+        <translation>Bağlantısı koptu</translation>
     </message>
     <message>
         <source>Reconnected</source>
-        <translation>Yeniden bağlandı</translation>
+        <translation>Tekrar bağlandı</translation>
     </message>
     <message>
         <source>Connection accepted</source>
-        <translation>Bağlantı kabul edildi</translation>
+        <translation>Bağlantı onaylandı</translation>
     </message>
     <message>
         <source>Failed sign-in</source>
-        <translation>Başarısız giriş denemesi</translation>
+        <translation>Başarısız giriş</translation>
     </message>
     <message>
         <source>Connected with RConnect</source>
@@ -77,7 +77,7 @@
     </message>
     <message>
         <source>Sign-ins</source>
-        <translation>Oturum açmalar</translation>
+        <translation>Girişler</translation>
     </message>
     <message>
         <source>Failed sign-ins</source>
@@ -270,6 +270,282 @@
     <message>
         <source>New service %1</source>
         <translation>Yeni servis: %1</translation>
+    </message>
+    <message>
+        <source>Sign-ins, disconnections, failed attempts and server events.</source>
+        <translation>Girişler, kopmalar, başarısız denemeler ve sunucu olayları.</translation>
+    </message>
+    <message>
+        <source>Who signed in, disconnected, or failed to sign in.</source>
+        <translation>Kimlerin giriş yaptığı, çıktığı veya hatalı giriş denediği.</translation>
+    </message>
+    <message>
+        <source>Search name, server or IP</source>
+        <translation>İsim, sunucu veya IP ara</translation>
+    </message>
+    <message>
+        <source>All events</source>
+        <translation>Tüm olaylar</translation>
+    </message>
+    <message>
+        <source>Server changes</source>
+        <translation>Sunucu değişiklikleri</translation>
+    </message>
+    <message>
+        <source>All time</source>
+        <translation>Tüm zamanlar</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Tarih</translation>
+    </message>
+    <message>
+        <source>Event</source>
+        <translation>Olay</translation>
+    </message>
+    <message>
+        <source>Person / Device</source>
+        <translation>Kişi / Cihaz</translation>
+    </message>
+    <message>
+        <source>Person</source>
+        <translation>Kişi</translation>
+    </message>
+    <message>
+        <source>Devices</source>
+        <translation>Cihazlar</translation>
+    </message>
+    <message>
+        <source>Reason</source>
+        <translation>Neden</translation>
+    </message>
+    <message>
+        <source>%1 (+%2)</source>
+        <translation>%1 (+%2)</translation>
+    </message>
+    <message>
+        <source>%1 – %2</source>
+        <translation>%1 – %2</translation>
+    </message>
+    <message>
+        <source>Remote Desktop</source>
+        <translation>Uzak Masaüstü</translation>
+    </message>
+    <message>
+        <source>Security</source>
+        <translation>Güvenlik</translation>
+    </message>
+    <message>
+        <source>System</source>
+        <translation>Sistem</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Bağlandı</translation>
+    </message>
+    <message>
+        <source>Screen viewed</source>
+        <translation>Ekran görüntülendi</translation>
+    </message>
+    <message>
+        <source>Tracking enabled</source>
+        <translation>Giriş kaydı açıldı</translation>
+    </message>
+    <message>
+        <source>Display updated</source>
+        <translation>Ekran ayarı değişti</translation>
+    </message>
+    <message>
+        <source>Message sent</source>
+        <translation>Mesaj gönderildi</translation>
+    </message>
+    <message>
+        <source>Connection closed</source>
+        <translation>Bağlantı kapatıldı</translation>
+    </message>
+    <message>
+        <source>Server added</source>
+        <translation>Sunucu eklendi</translation>
+    </message>
+    <message>
+        <source>Server updated</source>
+        <translation>Sunucu güncellendi</translation>
+    </message>
+    <message>
+        <source>Server removed</source>
+        <translation>Sunucu silindi</translation>
+    </message>
+    <message>
+        <source>Server configured</source>
+        <translation>Sunucu ayarlandı</translation>
+    </message>
+    <message>
+        <source>Servers imported</source>
+        <translation>Sunucular aktarıldı</translation>
+    </message>
+    <message>
+        <source>App updated</source>
+        <translation>Uygulama güncellendi</translation>
+    </message>
+    <message>
+        <source>Account created</source>
+        <translation>Hesap oluşturuldu</translation>
+    </message>
+    <message>
+        <source>Admin rights granted</source>
+        <translation>Yönetici yetkisi verildi</translation>
+    </message>
+    <message>
+        <source>Scheduled task added</source>
+        <translation>Otomatik görev eklendi</translation>
+    </message>
+    <message>
+        <source>Account enabled</source>
+        <translation>Hesap açıldı</translation>
+    </message>
+    <message>
+        <source>Account disabled</source>
+        <translation>Hesap kapatıldı</translation>
+    </message>
+    <message>
+        <source>Account deleted</source>
+        <translation>Hesap silindi</translation>
+    </message>
+    <message>
+        <source>Password change tried</source>
+        <translation>Şifre değişikliği denendi</translation>
+    </message>
+    <message>
+        <source>Password reset tried</source>
+        <translation>Şifre sıfırlama denendi</translation>
+    </message>
+    <message>
+        <source>Admin rights removed</source>
+        <translation>Yönetici yetkisi alındı</translation>
+    </message>
+    <message>
+        <source>Scheduled task removed</source>
+        <translation>Otomatik görev silindi</translation>
+    </message>
+    <message>
+        <source>Scheduled task enabled</source>
+        <translation>Otomatik görev açıldı</translation>
+    </message>
+    <message>
+        <source>Scheduled task disabled</source>
+        <translation>Otomatik görev kapatıldı</translation>
+    </message>
+    <message>
+        <source>Scheduled task updated</source>
+        <translation>Otomatik görev değişti</translation>
+    </message>
+    <message>
+        <source>Audit setting changed</source>
+        <translation>Denetim ayarı değişti</translation>
+    </message>
+    <message>
+        <source>Log cleared</source>
+        <translation>Kayıtlar silindi</translation>
+    </message>
+    <message>
+        <source>Alert: sign-in after failures</source>
+        <translation>Uyarı: hatalı denemeler sonrası giriş</translation>
+    </message>
+    <message>
+        <source>Alert: new country</source>
+        <translation>Uyarı: yeni ülkeden giriş</translation>
+    </message>
+    <message>
+        <source>Alert: new background program</source>
+        <translation>Uyarı: yeni arka plan programı</translation>
+    </message>
+    <message>
+        <source>%1 failed attempts from %2 (%3 accounts)</source>
+        <translation>%2 adresinden %1 hatalı deneme (%3 hesap)</translation>
+    </message>
+    <message>
+        <source>%1 signed in from %2 after %3 failed tries</source>
+        <translation>%1, %2 adresinden %3 hatalı deneme sonrası girdi</translation>
+    </message>
+    <message>
+        <source>New task: %1</source>
+        <translation>Yeni görev: %1</translation>
+    </message>
+    <message>
+        <source>%1 created by %2</source>
+        <translation>%1 hesabı %2 tarafından oluşturuldu</translation>
+    </message>
+    <message>
+        <source>%1 cleared by %2</source>
+        <translation>%1 kayıtları %2 tarafından silindi</translation>
+    </message>
+    <message>
+        <source>Task %1 added by %2</source>
+        <translation>%1 görevi %2 tarafından eklendi</translation>
+    </message>
+    <message>
+        <source>Changed by %1</source>
+        <translation>%1 tarafından değiştirildi</translation>
+    </message>
+    <message>
+        <source>Service: %1</source>
+        <translation>Servis: %1</translation>
+    </message>
+    <message>
+        <source>Account restricted</source>
+        <translation>Hesap kısıtlı</translation>
+    </message>
+    <message>
+        <source>Sign-in not allowed</source>
+        <translation>Giriş izni yok</translation>
+    </message>
+    <message>
+        <source>Updating %1 servers…</source>
+        <translation>%1 sunucu güncelleniyor…</translation>
+    </message>
+    <message>
+        <source>Could not reach %1 servers</source>
+        <translation>%1 sunucuya ulaşılamadı</translation>
+    </message>
+    <message>
+        <source>No activity recorded yet.</source>
+        <translation>Henüz kayıt yok.</translation>
+    </message>
+    <message>
+        <source>Showing %1 records</source>
+        <translation>%1 kayıt gösteriliyor</translation>
+    </message>
+    <message>
+        <source>Copy IP address</source>
+        <translation>IP adresini kopyala</translation>
+    </message>
+    <message>
+        <source>Copy row</source>
+        <translation>Satırı kopyala</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Tümü</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>Başarısız</translation>
+    </message>
+    <message>
+        <source>Sign-outs</source>
+        <translation>Çıkışlar</translation>
+    </message>
+    <message>
+        <source>RConnect</source>
+        <translation>RConnect</translation>
+    </message>
+    <message>
+        <source>Alerts</source>
+        <translation>Uyarılar</translation>
+    </message>
+    <message>
+        <source>Changes</source>
+        <translation>Değişiklikler</translation>
     </message>
     <message>
         <source>Sign-ins, failed attempts, disconnections, security alerts and what was done in RConnect.</source>
@@ -514,6 +790,246 @@
     <message>
         <source>Showing %1 of %2 recent rows</source>
         <translation>Son %2 satırdan %1 tanesi gösteriliyor</translation>
+    </message>
+    <message>
+        <source>Hide failed sign-ins</source>
+        <translation>Başarısızları gizle</translation>
+    </message>
+    <message>
+        <source>Show failed (%1)</source>
+        <translation>Başarısızları göster (%1)</translation>
+    </message>
+    <message>
+        <source>Show failed</source>
+        <translation>Başarısızları göster</translation>
+    </message>
+    <message>
+        <source>Showing %1 records · %2 failed attempts hidden</source>
+        <translation>%1 kayıt gösteriliyor · %2 başarısız deneme gizlendi</translation>
+    </message>
+    <message>
+        <source>Security state change</source>
+        <translation>Güvenlik durumu değişikliği</translation>
+    </message>
+    <message>
+        <source>Security system extension</source>
+        <translation>Güvenlik sistemi eklentisi</translation>
+    </message>
+    <message>
+        <source>System integrity</source>
+        <translation>Sistem bütünlüğü</translation>
+    </message>
+    <message>
+        <source>Logon</source>
+        <translation>Oturum açma</translation>
+    </message>
+    <message>
+        <source>Logoff</source>
+        <translation>Oturum kapatma</translation>
+    </message>
+    <message>
+        <source>Account lockout</source>
+        <translation>Hesap kilitleme</translation>
+    </message>
+    <message>
+        <source>Special logon</source>
+        <translation>Özel oturum açma</translation>
+    </message>
+    <message>
+        <source>RDP session tracking (Other Logon/Logoff)</source>
+        <translation>RDP oturum takibi (Diğer Oturum Açma/Kapatma)</translation>
+    </message>
+    <message>
+        <source>Process creation</source>
+        <translation>İşlem oluşturma</translation>
+    </message>
+    <message>
+        <source>Audit policy change</source>
+        <translation>Denetim ilkesi değişikliği</translation>
+    </message>
+    <message>
+        <source>Authentication policy change</source>
+        <translation>Kimlik doğrulama ilkesi değişikliği</translation>
+    </message>
+    <message>
+        <source>User account management</source>
+        <translation>Kullanıcı hesabı yönetimi</translation>
+    </message>
+    <message>
+        <source>Security group management</source>
+        <translation>Güvenlik grubu yönetimi</translation>
+    </message>
+    <message>
+        <source>Credential validation</source>
+        <translation>Kimlik bilgisi doğrulama</translation>
+    </message>
+    <message>
+        <source>Kerberos service ticket</source>
+        <translation>Kerberos hizmet bileti</translation>
+    </message>
+    <message>
+        <source>Kerberos authentication</source>
+        <translation>Kerberos kimlik doğrulama</translation>
+    </message>
+    <message>
+        <source>Success removed</source>
+        <translation>Başarı kapatıldı</translation>
+    </message>
+    <message>
+        <source>Success added</source>
+        <translation>Başarı açıldı</translation>
+    </message>
+    <message>
+        <source>Failure removed</source>
+        <translation>Başarısızlık kapatıldı</translation>
+    </message>
+    <message>
+        <source>Failure added</source>
+        <translation>Başarısızlık açıldı</translation>
+    </message>
+    <message>
+        <source>name</source>
+        <translation>ad</translation>
+    </message>
+    <message>
+        <source>address</source>
+        <translation>adres</translation>
+    </message>
+    <message>
+        <source>port</source>
+        <translation>port</translation>
+    </message>
+    <message>
+        <source>user</source>
+        <translation>kullanıcı</translation>
+    </message>
+    <message>
+        <source>domain</source>
+        <translation>etki alanı</translation>
+    </message>
+    <message>
+        <source>password</source>
+        <translation>şifre</translation>
+    </message>
+    <message>
+        <source>notes</source>
+        <translation>notlar</translation>
+    </message>
+    <message>
+        <source>display</source>
+        <translation>görüntü</translation>
+    </message>
+    <message>
+        <source>redirection</source>
+        <translation>yönlendirme</translation>
+    </message>
+    <message>
+        <source>monitoring</source>
+        <translation>izleme</translation>
+    </message>
+    <message>
+        <source>Account %1 created by %2</source>
+        <translation>%1 hesabı %2 tarafından oluşturuldu</translation>
+    </message>
+    <message>
+        <source>Account %1 enabled by %2</source>
+        <translation>%1 hesabı %2 tarafından etkinleştirildi</translation>
+    </message>
+    <message>
+        <source>Account %1 disabled by %2</source>
+        <translation>%1 hesabı %2 tarafından devre dışı bırakıldı</translation>
+    </message>
+    <message>
+        <source>Account %1 deleted by %2</source>
+        <translation>%1 hesabı %2 tarafından silindi</translation>
+    </message>
+    <message>
+        <source>Password change for %1 by %2</source>
+        <translation>%1 şifre değişikliği · yapan: %2</translation>
+    </message>
+    <message>
+        <source>Password reset for %1 by %2</source>
+        <translation>%1 şifre sıfırlama · yapan: %2</translation>
+    </message>
+    <message>
+        <source>Account %1 locked</source>
+        <translation>%1 hesabı kilitlendi</translation>
+    </message>
+    <message>
+        <source>Account %1 locked (from %2)</source>
+        <translation>%1 hesabı kilitlendi (kaynak: %2)</translation>
+    </message>
+    <message>
+        <source>%1 removed from %2 by %3</source>
+        <translation>%1, %2 grubundan %3 tarafından çıkarıldı</translation>
+    </message>
+    <message>
+        <source>%1 log cleared by %2</source>
+        <translation>%1 günlüğü %2 tarafından temizlendi</translation>
+    </message>
+    <message>
+        <source>Task %1 removed by %2</source>
+        <translation>%1 görevi %2 tarafından silindi</translation>
+    </message>
+    <message>
+        <source>Task %1 enabled by %2</source>
+        <translation>%1 görevi %2 tarafından etkinleştirildi</translation>
+    </message>
+    <message>
+        <source>Task %1 disabled by %2</source>
+        <translation>%1 görevi %2 tarafından devre dışı bırakıldı</translation>
+    </message>
+    <message>
+        <source>Task %1 updated by %2</source>
+        <translation>%1 görevi %2 tarafından güncellendi</translation>
+    </message>
+    <message>
+        <source>%1 (%2) — by %3</source>
+        <translation>%1 (%2) — yapan: %3</translation>
+    </message>
+    <message>
+        <source>%1 — changed by %2</source>
+        <translation>%1 — değiştiren: %2</translation>
+    </message>
+    <message>
+        <source>Service: %1 (runs as %2)</source>
+        <translation>Hizmet: %1 (çalışma hesabı: %2)</translation>
+    </message>
+    <message>
+        <source>Changed: %1 — by %2</source>
+        <translation>Değiştirilen: %1 — yapan: %2</translation>
+    </message>
+    <message>
+        <source>Edited by %1</source>
+        <translation>Düzenleyen: %1</translation>
+    </message>
+    <message>
+        <source>Changed: %1</source>
+        <translation>Değiştirilen: %1</translation>
+    </message>
+    <message>
+        <source>Session logging and idle limit applied</source>
+        <translation>Oturum kaydı ve boşta kalma süresi uygulandı</translation>
+    </message>
+    <message>
+        <source>Session logging and idle limit applied by %1</source>
+        <translation>Oturum kaydı ve boşta kalma süresi %1 tarafından uygulandı</translation>
+    </message>
+    <message>
+        <source>%1 — added by %2</source>
+        <translation>%1 — ekleyen: %2</translation>
+    </message>
+    <message>
+        <source>%1 — removed by %2</source>
+        <translation>%1 — silen: %2</translation>
+    </message>
+    <message>
+        <source>Changed by</source>
+        <translation>İşlemi yapan</translation>
+    </message>
+    <message>
+        <source>Target account</source>
+        <translation>Hedef hesap</translation>
     </message>
 </context>
 <context>
@@ -810,6 +1326,10 @@
     <message>
         <source>%1 available</source>
         <translation>%1 müsait</translation>
+    </message>
+    <message>
+        <source>Favourites</source>
+        <translation>Favoriler</translation>
     </message>
     <message>
         <source>Other</source>
@@ -1195,6 +1715,14 @@ Use “+ Add server” to get started.</source>
         <translation>%1 saattir kullanmıyor</translation>
     </message>
     <message>
+        <source>not used for %1 h %2 min</source>
+        <translation>%1 sa %2 dk süredir kullanmıyor</translation>
+    </message>
+    <message>
+        <source>not used for %1 d %2 h</source>
+        <translation>%1 gün %2 sa süredir kullanmıyor</translation>
+    </message>
+    <message>
         <source>You are connected</source>
         <translation>Siz bağlısınız</translation>
     </message>
@@ -1204,11 +1732,19 @@ Use “+ Add server” to get started.</source>
     </message>
     <message>
         <source>Idle %1 min</source>
-        <translation>Uzakta %1 dk</translation>
+        <translation>Uzakta: %1 dk</translation>
     </message>
     <message>
         <source>Idle %1 h</source>
-        <translation>Uzakta %1 sa</translation>
+        <translation>Uzakta: %1 sa</translation>
+    </message>
+    <message>
+        <source>Idle %1 h %2 min</source>
+        <translation>Uzakta: %1 sa %2 dk</translation>
+    </message>
+    <message>
+        <source>Idle %1 d %2 h</source>
+        <translation>Uzakta: %1 g %2 sa</translation>
     </message>
     <message>
         <source>The server answers, but who is connected could not be read.</source>
@@ -1233,6 +1769,38 @@ Use “+ Add server” to get started.</source>
     <message>
         <source>WTS · Skipped after authentication rejection.</source>
         <translation>WTS · Kimlik doğrulama reddedildiği için denenmedi.</translation>
+    </message>
+    <message>
+        <source>&lt;1m</source>
+        <translation>&lt;1 dk</translation>
+    </message>
+    <message>
+        <source>%1m</source>
+        <translation>%1 dk</translation>
+    </message>
+    <message>
+        <source>%1h</source>
+        <translation>%1 sa</translation>
+    </message>
+    <message>
+        <source>%1h %2m</source>
+        <translation>%1 sa %2 dk</translation>
+    </message>
+    <message>
+        <source>%1d</source>
+        <translation>%1 g</translation>
+    </message>
+    <message>
+        <source>%1d %2h</source>
+        <translation>%1 g %2 sa</translation>
+    </message>
+    <message>
+        <source>%1 idle</source>
+        <translation>Uzakta: %1</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>Oturum %1</translation>
     </message>
 </context>
 <context>
@@ -1769,6 +2337,14 @@ Giriş sayısı: %3</translation>
         <translation>Boşta %1 – %2 (%3)</translation>
     </message>
     <message>
+        <source>Idle not checked for %1 (RConnect was closed or the server did not answer).</source>
+        <translation>%1 boyunca boşta kalma ölçülemedi (RConnect kapalıydı veya sunucu yanıt vermedi).</translation>
+    </message>
+    <message>
+        <source>Idle not checked: %1</source>
+        <translation>Boşta kalma ölçülemedi: %1</translation>
+    </message>
+    <message>
         <source>Unmeasured %1 – %2 (%3)</source>
         <translation>Ölçülemedi %1 – %2 (%3)</translation>
     </message>
@@ -1799,6 +2375,194 @@ Giriş sayısı: %3</translation>
     <message>
         <source>Enables built-in Windows client-name logging (4778/4779) and optional RDP idle disconnect on remote servers.</source>
         <translation>Uzak sunucularda Windows&apos;un yerleşik istemci adı kaydını (4778/4779) ve isteğe bağlı boşta RDP bağlantısı kesme sınırını etkinleştirir.</translation>
+    </message>
+    <message>
+        <source>Daily active and idle time across all servers.</source>
+        <translation>Tüm sunuculardaki günlük aktif ve boşta kalma süreleri.</translation>
+    </message>
+    <message>
+        <source>Filter by user or server</source>
+        <translation>Kullanıcı veya sunucu ara</translation>
+    </message>
+    <message>
+        <source>Turns on Windows client-name logging (4778/4779) and optional idle disconnect on remote servers.</source>
+        <translation>Sunucularda bilgisayar adı kaydını (4778/4779) ve isteğe bağlı boşta kopma süresini açar.</translation>
+    </message>
+    <message>
+        <source>Recalculates totals from the Windows session events saved on this PC.</source>
+        <translation>Bu bilgisayarda kayıtlı oturum olaylarından süreleri baştan hesaplar.</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Dağılım</translation>
+    </message>
+    <message>
+        <source>Active vs. idle share of measured time.</source>
+        <translation>Ölçülen sürenin aktif / boşta dağılımı.</translation>
+    </message>
+    <message>
+        <source>Measured active time. Overlapping sessions count once.</source>
+        <translation>Ölçülen aktif süre. Aynı anda açık oturumlar tek sayılır.</translation>
+    </message>
+    <message>
+        <source>No keyboard or mouse input for %1+ minutes.</source>
+        <translation>%1 dakika ve üzeri klavye/fare hareketi olmayan süre.</translation>
+    </message>
+    <message>
+        <source>Total time connected according to server logs.</source>
+        <translation>Sunucu kayıtlarına göre toplam bağlı kalınan süre.</translation>
+    </message>
+    <message>
+        <source>Daily timeline</source>
+        <translation>Günlük zaman çizelgesi</translation>
+    </message>
+    <message>
+        <source>Daily hours</source>
+        <translation>Günlük dağılım</translation>
+    </message>
+    <message>
+        <source>Idle: %1</source>
+        <translation>Boşta: %1</translation>
+    </message>
+    <message>
+        <source>Unmeasured: %1</source>
+        <translation>Ölçülemedi: %1</translation>
+    </message>
+    <message>
+        <source>Connected: %1</source>
+        <translation>Bağlı: %1</translation>
+    </message>
+    <message>
+        <source>Users: %1</source>
+        <translation>Kullanıcı: %1</translation>
+    </message>
+    <message>
+        <source>No activity</source>
+        <translation>Kayıt yok</translation>
+    </message>
+    <message>
+        <source>Days: %1</source>
+        <translation>Gün sayısı: %1</translation>
+    </message>
+    <message>
+        <source>Overlap merged: %1</source>
+        <translation>Çakışan süre (tek sayıldı): %1</translation>
+    </message>
+    <message>
+        <source>No sign-in event; started at %1.</source>
+        <translation>Giriş kaydı yok; %1 itibarıyla alındı.</translation>
+    </message>
+    <message>
+        <source>No sign-out event; ended at %1.</source>
+        <translation>Çıkış kaydı yok; %1 saatinde bitirildi.</translation>
+    </message>
+    <message>
+        <source>%1 (%2 online)</source>
+        <translation>%1 (%2 bağlı)</translation>
+    </message>
+    <message>
+        <source>Some sessions are missing a sign-in or sign-out record; those totals are minimums.</source>
+        <translation>Bazı oturumlarda giriş veya çıkış kaydı eksik; ilgili süreler en az değerdir.</translation>
+    </message>
+    <message>
+        <source>Idle was not measured for %1 (RConnect was closed or unreachable).</source>
+        <translation>%1 boyunca boşta kalma ölçülemedi (RConnect kapalıydı veya sunucuya ulaşılamadı).</translation>
+    </message>
+    <message>
+        <source>No sessions for this period.</source>
+        <translation>Bu aralıkta kayıt yok.</translation>
+    </message>
+    <message>
+        <source>Calculated from server logs. Overlapping connections count once.</source>
+        <translation>Süreler sunucu kayıtlarından hesaplanır. Çakışan bağlantılar bir kez sayılır.</translation>
+    </message>
+    <message>
+        <source>Daily active and idle time pulled from the servers.</source>
+        <translation>Sunuculardan alınan günlük aktif ve boşta kalma süreleri.</translation>
+    </message>
+    <message>
+        <source>People</source>
+        <translation>Kişi</translation>
+    </message>
+    <message>
+        <source>Total</source>
+        <translation>Toplam</translation>
+    </message>
+    <message>
+        <source>Search name or server</source>
+        <translation>İsim veya sunucu ara</translation>
+    </message>
+    <message>
+        <source>Server settings</source>
+        <translation>Sunucuları ayarla</translation>
+    </message>
+    <message>
+        <source>Enable computer name logging and automatic idle disconnect on servers.</source>
+        <translation>Sunucularda bilgisayar adı kaydını ve boşta kalınca otomatik bağlantıyı kesmeyi açar.</translation>
+    </message>
+    <message>
+        <source>Applying…</source>
+        <translation>Uygulanıyor…</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Kişi</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Durum</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <translation>Şu an bağlı</translation>
+    </message>
+    <message>
+        <source>%1 (%2 devices)</source>
+        <translation>%1 (%2 cihaz)</translation>
+    </message>
+    <message>
+        <source>No records for this period.</source>
+        <translation>Bu dönem için kayıt yok.</translation>
+    </message>
+    <message>
+        <source>Calculated directly from server login, disconnect and idle data.</source>
+        <translation>Doğrudan sunucu giriş, çıkış ve boşta kalma kayıtlarından hesaplanır.</translation>
+    </message>
+    <message>
+        <source>IP: %1</source>
+        <translation>IP: %1</translation>
+    </message>
+    <message>
+        <source>Edit contact…</source>
+        <translation>Kişiyi düzenle…</translation>
+    </message>
+    <message>
+        <source>Add to contacts…</source>
+        <translation>Rehbere ekle…</translation>
+    </message>
+    <message>
+        <source>Add “%1” to contacts…</source>
+        <translation>“%1” öğesini rehbere ekle…</translation>
+    </message>
+    <message>
+        <source>Edit IP “%1” contact…</source>
+        <translation>“%1” IP kaydını düzenle…</translation>
+    </message>
+    <message>
+        <source>Add IP “%1” to contacts…</source>
+        <translation>“%1” IP adresini rehbere ekle…</translation>
+    </message>
+    <message>
+        <source>Copy IP address</source>
+        <translation>IP adresini kopyala</translation>
+    </message>
+    <message>
+        <source>Copy IP addresses</source>
+        <translation>IP adreslerini kopyala</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Connection times.&lt;/b&gt; Pulled from each server&apos;s Windows session log. Disconnected time is never counted; reconnects within %2 minutes merge into one session.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Active and idle.&lt;/b&gt; %1 minutes or more without mouse or keyboard input counts as idle. Idle checks run while RConnect is open; stretches while it was closed show as unmeasured.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Multiple servers.&lt;/b&gt; Overlapping connections count once. Being active on one server while another is idle counts as active.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Missing records.&lt;/b&gt; If a sign-in or sign-out event is missing from the server log, that session is marked as a minimum (&quot;At least&quot;).&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Bağlantı saatleri.&lt;/b&gt; Doğrudan sunucuların Windows oturum kayıtlarından alınır. Kopuk geçen süre sayılmaz; %2 dakika içindeki tekrar bağlanmalar tek oturumda birleşir.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Aktif ve boşta.&lt;/b&gt; %1 dakika ve üzeri fare/klavye hareketi olmazsa o aralık boşta sayılır. Ölçüm RConnect açıkken yapılır; kapalıyken geçen süre ölçülemedi olarak ayrılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Birden fazla sunucu.&lt;/b&gt; Çakışan bağlantılar tek kez sayılır. Biri aktifken diğeri boştaysa o dakika aktif yazılır.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Eksik kayıtlar.&lt;/b&gt; Sunucu kaydında giriş veya çıkış yoksa ilgili süre en az değer (&quot;En az&quot;) olarak gösterilir.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -1921,6 +2685,34 @@ Giriş sayısı: %3</translation>
     <message>
         <source>Idle RDP session disconnect limit:</source>
         <translation>Boşta kalan RDP bağlantısını kesme süresi:</translation>
+    </message>
+    <message>
+        <source>Updates built-in Windows settings on %1 servers (nothing is installed):
+
+1. Computer name logging: lets Windows record which computer connected to the server.
+
+2. Idle disconnect limit: Windows automatically disconnects idle RDP sessions after the chosen time, so unattended sessions end in the server log.</source>
+        <translation>%1 sunucuda yalnızca Windows&apos;un kendi ayarları güncellenir (sunuculara hiçbir program kurulmaz):
+
+1. Bilgisayar adı kaydı: Windows&apos;un hangi bilgisayarın bağlandığını kaydetmesini sağlar.
+
+2. Boşta kopma süresi: Seçilen süre boyunca işlem yapılmazsa Windows bağlantıyı kendiliğinden keser; açık unutulan oturumlar süre yazmaya devam etmez.</translation>
+    </message>
+    <message>
+        <source>Disconnect idle sessions after:</source>
+        <translation>Boşta kalan oturumu şu süre sonra kes:</translation>
+    </message>
+    <message>
+        <source>15 minutes (recommended)</source>
+        <translation>15 dakika (önerilen)</translation>
+    </message>
+    <message>
+        <source>10 minutes</source>
+        <translation>10 dakika</translation>
+    </message>
+    <message>
+        <source>20 minutes</source>
+        <translation>20 dakika</translation>
     </message>
     <message>
         <source>20 minutes (recommended)</source>
@@ -2248,6 +3040,10 @@ Giriş sayısı: %3</translation>
         <source>%1 (account %2) connected and is not in your contacts.</source>
         <translation>%1 (hesap: %2) bağlandı ve rehberinizde yok.</translation>
     </message>
+    <message>
+        <source>Recent servers</source>
+        <translation>Son girilen sunucular</translation>
+    </message>
 </context>
 <context>
     <name>UpdateChecker</name>
@@ -2426,6 +3222,22 @@ Giriş sayısı: %3</translation>
         <source>Enter a nickname and a computer name or an account.</source>
         <translation>Bir takma ad ve bir bilgisayar adı veya hesap girin.</translation>
     </message>
+    <message>
+        <source>Give a computer or IP address a nickname, for example LENOVO is “Elif”. The nickname is shown in the server list, in time on servers and in activity history. To add someone quickly, right-click a server, person, or IP address.</source>
+        <translation>Bir bilgisayara veya IP adresine takma ad verin; örneğin LENOVO “Elif” olsun. Takma ad sunucu listesinde, sunucuda geçen sürede ve etkinlik geçmişinde görünür. Hızlıca eklemek için bir sunucuya, kişiye veya IP adresine sağ tıklayın.</translation>
+    </message>
+    <message>
+        <source>e.g. 88.230.151.85 (optional)</source>
+        <translation>örn. 88.230.151.85 (isteğe bağlı)</translation>
+    </message>
+    <message>
+        <source>A computer name follows the person across IP addresses. Fill in an IP address when only the IP is known, and the account only if they use their own Windows account.</source>
+        <translation>Bilgisayar adı, kişi hangi IP adresinden bağlanırsa bağlansın onu takip eder. Yalnızca IP biliniyorsa IP adresini, kişi kendi Windows hesabıyla giriyorsa hesabı doldurun.</translation>
+    </message>
+    <message>
+        <source>Enter a nickname and a computer name, IP address, or account.</source>
+        <translation>Bir takma ad ve bir bilgisayar adı, IP adresi veya hesap girin.</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -2594,8 +3406,44 @@ Giriş sayısı: %3</translation>
         <translation>Kimler bağlı</translation>
     </message>
     <message>
+        <source>Server sorting</source>
+        <translation>Sunucu sıralaması</translation>
+    </message>
+    <message>
+        <source>All favourites first</source>
+        <translation>Favorilerin hepsi önde</translation>
+    </message>
+    <message>
+        <source>Group by category</source>
+        <translation>Kategorilere göre grupla</translation>
+    </message>
+    <message>
         <source>Groups</source>
         <translation>Gruplar</translation>
+    </message>
+    <message>
+        <source>New group name</source>
+        <translation>Yeni grup adı</translation>
+    </message>
+    <message>
+        <source>Add group</source>
+        <translation>Grup ekle</translation>
+    </message>
+    <message>
+        <source>Create groups here, or right-click a server to assign one.</source>
+        <translation>Buradan yeni grup ekleyebilir ya da sunucuya sağ tıklayıp atayabilirsiniz.</translation>
+    </message>
+    <message>
+        <source>empty</source>
+        <translation>boş</translation>
+    </message>
+    <message>
+        <source>1 server</source>
+        <translation>1 sunucu</translation>
+    </message>
+    <message>
+        <source>%1 servers</source>
+        <translation>%1 sunucu</translation>
     </message>
     <message>
         <source>A group appears when a server is put in it: right-click a server, then Group.</source>
@@ -2709,6 +3557,10 @@ Giriş sayısı: %3</translation>
 </context>
 <context>
     <name>ServerStore</name>
+    <message>
+        <source>%1 (you)</source>
+        <translation>%1 (sen)</translation>
+    </message>
     <message>
         <source>This computer</source>
         <translation>Bu bilgisayar</translation>

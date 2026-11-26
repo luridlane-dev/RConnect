@@ -33,10 +33,18 @@ import com.rconnect.android.AppViewModel
 import com.rconnect.android.R
 import com.rconnect.android.data.Contact
 import com.rconnect.android.data.ContactBook
+import com.rconnect.android.data.ContactIndex
 import com.rconnect.android.winrm.RemoteSession
 import java.util.Locale
 
-private data class Person(val session: RemoteSession, val serverId: String, val server: String, val group: String)
+private data class Person(
+    val session: RemoteSession,
+    val serverId: String,
+    val server: String,
+    val group: String,
+    val nickname: String?,
+    val displayName: String,
+)
 
 /** Everyone who is signed in anywhere, in one list: the quickest way to answer "who is on what". */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,27 +56,39 @@ fun PeopleScreen(vm: AppViewModel) {
     val query by vm.peopleQuery.collectAsStateWithLifecycle()
     val contacts by vm.contacts.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Contact?>(null) }
-    val needle = query.trim().lowercase(Locale.ROOT)
-    fun nickname(s: RemoteSession) = ContactBook.nameFor(contacts, s.client, s.user)
-    fun displayName(s: RemoteSession) = nickname(s) ?: s.client.ifBlank { s.user.substringAfter('\\') }
 
-    val people = servers.flatMap { s ->
-        states[s.id]?.connected.orEmpty().map { Person(it, s.id, s.title, s.group) }
-    }.filter { p ->
-        needle.isEmpty() ||
-            p.session.user.lowercase(Locale.ROOT).contains(needle) ||
-            p.session.client.lowercase(Locale.ROOT).contains(needle) ||
-            nickname(p.session).orEmpty().lowercase(Locale.ROOT).contains(needle) ||
-            p.server.lowercase(Locale.ROOT).contains(needle) ||
-            p.group.lowercase(Locale.ROOT).contains(needle)
-    }.sortedWith(
-        Comparator { a, b ->
-            val cmp = naturalCompare(displayName(a.session), displayName(b.session))
-            if (cmp != 0) cmp else naturalCompare(a.server, b.server)
-        },
-    )
-    val checking = states.values.count { it.checking }
-    val answered = states.values.count { it.sessions != null }
+    val contactIndex = remember(contacts) { ContactIndex(contacts) }
+    val people = remember(servers, states, contactIndex, query) {
+        val needle = query.trim().lowercase(Locale.ROOT)
+        servers.flatMap { s ->
+            states[s.id]?.connected.orEmpty().map { session ->
+                val nick = contactIndex.nameFor(session.client, session.user)
+                val display = nick ?: session.client.ifBlank { session.user.substringAfter('\\') }
+                Person(session, s.id, s.title, s.group, nick, display)
+            }
+        }.filter { p ->
+            needle.isEmpty() ||
+                p.session.user.lowercase(Locale.ROOT).contains(needle) ||
+                p.session.client.lowercase(Locale.ROOT).contains(needle) ||
+                p.nickname.orEmpty().lowercase(Locale.ROOT).contains(needle) ||
+                p.server.lowercase(Locale.ROOT).contains(needle) ||
+                p.group.lowercase(Locale.ROOT).contains(needle)
+        }.sortedWith(
+            Comparator { a, b ->
+                val cmp = naturalCompare(a.displayName, b.displayName)
+                if (cmp != 0) cmp else naturalCompare(a.server, b.server)
+            },
+        )
+    }
+    val (checking, answered) = remember(states) {
+        var chk = 0
+        var ans = 0
+        for (st in states.values) {
+            if (st.checking) chk++
+            if (st.sessions != null) ans++
+        }
+        chk to ans
+    }
     var pulled by remember { mutableStateOf(false) }
     LaunchedEffect(checking) { if (checking == 0) pulled = false }
 
@@ -94,10 +114,10 @@ fun PeopleScreen(vm: AppViewModel) {
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp)) {
-                    items(people.size, key = { "$it-${people[it].serverId}/${people[it].session.id}" }) { i ->
+                    items(people.size, key = { "${people[it].serverId}/${people[it].session.id}" }) { i ->
                         val p = people[i]
                         val (label, color) = idleLabel(p.session)
-                        val nick = nickname(p.session)
+                        val nick = p.nickname
                         GroupedRow(i, people.size, Modifier.animateItem()) {
                             Row(
                                 Modifier
@@ -113,7 +133,7 @@ fun PeopleScreen(vm: AppViewModel) {
                                 Column(Modifier.weight(1f)) {
                                     val user = p.session.user.substringAfter('\\')
                                     Text(
-                                        displayName(p.session),
+                                        p.displayName,
                                         fontWeight = FontWeight.SemiBold,
                                         color = c.text,
                                         maxLines = 1,
@@ -125,12 +145,9 @@ fun PeopleScreen(vm: AppViewModel) {
                                         if (nick != null && p.session.client.isNotBlank()) append(" · ").append(p.session.client)
                                         if (p.session.client.isNotBlank() || nick != null) append(" · ").append(user)
                                     }, maxLines = 1)
-                                    val from = when {
-                                        p.session.connected && p.session.connectedUtcMs > 0 -> stringResource(R.string.connected_at, dateTime(p.session.connectedUtcMs))
-                                        p.session.logonUtcMs > 0 -> stringResource(R.string.since, dateTime(p.session.logonUtcMs))
-                                        else -> null
+                                    if (p.session.connected && p.session.connectedUtcMs > 0) {
+                                        Muted(stringResource(R.string.connected_at, dateTime(p.session.connectedUtcMs)), maxLines = 1)
                                     }
-                                    if (from != null) Muted(from, maxLines = 1)
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 Text(label, color = color, style = MaterialTheme.typography.labelLarge)

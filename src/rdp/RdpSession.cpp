@@ -2,6 +2,7 @@
 #include "core/Log.h"
 #include "ui/Theme.h"
 
+#include <QApplication>
 #include <QAxObject>
 #include <QAxWidget>
 #include <QClipboard>
@@ -60,8 +61,8 @@ constexpr qint64 kRefreshWaitMs = 4000;
 constexpr int kMouseSendIntervalMs = 16;
 constexpr uint kNetworkWan = 5;
 constexpr uint kNetworkAutoDetect = 7;
-constexpr int kConnectPollMs = 500;
-constexpr int kConnectedPollMs = 1500;
+constexpr int kConnectPollMs = 150;
+constexpr int kConnectedPollMs = 4000;
 
 // Newest installed control first.
 const char *const kControlClsids[] = {
@@ -127,9 +128,21 @@ public:
 
         m_frame.setInterval(33);
         connect(&m_frame, &QTimer::timeout, this, [this] {
-            update();
-            if (m_tone != Busy && m_clock.elapsed() > kAppearMs)
+            if (window() && window()->isMinimized())
+                return;
+            const qint64 elapsed = m_clock.isValid() ? m_clock.elapsed() : 0;
+            if (m_tone != Busy && elapsed > kAppearMs) {
+                update();
                 m_frame.stop();
+                return;
+            }
+            if (elapsed > kAppearMs && m_tone == Busy) {
+                // Only repaint the 120x3 progress track once the fade-in finishes.
+                const QPointF c(width() / 2.0, m_title->y() - 12 - kArtHeight / 2.0);
+                update(QRect(int(c.x()) - 62, int(c.y()) + 64, 124, 7));
+            } else {
+                update();
+            }
         });
     }
 
@@ -358,19 +371,24 @@ void RdpSession::sendFiles(const QList<QUrl> &files)
 
 void RdpSession::focusRemote()
 {
-    if (m_closing || m_state != Connected || m_ax->isNull() || !isVisible())
+    if (m_closing || m_state != Connected || m_ax->isNull() || !isVisible()
+        || !isActiveWindow() || QApplication::activePopupWidget() || QApplication::activeModalWidget())
         return;
     m_ax->setFocus(Qt::OtherFocusReason);
     // The control installs its keyboard hook only while its own child window has the focus.
-    HWND inner = nullptr;
-    EnumChildWindows(reinterpret_cast<HWND>(m_ax->winId()), [](HWND h, LPARAM lp) -> BOOL {
-        wchar_t cls[64];
-        if (GetClassNameW(h, cls, 64) > 0 && wcscmp(cls, L"IHWindowClass") == 0) {
-            *reinterpret_cast<HWND *>(lp) = h;
-            return FALSE;
-        }
-        return TRUE;
-    }, reinterpret_cast<LPARAM>(&inner));
+    HWND inner = static_cast<HWND>(m_innerHwnd);
+    if (!inner || !IsWindow(inner)) {
+        inner = nullptr;
+        EnumChildWindows(reinterpret_cast<HWND>(m_ax->winId()), [](HWND h, LPARAM lp) -> BOOL {
+            wchar_t cls[64];
+            if (GetClassNameW(h, cls, 64) > 0 && wcscmp(cls, L"IHWindowClass") == 0) {
+                *reinterpret_cast<HWND *>(lp) = h;
+                return FALSE;
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&inner));
+        m_innerHwnd = inner;
+    }
     if (inner && GetFocus() != inner)
         SetFocus(inner);
 }
@@ -479,11 +497,21 @@ bool RdpSession::createControl()
 {
     if (!m_ax->isNull())
         return true;
-    for (const char *clsid : kControlClsids) {
-        const bool ok = m_ax->setControl(QString::fromLatin1(clsid));
-        log(QStringLiteral("setControl %1 -> %2").arg(QString::fromLatin1(clsid), ok ? "ok" : "failed"));
-        if (ok)
-            break;
+    static QString s_cachedClsid;
+    if (!s_cachedClsid.isEmpty()) {
+        if (!m_ax->setControl(s_cachedClsid))
+            s_cachedClsid.clear();
+    }
+    if (m_ax->isNull()) {
+        for (const char *clsid : kControlClsids) {
+            const QString id = QString::fromLatin1(clsid);
+            const bool ok = m_ax->setControl(id);
+            log(QStringLiteral("setControl %1 -> %2").arg(id, ok ? "ok" : "failed"));
+            if (ok) {
+                s_cachedClsid = id;
+                break;
+            }
+        }
     }
     if (m_ax->isNull()) {
         log(QStringLiteral("no RDP ActiveX control could be created"));
@@ -494,11 +522,13 @@ bool RdpSession::createControl()
     connect(m_ax, SIGNAL(OnConnected()), this, SLOT(onConnected()));
     connect(m_ax, SIGNAL(OnLoginComplete()), this, SLOT(onLoginComplete()));
     connect(m_ax, SIGNAL(OnDisconnected(int)), this, SLOT(onDisconnected(int)));
-    // Every COM event, including ones without a slot above.
-    connect(m_ax, &QAxWidget::signal, this, [this](const QString &name, int argc, void *) {
-        if (Log::detailed())
-            Log::detail(QStringLiteral("[%1] event %2 (%3 args)").arg(m_profile.name, name).arg(argc));
-    });
+    // Only connect the catch-all COM signal handler when detailed logging is enabled.
+    if (Log::detailed()) {
+        connect(m_ax, &QAxWidget::signal, this, [this](const QString &name, int argc, void *) {
+            if (Log::detailed())
+                Log::detail(QStringLiteral("[%1] event %2 (%3 args)").arg(m_profile.name, name).arg(argc));
+        });
+    }
     connect(m_ax, &QAxWidget::exception, this, [this](int code, const QString &src, const QString &desc, const QString &help) {
         log(QStringLiteral("COM exception %1 src=%2 desc=%3 help=%4").arg(code).arg(src, desc, help));
     });
@@ -507,6 +537,7 @@ bool RdpSession::createControl()
 
 void RdpSession::replaceControl()
 {
+    m_innerHwnd = nullptr;
     QAxWidget *old = m_ax;
     old->disconnect(this);
     old->hide();
@@ -778,6 +809,7 @@ void RdpSession::onLoginComplete()
     m_everConnected = true;
     m_retryAttempt = 0;
     m_overlay->hide();
+    m_poll.setTimerType(Qt::CoarseTimer);
     m_poll.setInterval(kConnectedPollMs);
     setState(Connected);
     repaintRemote();

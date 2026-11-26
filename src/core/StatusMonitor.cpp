@@ -39,7 +39,7 @@ constexpr int kPollSessionTimeoutMs = 20000;
 constexpr int kMaxParallelChecks = 8;
 constexpr int kMaxInteractiveChecks = 3;
 constexpr int kMaxEventPolls = 4;
-constexpr qint64 kRecentSessionMs = 6000;
+constexpr qint64 kRecentSessionMs = 15000;
 constexpr qint64 kSessionTimesEveryMs = 55000;
 constexpr qint64 kMissingSessionTimesEveryMs = 15000;
 // The quick session check (quser, no PowerShell) is cheap, so a short list is asked on every round (6 s) and a
@@ -50,8 +50,9 @@ qint64 sessionAgeMs(qsizetype servers)
 }
 // Checks somebody is waiting for (a click, the server list opened) jump ahead of the background round.
 constexpr int kForcedPriority = 10;
-// The logs are read (and the usage sampled) once a minute.
+// The logs are read once a minute; idle samples are written more frequently from session checks.
 constexpr qint64 kEventsEveryMs = 55000;
+constexpr qint64 kUsageSampleEveryMs = 25000;
 // A single failed port check is retried before a server is shown as offline.
 constexpr int kRetryDelayMs = 4000;
 
@@ -360,18 +361,25 @@ void StatusMonitor::finishSessions(const std::shared_ptr<SessionCheck> &check, c
         && q.result != SessionQuery::AuthFailed && (status.occupancy == ServerStatus::Free || status.occupancy == ServerStatus::Busy);
     if (!optionalTimesFailed)
         applySessions(status, q);
+    if (q.result == SessionQuery::Ok) {
+        if (q.serverNowUtcMs > 0)
+            m_serverClockOffsetMs.insert(p.id, q.serverNowUtcMs - now);
+        else if (status.serverNowUtcMs <= 0 && m_serverClockOffsetMs.contains(p.id))
+            status.serverNowUtcMs = now + m_serverClockOffsetMs.value(p.id);
+    }
     if (publish && status.state != ServerStatus::Offline) {
         if (check->includeTimes)
             m_sessionTimesAt.insert(p.id, now);
         m_store->setStatus(p.id, status);
         if (current.monitor && status.state == ServerStatus::Online && q.result == SessionQuery::Ok) {
             warnAboutStrangers(p.id, status);
-            if (q.sessionsRead && now - m_usageAt.value(p.id) >= kEventsEveryMs) {
+            const qint64 sampleEvery = q.sessions.isEmpty() ? kEventsEveryMs : kUsageSampleEveryMs;
+            if (q.sessionsRead && now - m_usageAt.value(p.id) >= sampleEvery) {
                 m_usageAt.insert(p.id, now);
                 ServerProfile sampleProfile;
                 sampleProfile.id = current.id;
                 sampleProfile.name = current.name;
-                const qint64 sampledAt = status.serverNowUtcMs > 0 ? status.serverNowUtcMs : now;
+                const qint64 sampledAt = status.serverNowUtcMs > 0 ? status.serverNowUtcMs : 0;
                 m_eventPool.start([sampleProfile, sessions = q.sessions, sampledAt] {
                     UsageLog::sampled(sampleProfile, sessions, sampledAt);
                 }, kForcedPriority);
@@ -586,13 +594,24 @@ void StatusMonitor::finishEventPoll(const ServerProfile &p, const SessionQuery &
         return;
     }
 
-    m_eventPool.start([channel = m_channel, p, q] {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (q.serverNowUtcMs > 0)
+        m_serverClockOffsetMs.insert(p.id, q.serverNowUtcMs - now);
+    const qint64 sampledAt = q.serverNowUtcMs > 0
+        ? q.serverNowUtcMs
+        : (m_serverClockOffsetMs.contains(p.id) ? now + m_serverClockOffsetMs.value(p.id) : 0);
+    if (q.sessionsRead)
+        m_usageAt.insert(p.id, now);
+
+    m_eventPool.start([channel = m_channel, p, q, sampledAt] {
         if (q.eventsSkipped > 0)
             Log::write(QStringLiteral("[events] %1: %2 event(s) of its logs could not be read and were skipped")
                            .arg(p.name).arg(q.eventsSkipped));
         QList<AccessRecord> written;
         const int saved = AccessLog::polled(p, q.events, q.sessions, &written, q.failedEventSources);
         UsageLog::recordEvents(written);
+        if (q.sessionsRead)
+            UsageLog::sampled(p, q.sessions, sampledAt);
         const QList<AccessRecord> alerts = Threats::evaluate(p, written);
         std::lock_guard lock(channel->mutex);
         if (StatusMonitor *target = channel->target)

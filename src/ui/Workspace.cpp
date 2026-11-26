@@ -9,6 +9,7 @@
 #include "UsagePage.h"
 #include "core/AccessLog.h"
 #include "core/Contacts.h"
+#include "core/JumpList.h"
 #include "core/Log.h"
 #include "core/Priority.h"
 #include "core/ServerImport.h"
@@ -73,14 +74,22 @@ class PopupFrame : public QFrame {
 public:
     using QFrame::QFrame;
 
+    std::function<void()> onHidden;
+
 protected:
     void paintEvent(QPaintEvent *) override
     {
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
         p.setPen(QPen(Theme::kPopupBorder, 1));
         p.setBrush(Theme::kPopupFill);
-        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
+        p.drawRect(rect().adjusted(0, 0, -1, -1));
+    }
+
+    void hideEvent(QHideEvent *e) override
+    {
+        QFrame::hideEvent(e);
+        if (onHidden)
+            onHidden();
     }
 };
 
@@ -90,7 +99,9 @@ HHOOK g_hook = nullptr;
 
 LRESULT CALLBACK keyboardProc(int code, WPARAM wParam, LPARAM lParam)
 {
-    if (code == HC_ACTION && g_workspace && !(lParam & (1 << 31))) {
+    if (code == HC_ACTION && g_workspace && !(lParam & (1 << 31))
+        && (wParam == VK_F11 || wParam == VK_TAB || (wParam >= '1' && wParam <= '9'))
+        && !QApplication::activePopupWidget()) {
         if (SessionWindow *w = g_workspace->activeSessionWindow()) {
             const bool ctrl = GetKeyState(VK_CONTROL) < 0;
             const bool alt = GetKeyState(VK_MENU) < 0;
@@ -124,6 +135,11 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
     connect(&Contacts::instance(), &Contacts::changed, m_store, &ServerStore::refreshDisplay);
     connect(m_home, &HomePage::importRequested, this, &Workspace::importServers);
     connect(m_home, &HomePage::exportRequested, this, &Workspace::exportServers);
+    connect(m_home, &HomePage::serverLayoutChanged, this, [this] {
+        for (QFrame *popup : std::as_const(m_popups))
+            if (auto *panel = popup->findChild<ServerPanel *>())
+                panel->reloadLayoutSettings();
+    });
     connect(m_home, &HomePage::updateCheckRequested, this, [this] { checkForUpdates(true); });
     connect(m_updater, &UpdateChecker::checked, this, &Workspace::onUpdateChecked);
     connect(m_monitor, &StatusMonitor::alertRaised, this, &Workspace::showAlert);
@@ -144,6 +160,8 @@ Workspace::Workspace(const wchar_t *windowMarker, QObject *parent)
 
     m_main = createWindow();
     SetPropW(reinterpret_cast<HWND>(m_main->winId()), m_marker.c_str(), HANDLE(1));
+    connect(m_main, &SessionWindow::connectServerRequested, this, [this](const QString &id) { openServer(id, m_main); });
+    connect(m_main, &SessionWindow::languageChanged, this, &Workspace::updateJumpList);
     // Checking goes on while the window is minimized (or in the tray): the history and the time on servers are only
     // as complete as the checks, and a window that stays minimized for hours must not leave a gap in them.
     // An update found while minimized is offered once the window is back.
@@ -177,7 +195,7 @@ Workspace::~Workspace()
     delete m_main;
 }
 
-void Workspace::start(bool startMinimized)
+void Workspace::start(bool startMinimized, const QString &initialServerId)
 {
     m_store->load();
     m_main->restoreGeometry(QSettings().value(QStringLiteral("geometry")).toByteArray());
@@ -185,6 +203,9 @@ void Workspace::start(bool startMinimized)
         m_main->showMinimized();
     else
         m_main->showFullScreen();
+    QTimer::singleShot(0, this, &Workspace::updateJumpList);
+    if (!initialServerId.isEmpty())
+        QTimer::singleShot(120, this, [this, initialServerId] { openServer(initialServerId, m_main); });
     // The "new country" check compares with the history; read it before the first events arrive.
     QThreadPool::globalInstance()->start([] {
         AccessLog::maintain(); // folds password-guessing runs and drops very old lines before anything reads the file
@@ -192,7 +213,7 @@ void Workspace::start(bool startMinimized)
     });
     auto *maintenance = new QTimer(this);
     connect(maintenance, &QTimer::timeout, this, [] { QThreadPool::globalInstance()->start([] { AccessLog::maintain(); }); });
-    maintenance->start(24 * 3600 * 1000);
+    maintenance->start(6 * 3600 * 1000);
     m_monitor->setActive(true);
     m_monitor->resolveCountries();
 
@@ -216,7 +237,8 @@ SessionWindow *Workspace::createWindow()
 {
     auto *w = new SessionWindow(m_main ? nullptr : m_home);
     m_windows << w;
-    w->setNotesProvider([this](const QString &id) { return m_store->profileById(id).notes; });
+    w->setNotesProvider([this](const QString &id) { return m_store->profileById(id).notes; },
+                        [this](const QString &id) { return m_store->hasNotes(id); });
 
     // Queued: a move may delete the window that started the drag.
     connect(w, &SessionWindow::serversRequested, this, &Workspace::showServerPopup);
@@ -318,7 +340,7 @@ void Workspace::openServer(const QString &id, SessionWindow *target)
     auto *reveal = new QTimer(dialog);
     reveal->setSingleShot(true);
     connect(reveal, &QTimer::timeout, dialog, [dialog] { dialog->show(); });
-    reveal->start(900);
+    reveal->start(500);
 
     const QPointer<QMessageBox> pending = dialog;
     const auto finish = [this, id, pending, reveal, connectChecked](bool accepted, const ServerStatus &status) {
@@ -360,6 +382,7 @@ bool Workspace::confirmBusy(const ServerProfile &p, const ServerStatus &status, 
 void Workspace::connectServer(const ServerProfile &p, SessionWindow *target)
 {
     const QString id = p.id;
+    recordRecentServer(id);
     ServerProfile logProfile;
     logProfile.id = p.id;
     logProfile.name = p.name;
@@ -523,7 +546,16 @@ void Workspace::showServerPopup(SessionWindow *w)
     QFrame *popup = m_popups.value(w);
     if (!popup) {
         // Popup, so it shows above the native RDP window.
-        popup = new PopupFrame(w, Qt::Popup | Qt::FramelessWindowHint);
+        auto *frame = new PopupFrame(w, Qt::Popup | Qt::FramelessWindowHint);
+        frame->onHidden = [host = QPointer<SessionWindow>(w)] {
+            QTimer::singleShot(0, qApp, [host] {
+                if (!host || !host->isActiveWindow() || QApplication::activePopupWidget() || QApplication::activeModalWidget())
+                    return;
+                if (RdpSession *s = host->currentSession(); s && s->isVisible())
+                    s->focusRemote();
+            });
+        };
+        popup = frame;
         popup->setObjectName(QStringLiteral("popupFrame"));
         popup->setAttribute(Qt::WA_TranslucentBackground); // rounded corners
         auto *lay = new QVBoxLayout(popup);
@@ -570,9 +602,29 @@ void Workspace::showServerPopup(SessionWindow *w)
     popup->resize(qMin(790, w->width() - 40), qMin(560, w->height() - 60));
     popup->move(anchor->mapToGlobal(QPoint(0, anchor->height() + 2)));
     panel->clearSearch();
-    m_monitor->refreshAllNow(); // what the cards show may be a minute old
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - m_lastPopupRefreshMs >= 10000) {
+        m_lastPopupRefreshMs = nowMs;
+        m_monitor->refreshAllNow(); // what the cards show may be a minute old
+    }
+    // While an RDP tab is active, mstscax's native child window (IHWindowClass) holds Win32 focus and keeps its
+    // keyboard hook installed; a Qt::Popup does not activate itself on Windows, so keystrokes would keep going to
+    // the remote server unless Win32 focus is moved back to the owning Qt window first.
+    w->setFocus(Qt::OtherFocusReason);
+    if (HWND host = reinterpret_cast<HWND>(w->winId()))
+        SetFocus(host);
     popup->show();
+    popup->raise();
     panel->focusSearch();
+    QTimer::singleShot(0, popup, [popup, panel, host = QPointer<SessionWindow>(w)] {
+        if (!popup->isVisible())
+            return;
+        if (host) {
+            if (HWND hwnd = reinterpret_cast<HWND>(host->winId()); hwnd && GetFocus() != hwnd)
+                SetFocus(hwnd);
+        }
+        panel->focusSearch();
+    });
 }
 
 void Workspace::addServer()
@@ -590,8 +642,17 @@ void Workspace::addServer()
 void Workspace::audit(const ServerProfile &p, const QString &event, const QString &detail)
 {
     // Adding a server and every connection RConnect opens or closes are always recorded; the rest only with detailed logging.
-    if (Log::detailed() || event == QLatin1String("ServerAdded") || event == QLatin1String("Closed"))
-        AccessLog::note(p, event, p.displayUser(), detail);
+    if (Log::detailed() || event == QLatin1String("ServerAdded") || event == QLatin1String("Closed")) {
+        ServerProfile logProfile;
+        logProfile.id = p.id;
+        logProfile.name = p.name;
+        logProfile.host = p.host;
+        const QString user = p.displayUser();
+        const QDateTime when = QDateTime::currentDateTimeUtc();
+        m_connectLogPool.start([logProfile, event, user, detail, when] {
+            AccessLog::note(logProfile, event, user, detail, {}, when);
+        });
+    }
 }
 
 void Workspace::importServers()
@@ -631,7 +692,9 @@ void Workspace::importServers()
         known.insert(keyOf(p), p);
 
     int added = 0, skipped = res.unusable, filled = 0;
-    for (ServerProfile p : res.servers) {
+    QList<ServerProfile> toAdd;
+    QList<ServerProfile> toUpdate;
+    for (ServerProfile &p : res.servers) {
         const QString key = keyOf(p);
         if (known.contains(key)) {
             // Already in the list: it only takes the password it is missing.
@@ -639,7 +702,7 @@ void Workspace::importServers()
             if (have.password.isEmpty() && !p.password.isEmpty()) {
                 have.password = p.password;
                 have.savePassword = true;
-                m_store->update(have);
+                toUpdate.append(have);
                 known.insert(key, have);
                 ++filled;
             }
@@ -647,9 +710,10 @@ void Workspace::importServers()
             continue;
         }
         known.insert(key, p);
-        m_store->add(p);
+        toAdd.append(std::move(p));
         ++added;
     }
+    m_store->importBatch(std::move(toAdd), toUpdate);
     Log::write(QStringLiteral("[import] %1 added, %2 skipped, %3 got a password").arg(added).arg(skipped).arg(filled));
     audit(ServerProfile{}, QStringLiteral("Import"), tr("%1 added, %2 skipped").arg(added).arg(skipped));
     if (added > 0 || filled > 0) {
@@ -729,6 +793,7 @@ void Workspace::editServer(const QString &id)
         audit(updated, QStringLiteral("ServerEdited"), changed.join(QStringLiteral(", ")));
     }
     m_store->update(updated);
+    updateJumpList();
     m_monitor->refresh(id);
     m_monitor->resolveCountries();
     if (RdpSession *s = m_sessions.value(id)) {
@@ -750,6 +815,7 @@ void Workspace::removeServer(const QString &id)
     endSession(id);
     audit(p, QStringLiteral("ServerRemoved"), QStringLiteral("%1:%2").arg(p.host).arg(p.port));
     m_store->remove(id);
+    updateJumpList();
 }
 
 void Workspace::onSessionState(RdpSession::State state)
@@ -818,6 +884,40 @@ void Workspace::refreshOpenMarkers()
     m_home->panel()->setOpenSessionIds(open);
     for (QFrame *popup : std::as_const(m_popups))
         popup->findChild<ServerPanel *>()->setOpenSessionIds(open);
+}
+
+void Workspace::recordRecentServer(const QString &serverId)
+{
+    if (serverId.isEmpty())
+        return;
+    QSettings settings;
+    QStringList recent = settings.value(QStringLiteral("recentServers")).toStringList();
+    recent.removeAll(serverId);
+    recent.prepend(serverId);
+    while (recent.size() > 8)
+        recent.removeLast();
+    settings.setValue(QStringLiteral("recentServers"), recent);
+    updateJumpList();
+}
+
+void Workspace::updateJumpList()
+{
+    QSettings settings;
+    const QStringList stored = settings.value(QStringLiteral("recentServers")).toStringList();
+    QStringList cleaned;
+    QList<JumpList::Item> items;
+    for (const QString &id : stored) {
+        const ServerProfile p = m_store->profileById(id);
+        if (!p.isValid() || cleaned.contains(id))
+            continue;
+        cleaned << id;
+        items << JumpList::Item{p.id, p.name, p.host};
+        if (items.size() >= 8)
+            break;
+    }
+    if (cleaned != stored)
+        settings.setValue(QStringLiteral("recentServers"), cleaned);
+    JumpList::update(tr("Recent servers"), items);
 }
 
 void Workspace::sendMessage(const QString &id, int sessionId, const QString &user)
@@ -926,22 +1026,21 @@ void Workspace::configureServerLogging()
     lay->setSpacing(12);
 
     auto *intro = new QLabel(
-        tr("Applies built-in Windows settings on %1 servers over WinRM (nothing is installed on the servers):\n\n"
-           "1. Client computer name logging (Security 4778/4779): enables Windows’ built-in "
-           "“Other Logon/Logoff Events” audit policy so every RDP connection records the client computer name, "
-           "even behind a shared IP and when RConnect is closed.\n\n"
-           "2. Idle RDP session limit (optional): disconnects an idle RDP session after the chosen duration "
-           "so open programs keep running while idle time ends in the server log.")
+        tr("Updates built-in Windows settings on %1 servers (nothing is installed):\n\n"
+           "1. Computer name logging: lets Windows record which computer connected to the server.\n\n"
+           "2. Idle disconnect limit: Windows automatically disconnects idle RDP sessions after the chosen time, "
+           "so unattended sessions end in the server log.")
             .arg(targets.size()),
         &dlg);
     intro->setWordWrap(true);
     lay->addWidget(intro);
 
-    auto *idleLabel = new QLabel(tr("Idle RDP session disconnect limit:"), &dlg);
+    auto *idleLabel = new QLabel(tr("Disconnect idle sessions after:"), &dlg);
     auto *idleCombo = new QComboBox(&dlg);
-    idleCombo->addItem(tr("20 minutes (recommended)"), 20);
+    idleCombo->addItem(tr("15 minutes (recommended)"), 15);
+    idleCombo->addItem(tr("10 minutes"), 10);
+    idleCombo->addItem(tr("20 minutes"), 20);
     idleCombo->addItem(tr("30 minutes"), 30);
-    idleCombo->addItem(tr("15 minutes"), 15);
     idleCombo->addItem(tr("Disable (no limit)"), 0);
     idleCombo->addItem(tr("Leave unchanged"), -1);
     lay->addWidget(idleLabel);

@@ -164,8 +164,11 @@ SessionQuery sessions(const QString &host, const QString &user, const QString &d
             if (r.connected && details->ConnectTime.QuadPart > details->DisconnectTime.QuadPart)
                 r.connectedSinceUtcMs = fileTimeMs(details->ConnectTime);
             if (r.connected && details->LastInputTime.QuadPart > 0
-                && details->CurrentTime.QuadPart >= details->LastInputTime.QuadPart)
-                r.idleMinutes = int((details->CurrentTime.QuadPart - details->LastInputTime.QuadPart) / 10000000 / 60);
+                && details->CurrentTime.QuadPart >= details->LastInputTime.QuadPart) {
+                const qint64 idleMin = (details->CurrentTime.QuadPart - details->LastInputTime.QuadPart) / 10000000LL / 60LL;
+                if (idleMin >= 0 && idleMin <= 365LL * 1440)
+                    r.idleMinutes = int(idleMin);
+            }
             if (q.serverNowUtcMs == 0)
                 q.serverNowUtcMs = fileTimeMs(details->CurrentTime);
         }

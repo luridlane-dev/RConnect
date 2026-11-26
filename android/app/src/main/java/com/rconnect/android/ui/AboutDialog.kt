@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.rconnect.android.BuildConfig
 import com.rconnect.android.R
 
 private const val REPOSITORY = "https://github.com/luridlane-dev/RConnect"
@@ -22,7 +23,7 @@ private const val REPOSITORY = "https://github.com/luridlane-dev/RConnect"
 fun AboutDialog(onDismiss: () -> Unit) {
     val c = appColors
     val context = LocalContext.current
-    val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+    val version = BuildConfig.VERSION_NAME
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.solid,

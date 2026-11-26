@@ -32,7 +32,8 @@ public:
     void moveTab(const QString &serverId, int index);
     void updateSessionTab(RdpSession *s, bool attention = false);
 
-    void setNotesProvider(std::function<QString(const QString &)> provider);
+    void setNotesProvider(std::function<QString(const QString &)> provider,
+                          std::function<bool(const QString &)> hasNotes = {});
     void updateNotesButton();
 
     enum Hotkey { NextTab, PrevTab, ToggleFullscreen, GoToTab };
@@ -57,10 +58,13 @@ signals:
     void refreshStatusRequested();
     void closeRequested(SessionWindow *window);
     void minimizedChanged(bool minimized);
+    void connectServerRequested(const QString &serverId);
+    void languageChanged();
 
 protected:
     void changeEvent(QEvent *e) override;
     void closeEvent(QCloseEvent *e) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private:
     int tabIndexOf(const QString &serverId) const;
@@ -88,8 +92,11 @@ private:
     QStackedWidget *m_sessionStack = nullptr;
     QHash<QString, RdpSession *> m_sessions;
     std::function<QString(const QString &)> m_notes;
+    std::function<bool(const QString &)> m_hasNotes;
     bool m_allowClose = false;
     bool m_leavingFull = false; // a window is being taken out of full screen; not a maximise
+    bool m_wasFullscreen = false;
+    int m_lastPulseStep = -1;
     QTimer m_pulse;
     static inline QList<SessionWindow *> s_all;
 };

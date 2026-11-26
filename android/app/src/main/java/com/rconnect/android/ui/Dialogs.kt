@@ -2,6 +2,7 @@ package com.rconnect.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
@@ -32,11 +33,14 @@ fun ServerDialog(existing: ServerEntry?, groups: List<String>, onDismiss: () -> 
     val fieldColors = desktopTextFieldColors()
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var host by remember { mutableStateOf(existing?.host.orEmpty()) }
+    var portText by remember { mutableStateOf((existing?.port ?: 3389).toString()) }
     var user by remember { mutableStateOf(existing?.user.orEmpty()) }
     var password by remember { mutableStateOf(existing?.password.orEmpty()) }
     var group by remember { mutableStateOf(existing?.group.orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
-    val valid = host.isNotBlank() && user.isNotBlank() && password.isNotEmpty()
+    val portNumber = portText.trim().toIntOrNull()
+    val portValid = portText.isBlank() || (portNumber != null && portNumber in 1..65535)
+    val valid = host.isNotBlank() && user.isNotBlank() && password.isNotEmpty() && portValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -45,15 +49,27 @@ fun ServerDialog(existing: ServerEntry?, groups: List<String>, onDismiss: () -> 
         title = { Text(stringResource(if (existing == null) R.string.add_server else R.string.edit), color = c.text) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    host, { host = it },
-                    label = { Text(stringResource(R.string.ip_address)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                    colors = fieldColors,
-                    shape = RadiusControl,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        host, { host = it },
+                        label = { Text(stringResource(R.string.ip_address)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                        colors = fieldColors,
+                        shape = RadiusControl,
+                    )
+                    OutlinedTextField(
+                        portText, { portText = it.filter { ch -> ch.isDigit() }.take(5) },
+                        label = { Text(stringResource(R.string.rdp_port)) },
+                        singleLine = true,
+                        isError = !portValid,
+                        modifier = Modifier.weight(0.45f),
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Number),
+                        colors = fieldColors,
+                        shape = RadiusControl,
+                    )
+                }
                 OutlinedTextField(
                     user, { user = it },
                     label = { Text(stringResource(R.string.user_name)) },
@@ -103,10 +119,50 @@ fun ServerDialog(existing: ServerEntry?, groups: List<String>, onDismiss: () -> 
                 onClick = {
                     onSave(
                         (existing ?: ServerEntry(name = "", host = "", user = "", password = ""))
-                            .copy(name = name.trim(), host = host.trim(), user = user.trim(), password = password, group = group.trim()),
+                            .copy(
+                                name = name.trim(),
+                                host = host.trim(),
+                                port = portNumber?.takeIf { it in 1..65535 } ?: 3389,
+                                user = user.trim(),
+                                password = password,
+                                group = group.trim(),
+                            ),
                     )
                 },
             ) { Text(stringResource(R.string.save), color = if (valid) c.accentText else c.text3) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = c.text2) } },
+    )
+}
+
+/** Sends a short message to a connected Windows session. */
+@Composable
+fun SendMessageDialog(recipient: String, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    val c = appColors
+    val fieldColors = desktopTextFieldColors()
+    var message by remember { mutableStateOf("") }
+    val ready = message.trim().isNotEmpty()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.solid,
+        shape = RadiusCard,
+        title = { Text(stringResource(R.string.send_message), color = c.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.send_message_hint, recipient), style = MaterialTheme.typography.bodySmall, color = c.text2)
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { if (it.length <= 255) message = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                    colors = fieldColors,
+                    shape = RadiusControl,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = ready, onClick = { onSend(message.trim()) }) {
+                Text(stringResource(R.string.send_action), color = if (ready) c.accentText else c.text3)
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = c.text2) } },
     )

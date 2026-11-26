@@ -19,12 +19,19 @@ bool isFree(const QModelIndex &i)
 
 } // namespace
 
+const QString &ServerSectionModel::favoritesSectionKey()
+{
+    static const QString key = QStringLiteral("\u0001favorites");
+    return key;
+}
+
 ServerSectionModel::ServerSectionModel(QAbstractItemModel *source, QObject *parent)
     : QAbstractListModel(parent)
     , m_source(source)
 {
     const QStringList saved = QSettings().value(kSettingsKey).toStringList();
     m_collapsed = QSet<QString>(saved.cbegin(), saved.cend());
+    m_favoritesFirst = QSettings().value(QStringLiteral("ui/favoritesFirst"), true).toBool();
 
     connect(source, &QAbstractItemModel::rowsInserted, this, [this] { rebuild(); });
     connect(source, &QAbstractItemModel::rowsRemoved, this, [this] { rebuild(); });
@@ -34,6 +41,21 @@ ServerSectionModel::ServerSectionModel(QAbstractItemModel *source, QObject *pare
     connect(source, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex &first, const QModelIndex &last) { onDataChanged(first, last); });
     rebuild();
+}
+
+void ServerSectionModel::setFavoritesFirst(bool favoritesFirst)
+{
+    if (m_favoritesFirst == favoritesFirst)
+        return;
+    m_favoritesFirst = favoritesFirst;
+    rebuild();
+}
+
+QString ServerSectionModel::sectionKey(const QModelIndex &index) const
+{
+    if (m_favoritesFirst && index.data(ServerStore::FavoriteRole).toBool())
+        return favoritesSectionKey();
+    return index.data(ServerStore::GroupRole).toString();
 }
 
 int ServerSectionModel::rowCount(const QModelIndex &parent) const
@@ -83,7 +105,7 @@ ServerSectionModel::Snapshot ServerSectionModel::snapshot(bool withIds) const
         s.id.resize(rows);
     for (int r = 0; r < rows; ++r) {
         const QModelIndex i = m_source->index(r, 0);
-        s.group[r] = i.data(ServerStore::GroupRole).toString();
+        s.group[r] = sectionKey(i);
         if (withIds)
             s.id[r] = i.data(ServerStore::IdRole).toString();
         Totals &t = s.totals[s.group.at(r)];
@@ -99,8 +121,15 @@ void ServerSectionModel::rebuild()
 {
     const Snapshot s = snapshot(true);
     const int rows = int(s.group.size());
-    // Headers are shown as soon as any server has a group; before that the list is plain cards.
-    const bool headers = s.totals.size() > 1 || (s.totals.size() == 1 && !s.totals.contains(QString()));
+    // Show headers when any server belongs to a real group, or when favourites-first separates favourites from the rest.
+    const QString &favKey = favoritesSectionKey();
+    bool hasNamedGroup = false;
+    for (auto it = s.totals.cbegin(); it != s.totals.cend(); ++it)
+        if (!it.key().isEmpty() && it.key() != favKey) {
+            hasNamedGroup = true;
+            break;
+        }
+    const bool headers = hasNamedGroup || (m_favoritesFirst && s.totals.size() > 1);
 
     QVector<Entry> fresh;
     fresh.reserve(rows + int(s.totals.size()));
@@ -210,9 +239,9 @@ void ServerSectionModel::queueHeaderRefresh()
 
 void ServerSectionModel::onDataChanged(const QModelIndex &first, const QModelIndex &last)
 {
-    // A server moved to another group without changing place in the order: the headers need redoing.
+    // A server moved to another section without changing place in the order: the headers need redoing.
     for (int r = first.row(); r <= last.row() && r < m_groupOfSource.size(); ++r)
-        if (m_source->index(r, 0).data(ServerStore::GroupRole).toString() != m_groupOfSource.at(r)) {
+        if (sectionKey(m_source->index(r, 0)) != m_groupOfSource.at(r)) {
             rebuild();
             return;
         }

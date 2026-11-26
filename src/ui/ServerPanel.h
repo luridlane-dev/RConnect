@@ -8,6 +8,7 @@ class QLabel;
 class QLineEdit;
 class QListView;
 class QPushButton;
+class QTimer;
 class ServerDelegate;
 class ServerProxy;
 class ServerSectionModel;
@@ -29,6 +30,7 @@ public:
     // The popup next to the session tabs has no import button.
     void setImportVisible(bool visible);
     void clearSearch();
+    void reloadLayoutSettings();
 
     // "3 servers · 2 available · 1 in use · 0 offline"
     static QString summary(const ServerStore *store);
@@ -57,17 +59,18 @@ private:
     void fitCards();
     void openFirstMatch();
 
-    ServerStore *m_store;
-    ServerProxy *m_proxy;
-    ServerSectionModel *m_sections;
+    ServerStore *m_store = nullptr;
+    ServerProxy *m_proxy = nullptr;
+    ServerSectionModel *m_sections = nullptr;
     QButtonGroup *m_viewGroup = nullptr;
-    QLineEdit *m_search;
-    QPushButton *m_add;
-    QPushButton *m_import;
-    QButtonGroup *m_filters;
-    QListView *m_list;
-    ServerDelegate *m_delegate;
-    QLabel *m_empty;
+    QLineEdit *m_search = nullptr;
+    QTimer *m_searchTimer = nullptr;
+    QPushButton *m_add = nullptr;
+    QPushButton *m_import = nullptr;
+    QButtonGroup *m_filters = nullptr;
+    QListView *m_list = nullptr;
+    ServerDelegate *m_delegate = nullptr;
+    QLabel *m_empty = nullptr;
     QHBoxLayout *m_headLayout = nullptr;
     QHBoxLayout *m_filterLayout = nullptr;
     int m_rightInset = kInset;

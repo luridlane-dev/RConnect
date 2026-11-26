@@ -6,12 +6,12 @@ data class RemoteSession(
     val client: String,          // computer the session is connected from, empty if unknown
     val id: Int,
     val connected: Boolean,      // false: signed in but disconnected
-    val idleMinutes: Int,
+    val idleMinutes: Int,        // -1 if unknown
     val logonUtcMs: Long,        // 0 if unknown
     val connectedUtcMs: Long = 0, // last (re)connect from the session log, 0 if unknown
 )
 
-/** Something that happened on a server (session log, failed sign-ins). */
+/** Something that happened on a server (session log, security log, system log). */
 data class AccessEvent(
     val kind: Kind,
     val timeUtcMs: Long,
@@ -22,7 +22,23 @@ data class AccessEvent(
     val sessionId: Int,
     val recordId: Long,
 ) {
-    enum class Kind { SignIn, SignOut, Disconnect, Reconnect, FailedSignIn, Logon }
+    enum class Kind {
+        SignIn,
+        SignOut,
+        Disconnect,
+        Reconnect,
+        FailedSignIn,
+        Logon,
+        UserCreated,
+        GroupMemberAdded,
+        TaskCreated,
+        ServiceInstalled,
+        LogCleared,
+    }
+
+    val isSecurity: Boolean
+        get() = kind == Kind.UserCreated || kind == Kind.GroupMemberAdded ||
+            kind == Kind.TaskCreated || kind == Kind.ServiceInstalled || kind == Kind.LogCleared
 }
 
 data class ServerSnapshot(

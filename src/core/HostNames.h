@@ -12,6 +12,9 @@ QString cached(const QString &address);
 // Looks the address up in the background (once); `resolved` is emitted when a name came in.
 void request(const QString &address);
 
+// Returns the cached name if already known; otherwise schedules a background lookup and returns empty.
+QString cachedOrRequest(const QString &address);
+
 // Addresses inside this network (10.x, 172.16-31.x, 192.168.x, fe80::, ...): a name there is a real computer name.
 bool isLocalAddress(const QString &address);
 

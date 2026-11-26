@@ -55,15 +55,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -84,7 +84,9 @@ import androidx.compose.ui.unit.sp
 import com.rconnect.android.Health
 import com.rconnect.android.R
 import com.rconnect.android.ServerState
+import com.rconnect.android.winrm.AccessEvent
 import com.rconnect.android.winrm.RemoteSession
+import android.content.res.Resources
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -117,20 +119,25 @@ fun Modifier.pressable(onLongClick: (() -> Unit)? = null, onClick: () -> Unit): 
     val scale by animateFloatAsState(if (pressed) 0.985f else 1f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium), label = "press")
     val fade by animateFloatAsState(if (pressed) 0.82f else 1f, tween(80), label = "pressFade")
     this
-        .graphicsLayer { scaleX = scale; scaleY = scale }
-        .alpha(fade)
+        .graphicsLayer { scaleX = scale; scaleY = scale; alpha = fade }
         .combinedClickable(interactionSource = source, indication = null, onClick = onClick, onLongClick = onLongClick)
 }
 
 @Composable
 fun StatusDot(color: Color, size: Int = 8, pulse: Boolean = false, borderColor: Color? = null) {
     val shown by animateColorAsState(color, tween(250), label = "dot")
-    val breathing = rememberInfiniteTransition(label = "pulse")
-    val level by breathing.animateFloat(1f, 0.35f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "level")
+    // Only register an infinite choreographer animation while actively pulsing, and apply alpha in the layer phase.
+    val pulseModifier = if (pulse) {
+        val breathing = rememberInfiniteTransition(label = "pulse")
+        val level by breathing.animateFloat(1f, 0.35f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "level")
+        Modifier.graphicsLayer { alpha = level }
+    } else {
+        Modifier
+    }
     Box(
         Modifier
             .size(size.dp)
-            .alpha(if (pulse) level else 1f)
+            .then(pulseModifier)
             .clip(CircleShape)
             .background(shown, CircleShape)
             .then(if (borderColor != null) Modifier.border(1.5.dp, borderColor, CircleShape) else Modifier),
@@ -141,6 +148,7 @@ fun StatusDot(color: Color, size: Int = 8, pulse: Boolean = false, borderColor: 
 @Composable
 fun MonitorTile(dotColor: Color, cardFill: Color, modifier: Modifier = Modifier, pulse: Boolean = false) {
     val c = appColors
+    val accentText = c.accentText
     Box(modifier.size(40.dp)) {
         Box(
             Modifier
@@ -149,20 +157,28 @@ fun MonitorTile(dotColor: Color, cardFill: Color, modifier: Modifier = Modifier,
                 .background(c.accentSoft),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(20.dp)) {
-                val stroke = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                val w = size.width
-                val h = size.height
-                drawRoundRect(
-                    color = c.accentText,
-                    topLeft = Offset(w * 0.1f, h * 0.16f),
-                    size = Size(w * 0.8f, h * 0.54f),
-                    cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
-                    style = stroke,
-                )
-                drawLine(c.accentText, Offset(w * 0.5f, h * 0.70f), Offset(w * 0.5f, h * 0.85f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-                drawLine(c.accentText, Offset(w * 0.32f, h * 0.86f), Offset(w * 0.68f, h * 0.86f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            }
+            Box(
+                Modifier
+                    .size(20.dp)
+                    .drawWithCache {
+                        val strokeW = 1.5.dp.toPx()
+                        val stroke = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        val w = size.width
+                        val h = size.height
+                        val rectPos = Offset(w * 0.1f, h * 0.16f)
+                        val rectSize = Size(w * 0.8f, h * 0.54f)
+                        val corner = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        val stemTop = Offset(w * 0.5f, h * 0.70f)
+                        val stemBot = Offset(w * 0.5f, h * 0.85f)
+                        val baseL = Offset(w * 0.32f, h * 0.86f)
+                        val baseR = Offset(w * 0.68f, h * 0.86f)
+                        onDrawBehind {
+                            drawRoundRect(accentText, rectPos, rectSize, corner, stroke)
+                            drawLine(accentText, stemTop, stemBot, strokeWidth = strokeW, cap = StrokeCap.Round)
+                            drawLine(accentText, baseL, baseR, strokeWidth = strokeW, cap = StrokeCap.Round)
+                        }
+                    },
+            )
         }
         Box(Modifier.align(Alignment.BottomEnd)) {
             StatusDot(dotColor, size = 10, pulse = pulse, borderColor = cardFill)
@@ -183,23 +199,30 @@ fun FavoriteStar(filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modi
             .pressable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(16.dp)) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val outerR = size.minDimension * 0.46f
-            val innerR = outerR * 0.44f
-            val path = Path()
-            for (k in 0 until 10) {
-                val r = if (k % 2 == 1) innerR else outerR
-                val a = -PI / 2.0 + k * PI / 5.0
-                val x = cx + (r * cos(a)).toFloat()
-                val y = cy + (r * sin(a)).toFloat()
-                if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            path.close()
-            if (filled) drawPath(path, color = fillColor, style = Fill)
-            drawPath(path, color = outlineColor, style = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        }
+        Box(
+            Modifier
+                .size(16.dp)
+                .drawWithCache {
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val outerR = size.minDimension * 0.46f
+                    val innerR = outerR * 0.44f
+                    val path = Path()
+                    for (k in 0 until 10) {
+                        val r = if (k % 2 == 1) innerR else outerR
+                        val a = -PI / 2.0 + k * PI / 5.0
+                        val x = cx + (r * cos(a)).toFloat()
+                        val y = cy + (r * sin(a)).toFloat()
+                        if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    path.close()
+                    val stroke = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    onDrawBehind {
+                        if (filled) drawPath(path, color = fillColor, style = Fill)
+                        drawPath(path, color = outlineColor, style = stroke)
+                    }
+                },
+        )
     }
 }
 
@@ -253,11 +276,14 @@ fun ViewModeToggle(listMode: Boolean, onSelect: (Boolean) -> Unit, modifier: Mod
 
 // ---- layout ------------------------------------------------------------------------------------
 
+private val RowTopShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+private val RowBottomShape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
+
 fun rowShape(index: Int, count: Int): Shape = when {
     count <= 1 -> RadiusCard
-    index == 0 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-    index == count - 1 -> RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
-    else -> RoundedCornerShape(0.dp)
+    index == 0 -> RowTopShape
+    index == count - 1 -> RowBottomShape
+    else -> RectangleShape
 }
 
 /** A row of a grouped list, with an outer border and a thin separator to the next row. */
@@ -295,6 +321,7 @@ fun DesktopGroupHeader(
 ) {
     val c = appColors
     val turn by animateFloatAsState(if (collapsed) -90f else 0f, tween(180), label = "chevron")
+    val chevronColor = c.text2
     Row(
         modifier
             .fillMaxWidth()
@@ -302,14 +329,22 @@ fun DesktopGroupHeader(
             .padding(top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.size(16.dp).rotate(turn)) {
-            val path = Path().apply {
-                moveTo(size.width * 0.25f, size.height * 0.38f)
-                lineTo(size.width * 0.5f, size.height * 0.65f)
-                lineTo(size.width * 0.75f, size.height * 0.38f)
-            }
-            drawPath(path, color = c.text2, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        }
+        Box(
+            Modifier
+                .size(16.dp)
+                .graphicsLayer { rotationZ = turn }
+                .drawWithCache {
+                    val path = Path().apply {
+                        moveTo(size.width * 0.25f, size.height * 0.38f)
+                        lineTo(size.width * 0.5f, size.height * 0.65f)
+                        lineTo(size.width * 0.75f, size.height * 0.38f)
+                    }
+                    val stroke = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    onDrawBehind {
+                        drawPath(path, color = chevronColor, style = stroke)
+                    }
+                },
+        )
         Spacer(Modifier.width(6.dp))
         Text(title, style = SectionTitle, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.width(7.dp))
@@ -526,7 +561,7 @@ fun desktopTextFieldColors() = OutlinedTextFieldDefaults.colors(
     errorLabelColor = appColors.red,
 )
 
-class TabItem(val icon: ImageVector, val label: String)
+data class TabItem(val icon: ImageVector, val label: String)
 
 @Composable
 fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
@@ -534,27 +569,27 @@ fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().background(c.sidebar).navigationBarsPadding()) {
         HorizontalDivider(color = c.border)
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items.forEachIndexed { i, item ->
                 val active = i == selected
                 val bg by animateColorAsState(if (active) c.accentSoft else Color.Transparent, tween(160), label = "tabBg")
                 val tint by animateColorAsState(if (active) c.accentText else c.text2, tween(160), label = "tabTint")
-                Row(
+                Column(
                     Modifier
                         .weight(1f)
-                        .height(40.dp)
+                        .height(48.dp)
                         .clip(RadiusControl)
                         .background(bg)
                         .pressable { onSelect(i) }
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(item.icon, null, tint = tint, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(item.label, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(item.icon, null, tint = tint, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.height(2.dp))
+                    Text(item.label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -590,6 +625,7 @@ fun idleLabel(s: RemoteSession): Pair<String, Color> {
     val c = appColors
     return when {
         !s.connected -> stringResource(R.string.not_connected) to c.text3
+        s.idleMinutes < 0 -> stringResource(R.string.idle_unknown) to c.text2
         s.idleMinutes < 1 -> stringResource(R.string.active) to c.green
         s.idleMinutes < 60 -> stringResource(R.string.idle_min, s.idleMinutes) to c.orange
         else -> stringResource(R.string.idle_hours, s.idleMinutes / 60) to c.orange
@@ -600,10 +636,9 @@ fun idleLabel(s: RemoteSession): Pair<String, Color> {
 @Composable
 fun compactActivityText(s: RemoteSession, serverNowUtcMs: Long): String {
     val parts = ArrayList<String>(2)
-    val now = if (serverNowUtcMs > 0) serverNowUtcMs else System.currentTimeMillis()
-    val since = if (s.connectedUtcMs > 0) s.connectedUtcMs else s.logonUtcMs
-    if (s.connected && since > 0 && now >= since) {
-        val mins = (now - since) / 60_000L
+    // Only use exact LSM connect time with the server's own clock so stale shell start times never distort duration.
+    if (s.connected && s.connectedUtcMs > 0 && serverNowUtcMs >= s.connectedUtcMs) {
+        val mins = (serverNowUtcMs - s.connectedUtcMs) / 60_000L
         val dur = when {
             mins == 0L -> stringResource(R.string.dur_under_min)
             mins < 60L -> stringResource(R.string.dur_min, mins.toInt())
@@ -612,7 +647,7 @@ fun compactActivityText(s: RemoteSession, serverNowUtcMs: Long): String {
         }
         parts += stringResource(R.string.connected_duration, dur)
     }
-    if (s.connected) {
+    if (s.connected && s.idleMinutes >= 0) {
         parts += when {
             s.idleMinutes < 1 -> stringResource(R.string.active_short)
             s.idleMinutes < 60 -> stringResource(R.string.idle_min, s.idleMinutes)
@@ -622,9 +657,64 @@ fun compactActivityText(s: RemoteSession, serverNowUtcMs: Long): String {
     return parts.joinToString(" · ")
 }
 
-/** One person on a server. Long press names them. */
+fun eventKindTitle(resources: Resources, kind: AccessEvent.Kind): String = when (kind) {
+    AccessEvent.Kind.SignIn, AccessEvent.Kind.Logon -> resources.getString(R.string.ev_signin)
+    AccessEvent.Kind.SignOut -> resources.getString(R.string.ev_signout)
+    AccessEvent.Kind.Disconnect -> resources.getString(R.string.ev_disconnect)
+    AccessEvent.Kind.Reconnect -> resources.getString(R.string.ev_reconnect)
+    AccessEvent.Kind.FailedSignIn -> resources.getString(R.string.ev_failed)
+    AccessEvent.Kind.UserCreated -> resources.getString(R.string.ev_user_created)
+    AccessEvent.Kind.GroupMemberAdded -> resources.getString(R.string.ev_group_added)
+    AccessEvent.Kind.TaskCreated -> resources.getString(R.string.ev_task_created)
+    AccessEvent.Kind.ServiceInstalled -> resources.getString(R.string.ev_service_installed)
+    AccessEvent.Kind.LogCleared -> resources.getString(R.string.ev_log_cleared)
+}
+
 @Composable
-fun SessionRow(s: RemoteSession, nickname: String? = null, onLongClick: (() -> Unit)? = null) {
+fun eventKindColor(kind: AccessEvent.Kind): Color {
+    val c = appColors
+    return when (kind) {
+        AccessEvent.Kind.SignIn, AccessEvent.Kind.Reconnect, AccessEvent.Kind.Logon -> c.green
+        AccessEvent.Kind.SignOut -> c.text3
+        AccessEvent.Kind.Disconnect -> c.orange
+        AccessEvent.Kind.FailedSignIn,
+        AccessEvent.Kind.UserCreated,
+        AccessEvent.Kind.GroupMemberAdded,
+        AccessEvent.Kind.TaskCreated,
+        AccessEvent.Kind.ServiceInstalled,
+        AccessEvent.Kind.LogCleared,
+        -> c.red
+    }
+}
+
+fun localizedEventDetail(resources: Resources, e: AccessEvent): String {
+    if (e.kind != AccessEvent.Kind.FailedSignIn) return e.detail
+    val id = when (e.detail.lowercase(Locale.ROOT)) {
+        "0xc0000064", "unknown user name" -> R.string.fail_unknown_user
+        "0xc000006a", "wrong password" -> R.string.fail_wrong_password
+        "0xc000006d", "logon failed" -> R.string.fail_logon_failed
+        "0xc000006e", "account restriction" -> R.string.fail_account_restriction
+        "0xc000006f", "outside allowed hours" -> R.string.fail_outside_hours
+        "0xc0000070", "workstation restriction" -> R.string.fail_workstation_restriction
+        "0xc0000071", "password expired" -> R.string.fail_password_expired
+        "0xc0000072", "account disabled" -> R.string.fail_account_disabled
+        "0xc0000133", "clocks out of sync" -> R.string.fail_clocks_skew
+        "0xc000015b", "logon type not allowed" -> R.string.fail_logon_type
+        "0xc0000193", "account expired" -> R.string.fail_account_expired
+        "0xc0000234", "account locked out" -> R.string.fail_account_locked
+        else -> 0
+    }
+    return if (id != 0) resources.getString(id) else e.detail
+}
+
+/** One person on a server. Long press names them; optional action sends a message. */
+@Composable
+fun SessionRow(
+    s: RemoteSession,
+    nickname: String? = null,
+    onLongClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     val (label, color) = idleLabel(s)
     Row(
         Modifier
@@ -640,55 +730,103 @@ fun SessionRow(s: RemoteSession, nickname: String? = null, onLongClick: (() -> U
             Text(nickname ?: s.client.ifBlank { user }, fontWeight = FontWeight.SemiBold, color = appColors.text)
             if (nickname != null) Muted(listOf(s.client, user).filter { it.isNotBlank() }.distinct().joinToString(" · "))
             else if (s.client.isNotBlank()) Muted(user)
-            val detail = listOfNotNull(
-                when {
-                    s.connected && s.connectedUtcMs > 0 -> stringResource(R.string.connected_at, dateTime(s.connectedUtcMs))
-                    s.logonUtcMs > 0 -> stringResource(R.string.since, dateTime(s.logonUtcMs))
-                    else -> null
-                },
-            )
-            if (detail.isNotEmpty()) Muted(detail.joinToString(" · "))
+            if (s.connected && s.connectedUtcMs > 0) {
+                Muted(stringResource(R.string.connected_at, dateTime(s.connectedUtcMs)))
+            }
         }
         Spacer(Modifier.width(8.dp))
-        Text(label, color = color, style = MaterialTheme.typography.labelLarge)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(label, color = color, style = MaterialTheme.typography.labelLarge)
+            if (trailing != null) {
+                Spacer(Modifier.height(6.dp))
+                trailing()
+            }
+        }
     }
 }
 
 // ---- natural sort ------------------------------------------------------------------------------
 
-private val naturalChunk = Regex("(\\d+|\\D+)")
-
-/** Compares two strings with numbers in natural order ("srv2" before "srv10"). */
+/** Allocation-free natural comparison ("srv2" before "srv10"), case-insensitive. */
 fun naturalCompare(a: String, b: String): Int {
-    val la = a.lowercase(Locale.ROOT)
-    val lb = b.lowercase(Locale.ROOT)
-    val pa = naturalChunk.findAll(la).map { it.value }.toList()
-    val pb = naturalChunk.findAll(lb).map { it.value }.toList()
-    val n = minOf(pa.size, pb.size)
-    for (i in 0 until n) {
-        val ca = pa[i]
-        val cb = pb[i]
-        if (ca == cb) continue
-        val na = ca.toBigIntegerOrNull()
-        val nb = cb.toBigIntegerOrNull()
-        val cmp = if (na != null && nb != null) na.compareTo(nb) else ca.compareTo(cb)
-        if (cmp != 0) return cmp
+    var ia = 0
+    var ib = 0
+    val na = a.length
+    val nb = b.length
+    while (ia < na && ib < nb) {
+        val ca = a[ia]
+        val cb = b[ib]
+        val da = ca in '0'..'9'
+        val db = cb in '0'..'9'
+        if (da && db) {
+            var za = ia
+            while (za < na && a[za] == '0') za++
+            var ea = za
+            while (ea < na && a[ea] in '0'..'9') ea++
+            var zb = ib
+            while (zb < nb && b[zb] == '0') zb++
+            var eb = zb
+            while (eb < nb && b[eb] in '0'..'9') eb++
+            val lenA = ea - za
+            val lenB = eb - zb
+            if (lenA != lenB) return lenA.compareTo(lenB)
+            for (k in 0 until lenA) {
+                val diff = a[za + k].compareTo(b[zb + k])
+                if (diff != 0) return diff
+            }
+            ia = ea
+            ib = eb
+        } else {
+            val la = ca.lowercaseChar()
+            val lb = cb.lowercaseChar()
+            if (la != lb) return la.compareTo(lb)
+            ia++
+            ib++
+        }
     }
-    return pa.size.compareTo(pb.size)
+    return (na - ia).compareTo(nb - ib)
 }
 
 // ---- time --------------------------------------------------------------------------------------
 
 private val zone: ZoneId get() = ZoneId.systemDefault()
 
-fun clock(ms: Long): String =
-    DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
+private class CachedFormatters(val locale: Locale) {
+    val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", locale)
+    val dateTime: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM HH:mm", locale)
+    val dayLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM EEEE", locale)
+}
 
-fun dateTime(ms: Long): String =
-    DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
+@Volatile
+private var cachedFmt: CachedFormatters? = null
 
-fun dayLabel(ms: Long): String =
-    DateTimeFormatter.ofPattern("d MMMM EEEE", Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
+private fun formatters(): CachedFormatters {
+    val loc = Locale.getDefault()
+    val cur = cachedFmt
+    if (cur != null && cur.locale == loc) return cur
+    return CachedFormatters(loc).also { cachedFmt = it }
+}
+
+fun clock(ms: Long): String = formatters().clock.format(Instant.ofEpochMilli(ms).atZone(zone))
+
+fun dateTime(ms: Long): String = formatters().dateTime.format(Instant.ofEpochMilli(ms).atZone(zone))
+
+fun dayLabel(ms: Long): String = formatters().dayLabel.format(Instant.ofEpochMilli(ms).atZone(zone))
+
+/** Reads at most [maxBytes] from [input]; returns null if the stream exceeds the cap (prevents OOM on arbitrary file picks). */
+fun readBoundedBytes(input: java.io.InputStream, maxBytes: Int = 8 * 1024 * 1024): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        total += n
+        if (total > maxBytes) return null
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
+}
 
 @Composable
 fun ago(ms: Long): String {

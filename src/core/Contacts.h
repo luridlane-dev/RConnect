@@ -4,18 +4,18 @@
 #include <QString>
 #include <QStringList>
 
-// A person in the address book: a nickname for a computer, for example the computer "LENOVO" is "Elif".
-// The computer name is what identifies a person, so the nickname follows them whatever IP address they
-// connect from. The Windows account is optional, for people who sign in with their own account (or when
-// the computer name is not known); when both are filled in, both must match. The entry with the most
-// fields wins.
+// A person in the address book: a nickname for a computer, IP address, or account.
+// The computer name is preferred because it follows a person across IP addresses, while an IP address
+// can identify someone when the server only logged their IP. When multiple fields are filled in, all of
+// them must match; the most specific match wins.
 struct Contact {
     QString id;
-    QString name;     // the nickname shown instead of the computer
+    QString name;     // the nickname shown instead of the computer or IP
     QString device;   // computer name the session connects from
+    QString address;  // IP address, optional (useful when computer name is unavailable)
     QString user;     // Windows account (without the domain), optional
 
-    bool hasMatch() const { return !device.isEmpty() || !user.isEmpty(); }
+    bool hasMatch() const { return !device.isEmpty() || !address.isEmpty() || !user.isEmpty(); }
 };
 
 // The address book, kept in contacts.json next to servers.json. The file is plain JSON
@@ -28,10 +28,10 @@ public:
     QList<Contact> all() const { return m_contacts; }
     const Contact *find(const QString &id) const;
     // The best entry for a session or an event; null when nobody has a nickname.
-    const Contact *match(const QString &device, const QString &user) const;
-    QString nameFor(const QString &device, const QString &user) const;
-    // "Elif (LENOVO)", or just the device when there is no nickname.
-    QString label(const QString &device, const QString &user) const;
+    const Contact *match(const QString &device, const QString &user, const QString &address = {}) const;
+    QString nameFor(const QString &device, const QString &user, const QString &address = {}) const;
+    // "Elif (LENOVO)", or just the device/name when only one is available.
+    QString label(const QString &device, const QString &user, const QString &address = {}) const;
     // Every nickname once, for suggestions.
     QStringList names() const;
 
@@ -48,9 +48,17 @@ signals:
     void changed();
 
 private:
+    struct Normalized {
+        QString device;
+        QString address;
+        QString user;
+    };
+
     Contacts();
     void load();
     void write() const;
+    void rebuildIndex();
 
     QList<Contact> m_contacts;
+    QList<Normalized> m_norm;
 };

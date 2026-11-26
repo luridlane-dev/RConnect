@@ -16,7 +16,7 @@ class Ntlm(
     user: String,
     domain: String,
     private val password: String,
-    private val random: (Int) -> ByteArray = { n -> ByteArray(n).also { SecureRandom().nextBytes(it) } },
+    private val random: (Int) -> ByteArray = { n -> ByteArray(n).also(sharedRandom::nextBytes) },
     private val nowFileTime: () -> Long = { (System.currentTimeMillis() + 11644473600000L) * 10000L },
 ) {
     private val user: String
@@ -130,10 +130,20 @@ class Ntlm(
     }
 
     /** Decrypts one incoming message; false in the second part if its signature does not match. */
-    fun unseal(signature: ByteArray, sealed: ByteArray): Pair<ByteArray, Boolean> {
+    fun unseal(signature: ByteArray, sealed: ByteArray): Pair<ByteArray, Boolean> =
+        unsealSlice(signature, 0, sealed, 0, sealed.size)
+
+    /** Zero-copy slice variant of [unseal] to avoid allocating intermediate copies of large replies. */
+    fun unsealSlice(
+        sigBuf: ByteArray,
+        sigOffset: Int,
+        sealedBuf: ByteArray,
+        sealedOffset: Int,
+        sealedLen: Int,
+    ): Pair<ByteArray, Boolean> {
         val seq = le32(receiveSeq)
-        val plain = serverSeal!!.process(sealed)
-        val checksum = serverSeal!!.process(signature.copyOfRange(4, 12))
+        val plain = serverSeal!!.process(sealedBuf, sealedOffset, sealedLen)
+        val checksum = serverSeal!!.process(sigBuf, sigOffset + 4, 8)
         val expected = hmacMd5(serverSign, seq, plain).copyOf(8)
         receiveSeq++
         return Pair(plain, checksum.contentEquals(expected))
@@ -178,6 +188,7 @@ class Ntlm(
     internal fun useSessionKey(sessionKey: ByteArray) = deriveKeys(sessionKey)
 
     companion object {
+        private val sharedRandom = SecureRandom()
         private val SIGNATURE = "NTLMSSP\u0000".toByteArray(Charsets.US_ASCII)
         const val NEG_UNICODE = 0x1
         const val NEG_REQUEST_TARGET = 0x4

@@ -8,37 +8,82 @@ import java.util.Locale
 object Parsing {
     const val MARKER = "##RCONNECT##"
     const val EVENTS_MARKER = "##RCONNECT-EVENTS##"
+    const val CONNECTIONS_MARKER = "##RCONNECT-CONNECTIONS##"
     const val LOG_MARKER = "##RCLOG:"
     const val START_MARKER = "##RCSTART##"
 
     private val space = Regex("\\s+")
     private val dateField = Regex("^\\d{1,4}[./-]\\d{1,2}[./-]\\d{1,4}$")
     private val digits = Regex("^\\d+$")
+    private val idlePattern = Regex("^(?:(\\d{1,6})\\+)?(?:(\\d{1,6}):)?(\\d{1,6})$")
 
-    /** Splits the output into the events (before [EVENTS_MARKER]) and the sessions (after it). */
-    fun snapshot(output: String, withEvents: Boolean): ServerSnapshot {
-        var sessionsText = output
+    /** Splits the output into events, recent connection events, and current sessions. */
+    fun snapshot(output: String, withEvents: Boolean, fallbackServerNowMs: Long = 0L): ServerSnapshot {
+        var rest = output
         var events = emptyList<AccessEvent>()
         if (withEvents) {
-            val split = output.indexOf(EVENTS_MARKER)
+            val split = rest.indexOf(EVENTS_MARKER)
             if (split >= 0) {
-                events = parseEventLogs(output.substring(0, split))
-                sessionsText = output.substring(split + EVENTS_MARKER.length).substringAfter('\n', "")
+                events = parseEventLogs(rest.substring(0, split))
+                rest = rest.substring(split + EVENTS_MARKER.length).substringAfter('\n', "")
             }
         }
+
+        var connectionEvents = emptyList<AccessEvent>()
+        val connSplit = rest.indexOf(CONNECTIONS_MARKER)
+        if (connSplit >= 0) {
+            connectionEvents = parseEventLogs(rest.substring(0, connSplit))
+            rest = rest.substring(connSplit + CONNECTIONS_MARKER.length).substringAfter('\n', "")
+        }
+
         var serverNow = 0L
-        val sessions = parseSessions(sessionsText) { serverNow = it }
+        val sessions = parseSessions(rest) { serverNow = it }
+        if (serverNow <= 0L && fallbackServerNowMs > 0L) serverNow = fallbackServerNowMs
+
         val sorted = events.sortedByDescending { it.timeUtcMs }
-        // The session log only knows the client's address; the security log's sign-ins also know its name.
+        // The session log only knows the client's address; security reconnect/disconnect events also name the computer.
         val nameOf = HashMap<String, String>()
         for (e in sorted) if (e.client.isNotEmpty() && e.address.isNotEmpty()) nameOf.putIfAbsent(e.address, e.client)
         val named = sorted.filter { it.kind != AccessEvent.Kind.Logon }
             .map { if (it.client.isEmpty()) it.copy(client = nameOf[it.address].orEmpty()) else it }
-        val withConnect = sessions.map { s ->
-            val last = named.firstOrNull { it.sessionId == s.id && (it.kind == AccessEvent.Kind.SignIn || it.kind == AccessEvent.Kind.Reconnect) }
-            if (last == null) s else s.copy(connectedUtcMs = last.timeUtcMs)
-        }
+
+        // Resolve exact (re)connect time per session from the latest LSM session event by recordId.
+        val lsmSource = if (connectionEvents.isNotEmpty()) connectionEvents else named
+        val withConnect = applyConnectionTimes(sessions, lsmSource, serverNow)
         return ServerSnapshot(withConnect, named, serverNow)
+    }
+
+    private fun applyConnectionTimes(
+        sessions: List<RemoteSession>,
+        events: List<AccessEvent>,
+        serverNow: Long,
+    ): List<RemoteSession> {
+        val latest = HashMap<Int, AccessEvent>()
+        for (event in events) {
+            if (event.sessionId <= 0) continue
+            if (event.kind != AccessEvent.Kind.SignIn &&
+                event.kind != AccessEvent.Kind.SignOut &&
+                event.kind != AccessEvent.Kind.Disconnect &&
+                event.kind != AccessEvent.Kind.Reconnect
+            ) continue
+            val prev = latest[event.sessionId]
+            if (prev == null || event.recordId > prev.recordId || (event.recordId == prev.recordId && event.timeUtcMs > prev.timeUtcMs)) {
+                latest[event.sessionId] = event
+            }
+        }
+        return sessions.map { s ->
+            val event = latest[s.id]
+            if (!s.connected || event == null ||
+                (event.kind != AccessEvent.Kind.SignIn && event.kind != AccessEvent.Kind.Reconnect)
+            ) return@map s
+            val eventUser = if (s.user.contains('\\')) event.user else event.user.substringAfterLast('\\')
+            if (eventUser.isEmpty() || !s.user.equals(eventUser, ignoreCase = true)) return@map s
+            if (serverNow > 0 && event.timeUtcMs > serverNow + 1000L) return@map s
+            s.copy(
+                connectedUtcMs = event.timeUtcMs,
+                logonUtcMs = if (event.kind == AccessEvent.Kind.SignIn) event.timeUtcMs else s.logonUtcMs,
+            )
+        }
     }
 
     // `quser` columns: USERNAME [SESSIONNAME] ID STATE IDLE LOGON-DATE LOGON-TIME. Headers and the state are
@@ -68,23 +113,23 @@ object Parsing {
                 if (dateField.matches(t[k])) dateIndex = k
                 k++
             }
-            val idle = if (dateIndex > idIndex + 1) parseIdle(t[dateIndex - 1]) else 0
+            val idle = if (dateIndex > idIndex + 1) parseIdle(t[dateIndex - 1]) else -1
             sessions += RemoteSession(
-                user = t[0].removePrefix(">"), client = "", id = t[idIndex].toInt(),
-                connected = connected, idleMinutes = idle, logonUtcMs = 0,
+                user = t[0].removePrefix(">"),
+                client = "",
+                id = t[idIndex].toInt(),
+                connected = connected,
+                idleMinutes = idle,
+                logonUtcMs = 0,
             )
         }
 
-        // "NOW <time>" is the server clock; then "<session id> <time>" per shell, the first one is the sign-in.
-        val logon = HashMap<Int, Long>()
+        // "NOW <time>" is the server's UTC clock.
         for (raw in starts.split('\n')) {
             val parts = raw.trim().split(' ').filter { it.isNotEmpty() }
-            if (parts.size != 2) continue
+            if (parts.size != 2 || parts[0] != "NOW") continue
             val time = parseTime(parts[1]) ?: continue
-            if (parts[0] == "NOW") { onServerNow(time); continue }
-            val id = parts[0].toIntOrNull() ?: continue
-            val known = logon[id]
-            if (known == null || time < known) logon[id] = time
+            onServerNow(time)
         }
 
         // HKEY_USERS\<sid>\Volatile Environment\<session id>
@@ -101,22 +146,18 @@ object Parsing {
             if (sessionId < 0 || !line.startsWith("CLIENTNAME", ignoreCase = true) || type < 0) continue
             clientOf[sessionId] = line.substring(type + 6).trim()
         }
-        return sessions.map { it.copy(client = clientOf[it.id].orEmpty(), logonUtcMs = logon[it.id] ?: 0) }
+        return sessions.map { it.copy(client = clientOf[it.id].orEmpty()) }
     }
 
-    // ".", "none": under a minute; "5"; "1:05"; "2+03:04" (days+hours:minutes)
+    // ".", "none", "yok": under a minute; "5"; "1:05"; "2+03:04" (days+hours:minutes); anything else -> -1 (unknown).
     fun parseIdle(text: String): Int {
-        var days = 0
-        var rest = text
-        val plus = rest.indexOf('+')
-        if (plus >= 0) {
-            days = rest.substring(0, plus).toIntOrNull() ?: 0
-            rest = rest.substring(plus + 1)
-        }
-        val colon = rest.indexOf(':')
-        val minutes = if (colon >= 0) (rest.substring(0, colon).toIntOrNull() ?: 0) * 60 + (rest.substring(colon + 1).toIntOrNull() ?: 0)
-        else rest.toIntOrNull() ?: 0
-        return days * 1440 + minutes
+        val clean = text.trim()
+        if (clean == "." || clean.equals("none", ignoreCase = true) || clean.equals("yok", ignoreCase = true)) return 0
+        val m = idlePattern.matchEntire(clean) ?: return -1
+        val days = m.groupValues[1].toLongOrNull() ?: 0L
+        val hours = m.groupValues[2].toLongOrNull() ?: 0L
+        val mins = m.groupValues[3].toLongOrNull() ?: 0L
+        return (days * 1440L + hours * 60L + mins).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
     }
 
     // 2026-10-31T08:15:30.1234567Z, with or without fraction digits or timezone offset.
@@ -154,51 +195,139 @@ object Parsing {
     private val recordId = Regex("<EventRecordID>(\\d+)</EventRecordID>")
     private val dataItem = Regex("<Data Name=['\"]([^'\"]*)['\"]>(.*?)</Data>", RegexOption.DOT_MATCHES_ALL)
 
-    private fun field(xml: String, name: String): String =
-        Regex("<$name>(.*?)</$name>", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1)
-            ?.let(::unescape)?.trim().orEmpty()
+    private fun field(xml: String, name: String): String {
+        val open = "<$name>"
+        val start = xml.indexOf(open)
+        if (start < 0) return ""
+        val contentStart = start + open.length
+        val end = xml.indexOf("</$name>", contentStart)
+        if (end < 0) return ""
+        return unescape(xml.substring(contentStart, end)).trim()
+    }
+
+    private fun sanitizeXml(text: String): String {
+        var needsCopy = false
+        for (i in text.indices) {
+            val c = text[i]
+            if ((c.code < 0x20 && c != '\t' && c != '\n' && c != '\r') || c.code == 0xFFFE || c.code == 0xFFFF) {
+                needsCopy = true
+                break
+            }
+        }
+        if (!needsCopy) return text
+        return buildString(text.length) {
+            for (c in text) append(if ((c.code < 0x20 && c != '\t' && c != '\n' && c != '\r') || c.code == 0xFFFE || c.code == 0xFFFF) ' ' else c)
+        }
+    }
 
     fun parseEvents(text: String): List<AccessEvent> {
         // Characters XML forbids (and bytes that were not text) must not hide the other events.
-        val clean = buildString(text.length) {
-            for (c in text) append(if ((c.code < 0x20 && c != '\t' && c != '\n' && c != '\r') || c.code == 0xFFFE || c.code == 0xFFFF) ' ' else c)
-        }
+        val clean = sanitizeXml(text)
         val out = ArrayList<AccessEvent>()
         for (m in eventBlock.findAll(clean)) {
             val xml = m.value
             val id = eventId.find(xml)?.groupValues?.get(1)?.toIntOrNull() ?: continue
             val time = timeCreated.find(xml)?.groupValues?.get(1)?.let(::parseTime) ?: continue
             val record = recordId.find(xml)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-            val data = HashMap<String, String>()
-            for (d in dataItem.findAll(xml)) data[d.groupValues[1]] = unescape(d.groupValues[2]).trim()
-            out += when (id) {
-                21, 23, 24, 25 -> AccessEvent(
+            if (id == 21 || id == 23 || id == 24 || id == 25) {
+                out += AccessEvent(
                     kind = when (id) {
                         21 -> AccessEvent.Kind.SignIn
                         23 -> AccessEvent.Kind.SignOut
                         24 -> AccessEvent.Kind.Disconnect
                         else -> AccessEvent.Kind.Reconnect
                     },
-                    timeUtcMs = time, user = field(xml, "User"), address = field(xml, "Address"), client = "",
-                    detail = "", sessionId = field(xml, "SessionID").toIntOrNull() ?: 0, recordId = record,
+                    timeUtcMs = time,
+                    user = field(xml, "User"),
+                    address = field(xml, "Address"),
+                    client = "",
+                    detail = "",
+                    sessionId = field(xml, "SessionID").toIntOrNull() ?: 0,
+                    recordId = record,
                 )
-                4778, 4779 -> AccessEvent( // session reconnected / disconnected: the only events that name the client computer
-                    kind = AccessEvent.Kind.Logon, timeUtcMs = time, user = account(data["AccountDomain"], data["AccountName"]),
-                    address = dash(data["ClientAddress"]), client = dash(data["ClientName"]),
-                    detail = "", sessionId = 0, recordId = record,
+                continue
+            }
+            val data = HashMap<String, String>()
+            for (d in dataItem.findAll(xml)) data[d.groupValues[1]] = unescape(d.groupValues[2]).trim()
+            out += when (id) {
+                4778, 4779 -> AccessEvent(
+                    kind = AccessEvent.Kind.Logon,
+                    timeUtcMs = time,
+                    user = account(data["AccountDomain"], data["AccountName"]),
+                    address = dash(data["ClientAddress"]),
+                    client = dash(data["ClientName"]),
+                    detail = "",
+                    sessionId = 0,
+                    recordId = record,
                 )
                 4625 -> AccessEvent(
-                    kind = AccessEvent.Kind.FailedSignIn, timeUtcMs = time,
+                    kind = AccessEvent.Kind.FailedSignIn,
+                    timeUtcMs = time,
                     user = account(data["TargetDomainName"], data["TargetUserName"]),
-                    address = dash(data["IpAddress"]), client = dash(data["WorkstationName"]),
-                    detail = failureReason(data["Status"].orEmpty(), data["SubStatus"].orEmpty()),
-                    sessionId = 0, recordId = record,
+                    address = dash(data["IpAddress"]),
+                    client = dash(data["WorkstationName"]),
+                    detail = failureKey(data["Status"].orEmpty(), data["SubStatus"].orEmpty()),
+                    sessionId = 0,
+                    recordId = record,
+                )
+                4720 -> AccessEvent(
+                    kind = AccessEvent.Kind.UserCreated,
+                    timeUtcMs = time,
+                    user = account(data["TargetDomainName"], data["TargetUserName"]),
+                    address = "",
+                    client = "",
+                    detail = actor(data),
+                    sessionId = 0,
+                    recordId = record,
+                )
+                4732 -> AccessEvent(
+                    kind = AccessEvent.Kind.GroupMemberAdded,
+                    timeUtcMs = time,
+                    user = dash(data["MemberName"]).ifEmpty { dash(data["MemberSid"]) },
+                    address = "",
+                    client = "",
+                    detail = listOf(dash(data["TargetUserName"]), actor(data)).filter { it.isNotEmpty() }.joinToString(" · "),
+                    sessionId = 0,
+                    recordId = record,
+                )
+                4698 -> AccessEvent(
+                    kind = AccessEvent.Kind.TaskCreated,
+                    timeUtcMs = time,
+                    user = actor(data),
+                    address = "",
+                    client = "",
+                    detail = dash(data["TaskName"]),
+                    sessionId = 0,
+                    recordId = record,
+                )
+                7045 -> AccessEvent(
+                    kind = AccessEvent.Kind.ServiceInstalled,
+                    timeUtcMs = time,
+                    user = dash(data["AccountName"]),
+                    address = "",
+                    client = "",
+                    detail = listOf(dash(data["ServiceName"]), dash(data["ImagePath"])).filter { it.isNotEmpty() }.joinToString(": "),
+                    sessionId = 0,
+                    recordId = record,
+                )
+                1102, 104 -> AccessEvent(
+                    kind = AccessEvent.Kind.LogCleared,
+                    timeUtcMs = time,
+                    user = actor(data).ifEmpty { account(field(xml, "SubjectDomainName"), field(xml, "SubjectUserName")) },
+                    address = "",
+                    client = "",
+                    detail = if (id == 1102) "Security" else field(xml, "Channel").ifEmpty { "System" },
+                    sessionId = 0,
+                    recordId = record,
                 )
                 else -> continue
             }
         }
         return out
     }
+
+    private fun actor(data: Map<String, String>): String =
+        account(data["SubjectDomainName"], data["SubjectUserName"])
 
     private fun account(domain: String?, user: String?): String {
         val u = user.orEmpty()
@@ -210,18 +339,8 @@ object Parsing {
     private fun unescape(s: String): String =
         s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
 
-    private val reasons = mapOf(
-        "0xc0000064" to "unknown user name", "0xc000006a" to "wrong password", "0xc000006d" to "logon failed",
-        "0xc000006e" to "account restriction", "0xc000006f" to "outside allowed hours",
-        "0xc0000070" to "workstation restriction", "0xc0000071" to "password expired",
-        "0xc0000072" to "account disabled", "0xc0000133" to "clocks out of sync",
-        "0xc000015b" to "logon type not allowed", "0xc0000193" to "account expired",
-        "0xc0000234" to "account locked out",
-    )
-
-    private fun failureReason(status: String, subStatus: String): String {
+    private fun failureKey(status: String, subStatus: String): String {
         val sub = subStatus.lowercase(Locale.ROOT)
-        val key = if (sub.isEmpty() || sub == "0x0") status.lowercase(Locale.ROOT) else sub
-        return reasons[key] ?: key
+        return if (sub.isEmpty() || sub == "0x0") status.lowercase(Locale.ROOT) else sub
     }
 }

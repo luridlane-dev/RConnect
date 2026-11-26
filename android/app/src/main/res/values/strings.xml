@@ -3,6 +3,7 @@
     <string name="refresh">Refresh</string>
     <string name="refresh_all">Check all servers now</string>
     <string name="more">More</string>
+    <string name="settings">Settings</string>
     <string name="clear">Clear</string>
     <string name="add_server">Add server</string>
     <string name="add_server_cta">+ Add server</string>
@@ -15,8 +16,9 @@
     <string name="show">Show</string>
     <string name="hide">Hide</string>
     <string name="delete_title">Delete %1$s?</string>
-    <string name="empty_hint">No servers yet.\nUse “+ Add server” to get started, or ⋮ → Import servers.</string>
+    <string name="empty_hint">No servers yet.\nUse “+ Add server” to get started, or open Settings to import servers.</string>
     <string name="ip_address">IP address or host name</string>
+    <string name="rdp_port">RDP port</string>
     <string name="user_name">User name (administrator)</string>
     <string name="password">Password</string>
     <string name="name_optional">Name (optional)</string>
@@ -24,11 +26,14 @@
     <string name="no_group">Other</string>
     <string name="favorite">Favourite</string>
 
-    <string name="menu_switch_to_light">Appearance: Light</string>
-    <string name="menu_switch_to_dark">Appearance: Dark</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
 
     <string name="tab_servers">Servers</string>
     <string name="tab_people">People</string>
+    <string name="tab_logs">Logs</string>
+    <string name="tab_contacts">Contacts</string>
     <string name="tile_all">All</string>
     <string name="tile_favorites">Favourites</string>
     <string name="tile_available">Available</string>
@@ -56,14 +61,34 @@
     <string name="people_summary">%1$d connected · %2$d of %3$d servers answered</string>
     <string name="nobody_anywhere">Nobody is connected to any server.</string>
 
+    <string name="logs_title">Activity history</string>
+    <string name="logs_search">Search server, person, IP or details</string>
+    <string name="logs_fetch">Fetch from servers</string>
+    <string name="logs_export_csv">Export CSV</string>
+    <string name="logs_export_done">Activity history exported to CSV</string>
+    <string name="logs_clear">Clear saved logs</string>
+    <string name="logs_cleared">Saved logs cleared</string>
+    <string name="logs_empty">No logs yet. Tap refresh to fetch the last 7 days from your servers.</string>
+    <string name="logs_no_match">No matching activity.</string>
+    <string name="logs_cat_all">All</string>
+    <string name="logs_cat_signins">Sign-ins</string>
+    <string name="logs_cat_failed">Failed</string>
+    <string name="logs_cat_leaves">Leaves</string>
+    <string name="logs_cat_security">Security</string>
+    <string name="logs_period_1h">1 h</string>
+    <string name="logs_period_24h">24 h</string>
+    <string name="logs_period_7d">7 d</string>
+    <string name="logs_period_all">All</string>
+    <string name="logs_all_servers">All servers</string>
+
     <string name="nobody">Nobody is signed in</string>
     <string name="checking">Checking…</string>
     <string name="connected_at">connected %1$s</string>
-    <string name="since">since %1$s</string>
     <string name="active">Using it now</string>
     <string name="active_short">Active</string>
     <string name="idle_min">Idle %1$d min</string>
     <string name="idle_hours">Idle %1$d h</string>
+    <string name="idle_unknown">Connected</string>
     <string name="connected_duration">Connected %1$s</string>
     <string name="dur_under_min">&lt;1 min</string>
     <string name="dur_min">%1$d min</string>
@@ -78,8 +103,8 @@
     <string name="tab_now">Now (%1$d)</string>
     <string name="tab_history">History</string>
     <string name="tab_failed">Failed (%1$d)</string>
-    <string name="no_history">No sign-ins in the last 2 days</string>
-    <string name="no_failed">No failed sign-in attempts in the last 2 days</string>
+    <string name="no_history">No sign-ins in the last 7 days</string>
+    <string name="no_failed">No failed sign-in attempts in the last 7 days</string>
     <string name="no_details_on_error">Could not read details from the server.</string>
     <string name="failed_note">Wrong passwords and unknown users, newest first. Many attempts from different addresses usually mean the server is being attacked from the internet.</string>
     <string name="ev_signin">Signed in</string>
@@ -87,6 +112,40 @@
     <string name="ev_disconnect">Disconnected</string>
     <string name="ev_reconnect">Reconnected</string>
     <string name="ev_failed">Failed sign-in</string>
+    <string name="ev_user_created">User account created</string>
+    <string name="ev_group_added">Added to privileged group</string>
+    <string name="ev_task_created">Scheduled task created</string>
+    <string name="ev_service_installed">Service installed</string>
+    <string name="ev_log_cleared">Event log cleared</string>
+
+    <string name="fail_unknown_user">Unknown user name</string>
+    <string name="fail_wrong_password">Wrong password</string>
+    <string name="fail_logon_failed">Sign-in failed</string>
+    <string name="fail_account_restriction">Account restriction</string>
+    <string name="fail_outside_hours">Outside allowed hours</string>
+    <string name="fail_workstation_restriction">Not allowed from this device</string>
+    <string name="fail_password_expired">Password expired</string>
+    <string name="fail_account_disabled">Account disabled</string>
+    <string name="fail_clocks_skew">Clocks out of sync</string>
+    <string name="fail_logon_type">Sign-in type not allowed</string>
+    <string name="fail_account_expired">Account expired</string>
+    <string name="fail_account_locked">Account locked</string>
+
+    <string name="send_message">Send message</string>
+    <string name="send_message_hint">Message for %1$s (shown on their screen)</string>
+    <string name="send_action">Send</string>
+    <string name="message_sent">Message sent</string>
+    <string name="message_failed">Could not send message</string>
+    <string name="copy_diagnostics">Copy diagnostics</string>
+    <string name="copied">Copied</string>
+
+    <string name="settings_data">Servers and contacts</string>
+    <string name="settings_groups">Groups</string>
+    <string name="settings_no_groups">No groups yet.</string>
+    <string name="rename">Rename</string>
+    <string name="remove">Remove</string>
+    <string name="rename_group_title">Rename group</string>
+    <string name="group_name">Group name</string>
 
     <string name="import_action">Import</string>
     <string name="import_help">One server per line: IP;user;password;name;group. Name and group are optional. You can paste rows from a spreadsheet.</string>
@@ -97,7 +156,6 @@
     <string name="err_no_winrm">The server is running, but it does not show who is connected. A setting is off on the server; tell whoever manages it.</string>
     <string name="err_auth">Sign-in refused. Use one of the server\'s administrator accounts.</string>
     <string name="err_other">The server did not answer.</string>
-    <string name="tab_contacts">Contacts</string>
     <string name="contacts_title">Contacts</string>
     <string name="contacts_add">Add contact</string>
     <string name="contacts_edit">Edit contact</string>

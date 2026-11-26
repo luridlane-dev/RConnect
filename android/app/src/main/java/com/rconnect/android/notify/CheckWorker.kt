@@ -71,7 +71,7 @@ object ServerCheck {
                                     password = server.password,
                                     timeoutMs = 15000,
                                     rdpPort = server.port,
-                                ).snapshot(false)
+                                ).snapshot(withEvents = false, includeTimes = false)
                             }
                         }
                         val changes = detector.detect(server.id, server.title, snapshot.isSuccess, snapshot.getOrNull()?.sessions, contacts)

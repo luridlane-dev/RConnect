@@ -108,7 +108,11 @@ fun TransferHost(vm: AppViewModel, transfer: Transfer, onDone: () -> Unit) {
         step = Step.Working
         scope.launch {
             val text = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.use { decodeText(it.readBytes()) } }.getOrNull()
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        readBoundedBytes(stream)?.let(::decodeText)
+                    }
+                }.getOrNull()
             }
             if (text == null) {
                 say(resources.getString(R.string.import_unreadable))

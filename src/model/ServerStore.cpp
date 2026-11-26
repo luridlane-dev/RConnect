@@ -84,8 +84,15 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
     const bool own = localConnected || (st.state == ServerStatus::Online && st.mine);
     const bool freshForConnection = !localConnected || st.checkedAt > local->connectedAt;
     const auto ownLabel = [&] {
+        static const QString pcName = qEnvironmentVariable("COMPUTERNAME");
+        if (!pcName.isEmpty())
+            return tr("%1 (you)").arg(pcName);
+        return tr("This computer");
+    };
+    const auto ownDetailLabel = [&] {
+        const QString base = ownLabel();
         return localConnected && !local->account.isEmpty()
-            ? tr("This computer · %1").arg(local->account) : tr("This computer");
+            ? QStringLiteral("%1 · %2").arg(base, local->account) : base;
     };
     switch (role) {
     case Qt::DisplayRole:  return p.name;
@@ -115,7 +122,8 @@ QVariant ServerStore::data(const QModelIndex &index, int role) const
             ? statusToolTip(st) : QString();
         if (!own)
             return detail;
-        return detail.isEmpty() ? ownLabel() : ownLabel() + QStringLiteral("\n\n") + detail;
+        const QString label = ownDetailLabel();
+        return detail.isEmpty() ? label : label + QStringLiteral("\n\n") + detail;
     }
     case OccupancyRole:    return int(st.occupancy);
     case LatencyRole:      return st.latencyMs;
@@ -149,9 +157,17 @@ void ServerStore::load()
     QFile f(filePath());
     if (!f.open(QIODevice::ReadOnly))
         return;
-    const QJsonArray arr = QJsonDocument::fromJson(f.readAll()).object().value(QLatin1String("servers")).toArray();
+    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+    const QJsonArray arr = root.value(QLatin1String("servers")).toArray();
+    const QJsonArray grpArr = root.value(QLatin1String("groups")).toArray();
     beginResetModel();
     m_profiles.clear();
+    m_savedGroups.clear();
+    for (const QJsonValue &v : grpArr) {
+        const QString g = v.toString().trimmed();
+        if (!g.isEmpty() && !m_savedGroups.contains(g, Qt::CaseInsensitive))
+            m_savedGroups << g;
+    }
     for (const QJsonValue &v : arr) {
         ServerProfile p = ServerProfile::fromJson(v.toObject());
         if (p.isValid())
@@ -160,6 +176,7 @@ void ServerStore::load()
     rebuildIndex();
     endResetModel();
     queueSummary();
+    emit groupsChanged();
 }
 
 bool ServerStore::save() const
@@ -167,9 +184,14 @@ bool ServerStore::save() const
     QJsonArray arr;
     for (const ServerProfile &p : m_profiles)
         arr.append(p.toJson());
+    QJsonArray grpArr;
+    for (const QString &g : m_savedGroups)
+        grpArr.append(g);
     QJsonObject root;
     root[QLatin1String("version")] = 1;
     root[QLatin1String("servers")] = arr;
+    if (!grpArr.isEmpty())
+        root[QLatin1String("groups")] = grpArr;
 
     // The last good list stays next to the file, so a lost or damaged servers.json can be recovered.
     const QString backup = filePath() + QStringLiteral(".bak");
@@ -188,6 +210,12 @@ ServerProfile ServerStore::profileById(const QString &id) const
 {
     const int i = indexOfId(id);
     return i < 0 ? ServerProfile{} : m_profiles.at(i);
+}
+
+bool ServerStore::hasNotes(const QString &id) const
+{
+    const int i = indexOfId(id);
+    return i >= 0 && !m_profiles.at(i).notes.isEmpty();
 }
 
 int ServerStore::indexOfId(const QString &id) const
@@ -220,6 +248,48 @@ void ServerStore::update(const ServerProfile &p)
     m_profiles[i] = p;
     emit dataChanged(index(i), index(i));
     save();
+}
+
+void ServerStore::importBatch(QList<ServerProfile> toAdd, const QList<ServerProfile> &toUpdate)
+{
+    if (toAdd.isEmpty() && toUpdate.isEmpty())
+        return;
+    bool statusCleared = false;
+    bool groupAdded = false;
+    for (const ServerProfile &p : toUpdate) {
+        const int i = indexOfId(p.id);
+        if (i < 0)
+            continue;
+        const auto &previous = m_profiles.at(i);
+        if (!previous.sameConnection(p) || previous.checkSessions != p.checkSessions || previous.monitor != p.monitor) {
+            m_status.remove(p.id);
+            statusCleared = true;
+        }
+        if (previous.group != p.group)
+            groupAdded = true;
+        m_profiles[i] = p;
+        emit dataChanged(index(i), index(i));
+    }
+    if (!toAdd.isEmpty()) {
+        const int first = int(m_profiles.size());
+        const int last = first + int(toAdd.size()) - 1;
+        beginInsertRows({}, first, last);
+        m_profiles.reserve(m_profiles.size() + toAdd.size());
+        for (ServerProfile &p : toAdd) {
+            if (p.id.isEmpty())
+                p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            if (!p.group.isEmpty())
+                groupAdded = true;
+            m_rows.insert(p.id, int(m_profiles.size()));
+            m_profiles.append(std::move(p));
+        }
+        endInsertRows();
+    }
+    save();
+    if (!toAdd.isEmpty() || statusCleared)
+        queueSummary();
+    if (groupAdded)
+        emit groupsChanged();
 }
 
 void ServerStore::remove(const QString &id)
@@ -261,7 +331,12 @@ void ServerStore::setStatus(const QString &id, const ServerStatus &s)
     m_status.insert(id, s);
     if (!visibleChange)
         return;
-    emit dataChanged(index(i), index(i));
+    static const QList<int> kStatusRoles = {
+        StatusRole, StatusBadgeRole, StatusColorRole, StatusToolTipRole,
+        OccupancyRole, LatencyRole, SignalRole, OwnerIdleRole,
+        OwnerConnectionMinutesRole, OwnSessionRole, SearchRole,
+    };
+    emit dataChanged(index(i), index(i), kStatusRoles);
     emit statusChanged(id);
     queueSummary();
 }
@@ -352,7 +427,23 @@ void ServerStore::setGroup(const QString &id, const QString &group)
     if (i < 0 || m_profiles[i].group == name)
         return;
     m_profiles[i].group = name;
+    if (!name.isEmpty() && !m_savedGroups.contains(name, Qt::CaseInsensitive))
+        m_savedGroups << name;
     emit dataChanged(index(i), index(i));
+    emit groupsChanged();
+    scheduleSave();
+}
+
+void ServerStore::addGroup(const QString &name)
+{
+    const QString clean = name.trimmed();
+    if (clean.isEmpty())
+        return;
+    for (const QString &existing : groups())
+        if (existing.compare(clean, Qt::CaseInsensitive) == 0)
+            return;
+    m_savedGroups << clean;
+    emit groupsChanged();
     scheduleSave();
 }
 
@@ -362,6 +453,12 @@ void ServerStore::renameGroup(const QString &from, const QString &to)
     if (from.isEmpty() || name == from)
         return;
     bool changed = false;
+    if (m_savedGroups.removeAll(from) > 0)
+        changed = true;
+    if (!name.isEmpty() && !m_savedGroups.contains(name, Qt::CaseInsensitive)) {
+        m_savedGroups << name;
+        changed = true;
+    }
     for (int i = 0; i < m_profiles.size(); ++i) {
         if (m_profiles[i].group != from)
             continue;
@@ -369,16 +466,30 @@ void ServerStore::renameGroup(const QString &from, const QString &to)
         emit dataChanged(index(i), index(i));
         changed = true;
     }
-    if (changed)
+    if (changed) {
+        emit groupsChanged();
         scheduleSave();
+    }
 }
 
 QStringList ServerStore::groups() const
 {
     QStringList names;
+    for (const QString &g : m_savedGroups)
+        if (!g.isEmpty() && !names.contains(g, Qt::CaseInsensitive))
+            names << g;
     for (const ServerProfile &p : m_profiles)
-        if (!p.group.isEmpty() && !names.contains(p.group, Qt::CaseSensitive))
+        if (!p.group.isEmpty() && !names.contains(p.group, Qt::CaseInsensitive))
             names << p.group;
     names.sort(Qt::CaseInsensitive);
     return names;
+}
+
+int ServerStore::groupServerCount(const QString &group) const
+{
+    int count = 0;
+    for (const ServerProfile &p : m_profiles)
+        if (p.group.compare(group, Qt::CaseInsensitive) == 0)
+            ++count;
+    return count;
 }

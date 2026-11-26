@@ -145,7 +145,8 @@ struct Report {
     QList<Mismatch> mismatches;
 };
 
-Report compute(const QList<Event> &events, const QList<Sample> &samples, qint64 nowMs, const QTimeZone &zone);
+Report compute(const QList<Event> &events, const QList<Sample> &samples, qint64 nowMs, const QTimeZone &zone,
+               const QHash<QString, qint64> &serverNowMs = {});
 
 // ---- Per person -------------------------------------------------------------------------------
 //
@@ -156,9 +157,13 @@ Report compute(const QList<Event> &events, const QList<Sample> &samples, qint64 
 
 struct Time {
     qint64 activeMs = 0, afkMs = 0, unknownMs = 0;
-    qint64 netMs() const { return activeMs + unknownMs; } // server connected time minus detected idle
+    // Server connected time minus server-reported idle time.
+    qint64 netMs() const { return activeMs + unknownMs; }
     qint64 totalMs() const { return activeMs + afkMs + unknownMs; }
 };
+
+// Coalesces overlapping parts into a clean timeline (Active > Unknown > Afk).
+QList<Part> mergeParts(const QList<Part> &parts);
 
 // Parts may overlap; see above.
 Time unionOf(const QList<Part> &parts);
@@ -171,11 +176,12 @@ struct Entry {
     bool uncertain = false;   // start or end missing from the log: the time is a minimum
 };
 
-// One server (by server) or one day (by day) of a person.
+// One day of a person across all servers.
 struct Share {
-    QString serverId, server; // by server
+    QString serverId, server; // by server (legacy)
     QDate day;                // by day
     Time time;                // union of the entries
+    QList<Part> timeline;     // deduplicated day timeline across all servers
     qint64 lastEnd = 0;
     bool open = false, uncertain = false;
     QList<Entry> entries;     // oldest first
@@ -185,7 +191,7 @@ struct Person {
     QString key, name;
     QStringList computers, addresses, accounts, servers;
     Time time;                // union of every connection in the range
-    qint64 overlapMs = 0;     // overlapping net time on simultaneous connections, counted once in time.netMs()
+    qint64 overlapMs = 0;     // overlapping connected time across simultaneous connections
     qint64 lastEnd = 0;
     int days = 0;             // days with time
     bool open = false, uncertain = false;

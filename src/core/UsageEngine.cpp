@@ -28,6 +28,7 @@ QList<Span> mergedSpans(QList<Span> spans)
 {
     std::sort(spans.begin(), spans.end(), [](const Span &x, const Span &y) { return x.a < y.a; });
     QList<Span> out;
+    out.reserve(spans.size());
     for (const Span &s : std::as_const(spans)) {
         if (s.b <= s.a)
             continue;
@@ -37,14 +38,6 @@ QList<Span> mergedSpans(QList<Span> spans)
             out << s;
     }
     return out;
-}
-
-bool covers(const QList<Span> &spans, qint64 a, qint64 b)
-{
-    for (const Span &s : spans)
-        if (s.a <= a && b <= s.b)
-            return true;
-    return false;
 }
 
 QString sessionKey(const QString &serverId, int sessionId)
@@ -58,16 +51,23 @@ bool sameAccount(const QString &first, const QString &second)
     return first.isEmpty() || second.isEmpty() || accountOf(first).compare(accountOf(second), Qt::CaseInsensitive) == 0;
 }
 
-QList<const Sample *> connectedWithin(const QList<Sample> &samples, qint64 start, qint64 end, const QString &user)
+// `samples` is sorted by `ms` ascending; binary search jumps straight to [minMs, maxMs].
+QList<const Sample *> connectedWithin(const QList<Sample> &samples, qint64 minMs, qint64 maxMs, const QString &user)
 {
     QList<const Sample *> out;
-    for (const Sample &s : samples)
-        if (s.state == Sample::Connected && s.ms >= start - kSlackMs && s.ms <= end + kSlackMs && sameAccount(user, s.user))
-            out << &s;
+    if (samples.isEmpty() || maxMs < minMs)
+        return out;
+    auto it = std::lower_bound(samples.cbegin(), samples.cend(), minMs,
+                               [](const Sample &s, qint64 t) { return s.ms < t; });
+    for (; it != samples.cend() && it->ms <= maxMs; ++it)
+        if (it->state == Sample::Connected && sameAccount(user, it->user))
+            out << &(*it);
     return out;
 }
 
 // Splits [start, end] into active, away and unknown parts (rules in the header).
+// Consecutive idle readings from the same stretch intersect their [t-(m+1)min, t-m*min]
+// windows so last-input time is pinned much tighter than whole-minute truncation.
 QList<Part> classify(qint64 start, qint64 end, const QList<const Sample *> &seen)
 {
     QList<Part> parts;
@@ -76,13 +76,73 @@ QList<Part> classify(qint64 start, qint64 end, const QList<const Sample *> &seen
     if (std::none_of(seen.cbegin(), seen.cend(), [](const Sample *sample) { return sample->idleMin >= 0; }))
         return {{start, end, Kind::Unknown}};
 
+    constexpr qint64 kMinuteMs = 60000;
+    constexpr qint64 kJitterMs = 3000;
+
+    struct IdleRun {
+        qint64 lo = 0;
+        qint64 hi = 0;
+        qint64 lastSample = 0;
+        int maxIdleMin = 0;
+        bool open = false;
+    };
+
     QList<Span> away;
+    IdleRun run;
+    auto flushRun = [&](qint64 endAt) {
+        if (!run.open)
+            return;
+        run.open = false;
+        const qint64 lastInput = qBound(start, (run.lo + run.hi) / 2, run.lastSample);
+        const qint64 spanEnd = qBound(lastInput, endAt, end);
+        if (run.maxIdleMin >= kAfkMinutes && spanEnd > lastInput)
+            away << Span{lastInput, spanEnd};
+    };
+
+    qint64 lastActiveFloor = start;
     for (const Sample *s : seen) {
-        if (s->idleMin < kAfkMinutes)
+        if (s->idleMin < 0)
             continue;
-        // Idle m whole minutes: last input was m to m+1 minutes ago.
-        const qint64 from = qMax(start, s->ms - qint64(s->idleMin) * 60000 - qint64(kIdleMiddleSec) * 1000);
-        away << Span{from, qMin(s->ms, end)};
+        const qint64 t = s->ms;
+        const int m = s->idleMin;
+        const qint64 sLo = qMax(start, t - qint64(m + 1) * kMinuteMs);
+        const qint64 sHi = qMax(start, t - qint64(m) * kMinuteMs);
+        if (m == 0) {
+            if (run.open) {
+                const bool contiguous = t - run.lastSample <= kSampleGapMs;
+                const qint64 resumeAt = contiguous ? (qMax(run.lastSample, t - kMinuteMs) + t) / 2 : run.lastSample;
+                flushRun(resumeAt);
+            }
+            lastActiveFloor = qMax(lastActiveFloor, sLo);
+            continue;
+        }
+        const qint64 clampedLo = qMax(sLo, lastActiveFloor);
+        const qint64 clampedHi = qMax(clampedLo, sHi);
+        const bool continues = run.open && (t - run.lastSample <= kSampleGapMs)
+            && qMax(run.lo, clampedLo) <= qMin(run.hi, clampedHi) + kJitterMs;
+        if (continues) {
+            const qint64 nextLo = qMax(run.lo, clampedLo);
+            const qint64 nextHi = qMin(run.hi, clampedHi);
+            if (nextLo <= nextHi) {
+                run.lo = nextLo;
+                run.hi = nextHi;
+            } else {
+                run.lo = run.hi = (nextLo + nextHi) / 2;
+            }
+            run.lastSample = t;
+            run.maxIdleMin = qMax(run.maxIdleMin, m);
+        } else {
+            if (run.open) {
+                const bool contiguous = t - run.lastSample <= kSampleGapMs;
+                const qint64 resumeAt = contiguous ? qMax(run.lastSample, (clampedLo + clampedHi) / 2) : run.lastSample;
+                flushRun(resumeAt);
+            }
+            run = IdleRun{clampedLo, clampedHi, t, m, true};
+        }
+    }
+    if (run.open) {
+        const bool reachesEnd = end - run.lastSample <= kSampleGapMs;
+        flushRun(reachesEnd ? end : run.lastSample);
     }
     away = mergedSpans(away);
 
@@ -106,11 +166,19 @@ QList<Part> classify(qint64 start, qint64 end, const QList<const Sample *> &seen
     std::sort(cuts.begin(), cuts.end());
     cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
 
+    qsizetype ai = 0;
+    qsizetype ui = 0;
     for (qsizetype i = 0; i + 1 < cuts.size(); ++i) {
         Part p;
         p.start = cuts.at(i);
         p.end = cuts.at(i + 1);
-        p.kind = covers(away, p.start, p.end) ? Kind::Afk : (covers(unknown, p.start, p.end) ? Kind::Unknown : Kind::Active);
+        while (ai < away.size() && away.at(ai).b <= p.start)
+            ++ai;
+        while (ui < unknown.size() && unknown.at(ui).b <= p.start)
+            ++ui;
+        const bool isAway = ai < away.size() && away.at(ai).a <= p.start && p.end <= away.at(ai).b;
+        const bool isUnknown = !isAway && ui < unknown.size() && unknown.at(ui).a <= p.start && p.end <= unknown.at(ui).b;
+        p.kind = isAway ? Kind::Afk : (isUnknown ? Kind::Unknown : Kind::Active);
         if (!parts.isEmpty() && parts.last().kind == p.kind && parts.last().end == p.start)
             parts.last().end = p.end;
         else
@@ -127,8 +195,15 @@ struct Raw {
     QString server, user, address, client;
 };
 
-QString clientOf(const QList<const Sample *> &seen)
+QString clientOf(const QList<const Sample *> &seen, qint64 start, qint64 end)
 {
+    // Prefer samples taken strictly inside [start, end] so a slack-window sample from an adjacent
+    // connection on the same session ID cannot steal attribution.
+    for (qsizetype i = seen.size() - 1; i >= 0; --i) {
+        const Sample *s = seen.at(i);
+        if (s->ms >= start && s->ms <= end && !s->client.isEmpty())
+            return s->client;
+    }
     for (qsizetype i = seen.size() - 1; i >= 0; --i)
         if (!seen.at(i)->client.isEmpty())
             return seen.at(i)->client;
@@ -183,7 +258,8 @@ qint64 nextDayStart(qint64 ms, const QTimeZone &zone)
     return QDateTime(dayOf(ms, zone).addDays(1), QTime(0, 0), zone).toMSecsSinceEpoch();
 }
 
-Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, qint64 nowMs, const QTimeZone &zone)
+Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, qint64 nowMs, const QTimeZone &zone,
+               const QHash<QString, qint64> &serverNowMs)
 {
     Report report;
 
@@ -225,6 +301,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
 
         const QString serverId = !ev.isEmpty() ? ev.first().serverId : sm.first().serverId;
         const int sessionId = !ev.isEmpty() ? ev.first().sessionId : sm.first().sessionId;
+        const qint64 serverNow = serverNowMs.value(serverId, nowMs);
 
         // Connections from events
         QList<Raw> raws;
@@ -272,61 +349,73 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
         }
         if (on) {
             cur.open = true;
-            cur.end = nowMs;
+            cur.end = serverNow;
             raws << cur;
         }
 
-        // Fit connections to the samples
-        QList<Segment> segments;
+        // Pass 1: fit connection start/end boundaries to the samples (sm is sorted by ms).
+        const auto sampleFrom = [&sm](qint64 minMs) {
+            return std::lower_bound(sm.cbegin(), sm.cend(), minMs,
+                                    [](const Sample &s, qint64 t) { return s.ms < t; });
+        };
         for (Raw &r : raws) {
             if (!r.startKnown) {
                 // Connected from the first sample after the previous event.
                 r.start = r.end;
-                for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms > r.previousEvent && s.ms <= r.end + kSlackMs
-                        && sameAccount(r.user, s.user)) {
-                        r.start = qMin(s.ms, r.end);
+                for (auto it = sampleFrom(r.previousEvent + 1); it != sm.cend() && it->ms <= r.end + kSlackMs; ++it)
+                    if (it->state == Sample::Connected && sameAccount(r.user, it->user)) {
+                        r.start = qMin(it->ms, r.end);
                         break;
                     }
             }
             if (!r.endKnown) {
                 // No disconnect in the log: connected until the last sample that saw it.
                 r.end = r.start;
-                for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs && s.ms <= r.endBound
-                        && sameAccount(r.user, s.user))
-                        r.end = qMax(r.end, s.ms);
+                for (auto it = sampleFrom(r.start - kSlackMs); it != sm.cend() && it->ms <= r.endBound; ++it)
+                    if (it->state == Sample::Connected && sameAccount(r.user, it->user))
+                        r.end = qMax(r.end, it->ms);
             } else if (r.open) {
                 const Sample *last = sm.isEmpty() ? nullptr : &sm.last();
                 // Last time quser showed it connected.
                 qint64 seenUntil = r.start;
-                for (const Sample &s : std::as_const(sm))
-                    if (s.state == Sample::Connected && s.ms >= r.start - kSlackMs && sameAccount(r.user, s.user))
-                        seenUntil = qMax(seenUntil, s.ms);
+                for (auto it = sampleFrom(r.start - kSlackMs); it != sm.cend(); ++it)
+                    if (it->state == Sample::Connected && sameAccount(r.user, it->user))
+                        seenUntil = qMax(seenUntil, it->ms);
                 const bool disconnected = last && last->ms > r.start + kSlackMs
                     && (last->state != Sample::Connected || !sameAccount(r.user, last->user));
                 const bool absent = serverBeat.value(serverId) > seenUntil + kAbsentMs;
                 r.endKnown = false;
                 r.end = seenUntil;
-                r.open = !disconnected && !absent && nowMs - seenUntil <= kRecentMs;
+                r.open = !disconnected && !absent && serverNow - seenUntil <= kRecentMs;
                 if (disconnected || absent) {
                     // quser says it is over or no longer lists it, the log has no end.
-                    if (disconnected && nowMs - last->ms <= kRecentMs)
+                    if (disconnected && serverNow - last->ms <= kRecentMs)
                         report.mismatches << Mismatch{serverId, serverNames.value(serverId), sessionId, false, last->ms};
                 }
             }
             r.end = qMax(r.end, r.start);
+        }
 
+        // Pass 2: match samples without crossing adjacent connections on the same session ID.
+        const qsizetype firstSessionVisit = report.visits.size();
+        for (qsizetype ri = 0; ri < raws.size(); ++ri) {
+            const Raw &r = raws.at(ri);
             Segment seg;
             seg.start = r.start;
             seg.end = r.end;
             seg.startKnown = r.startKnown;
             seg.endKnown = r.endKnown;
             seg.open = r.open;
-            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end, r.user);
-            seg.client = clientOf(seen);
-            if (seg.client.isEmpty())
-                seg.client = r.client;
+            qint64 minSampleMs = seg.start - kSlackMs;
+            if (ri > 0)
+                minSampleMs = qMax(minSampleMs, raws.at(ri - 1).end);
+            qint64 maxSampleMs = seg.end + kSlackMs;
+            if (ri + 1 < raws.size())
+                maxSampleMs = qMin(maxSampleMs, raws.at(ri + 1).start);
+            const QList<const Sample *> seen = connectedWithin(sm, minSampleMs, maxSampleMs, r.user);
+            // Security 4778/4779 records the exact client computer name for this connection; prefer it over
+            // asynchronous samples when present.
+            seg.client = !r.client.isEmpty() ? r.client : clientOf(seen, seg.start, seg.end);
             seg.parts = classify(seg.start, seg.end, seen);
             if (!r.startKnown && seg.start == seg.end && seen.isEmpty())
                 continue; // just a stray disconnect
@@ -340,12 +429,17 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             v.segments << seg;
             report.visits << v;
         }
+        const qsizetype loggedVisitsEnd = report.visits.size();
 
-        // Connections only quser knows about
+        // Connections only quser knows about: merge known spans for this session and sweep with two pointers.
         QList<Span> known;
-        for (const Visit &v : std::as_const(report.visits))
-            if (v.serverId == serverId && v.sessionId == sessionId)
-                known << Span{v.start() - kSlackMs, v.end() + kSlackMs};
+        known.reserve(loggedVisitsEnd - firstSessionVisit);
+        for (qsizetype vi = firstSessionVisit; vi < loggedVisitsEnd; ++vi) {
+            const Visit &v = report.visits.at(vi);
+            known << Span{v.start() - kSlackMs, v.end() + kSlackMs};
+        }
+        known = mergedSpans(std::move(known));
+
         bool grouping = false;
         Sample first, last;
         auto flush = [&] {
@@ -357,10 +451,11 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             seg.end = last.ms;
             seg.startKnown = seg.endKnown = false;
             seg.inferred = true;
-            // Open if it is the newest sample and recent.
-            seg.open = last.ms == sm.last().ms && nowMs - last.ms <= kRecentMs;
-            const QList<const Sample *> seen = connectedWithin(sm, seg.start, seg.end, last.user);
-            seg.client = clientOf(seen);
+            // Open if it is the newest sample, recent, and the server has not moved past it without listing it.
+            seg.open = last.ms == sm.last().ms && serverNow - last.ms <= kRecentMs
+                && serverBeat.value(serverId) <= last.ms + kAbsentMs;
+            const QList<const Sample *> seen = connectedWithin(sm, seg.start - kSlackMs, seg.end + kSlackMs, last.user);
+            seg.client = clientOf(seen, seg.start, seg.end);
             seg.parts = classify(seg.start, seg.end, seen);
             Visit v;
             v.serverId = serverId;
@@ -371,10 +466,11 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             v.segments << seg;
             report.visits << v;
         };
+        qsizetype ki = 0;
         for (const Sample &s : std::as_const(sm)) {
-            bool inLog = false;
-            for (const Span &k : std::as_const(known))
-                inLog |= s.ms >= k.a && s.ms <= k.b;
+            while (ki < known.size() && known.at(ki).b < s.ms)
+                ++ki;
+            const bool inLog = ki < known.size() && s.ms >= known.at(ki).a;
             if (s.state != Sample::Connected || inLog) {
                 flush();
                 continue;
@@ -390,13 +486,17 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
         flush();
 
         // Newest sample says connected but the log has no connection.
-        if (!sm.isEmpty() && nowMs - sm.last().ms <= kRecentMs && sm.last().state == Sample::Connected) {
+        if (!sm.isEmpty() && serverNow - sm.last().ms <= kRecentMs && sm.last().state == Sample::Connected) {
+            const qint64 lastMs = sm.last().ms;
             bool inLog = false;
-            for (const Visit &v : std::as_const(report.visits))
-                if (v.serverId == serverId && v.sessionId == sessionId && !v.inferred())
-                    inLog |= sm.last().ms >= v.start() - kSlackMs && sm.last().ms <= v.end() + kSlackMs;
+            for (const Span &k : std::as_const(known)) {
+                if (lastMs >= k.a && lastMs <= k.b) {
+                    inLog = true;
+                    break;
+                }
+            }
             if (!inLog)
-                report.mismatches << Mismatch{serverId, serverNames.value(serverId), sessionId, true, sm.last().ms};
+                report.mismatches << Mismatch{serverId, serverNames.value(serverId), sessionId, true, lastMs};
         }
     }
 
@@ -456,10 +556,29 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
         report.visits = visits;
     }
 
-    // Split by local day
+    // Split by local day (cache day boundaries to avoid redundant timezone lookups inside inner loops)
     QMap<QString, DayGroup> groups;
+    QDate cachedDay;
+    qint64 cachedDayStart = 0;
+    qint64 cachedDayEnd = 0;
+    auto dayBoundsFor = [&](qint64 ms, QDate &outDay, qint64 &outEnd) {
+        if (cachedDay.isValid() && ms >= cachedDayStart && ms < cachedDayEnd) {
+            outDay = cachedDay;
+            outEnd = cachedDayEnd;
+            return;
+        }
+        outDay = dayOf(ms, zone);
+        cachedDay = outDay;
+        cachedDayStart = QDateTime(outDay, QTime(0, 0), zone).toMSecsSinceEpoch();
+        cachedDayEnd = QDateTime(outDay.addDays(1), QTime(0, 0), zone).toMSecsSinceEpoch();
+        outEnd = cachedDayEnd;
+    };
+
     for (int vi = 0; vi < report.visits.size(); ++vi) {
         const Visit &v = report.visits.at(vi);
+        QDate visitStartDay;
+        qint64 unusedEnd = 0;
+        dayBoundsFor(v.start(), visitStartDay, unusedEnd);
         QMap<QDate, DayVisit> slices;
         auto sliceOf = [&](const QDate &day, qint64 start) -> DayVisit & {
             DayVisit &d = slices[day];
@@ -471,18 +590,22 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             return d;
         };
         for (const Segment &seg : v.segments) {
-            DayVisit &starting = sliceOf(dayOf(seg.start, zone), seg.start);
+            QDate segStartDay;
+            qint64 segStartDayEnd = 0;
+            dayBoundsFor(seg.start, segStartDay, segStartDayEnd);
+            DayVisit &starting = sliceOf(segStartDay, seg.start);
             if (seg.open && seg.start == seg.end)
                 starting.open = true;
             for (const Part &p : seg.parts) {
                 for (qint64 at = p.start; at < p.end;) {
-                    const qint64 dayEnd = nextDayStart(at, zone);
+                    QDate day;
+                    qint64 dayEnd = 0;
+                    dayBoundsFor(at, day, dayEnd);
                     const qint64 cut = qMin(p.end, dayEnd);
-                    const QDate day = dayOf(at, zone);
                     DayVisit &d = sliceOf(day, at);
                     d.parts << Part{at, cut, p.kind};
                     d.end = qMax(d.end, cut);
-                    d.fromPreviousDay |= dayOf(seg.start, zone) < day;
+                    d.fromPreviousDay |= segStartDay < day;
                     d.intoNextDay |= seg.end > dayEnd;
                     d.open |= seg.open && cut == seg.end && cut < dayEnd;
                     switch (p.kind) {
@@ -493,15 +616,21 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                     at = cut;
                 }
             }
-            if (seg.open && dayOf(seg.end, zone) > dayOf(seg.end - 1, zone))
-                sliceOf(dayOf(seg.end, zone), seg.end).open = true;
+            if (seg.open) {
+                QDate endDay, prevDay;
+                dayBoundsFor(seg.end, endDay, unusedEnd);
+                dayBoundsFor(seg.end - 1, prevDay, unusedEnd);
+                if (endDay > prevDay)
+                    sliceOf(endDay, seg.end).open = true;
+            }
         }
+        const QString keySuffix = QLatin1Char('|') + v.serverId + QLatin1Char('|')
+                                + v.client.toLower() + QLatin1Char('|') + v.address;
         for (auto it = slices.begin(); it != slices.end(); ++it) {
             DayVisit &d = it.value();
             const QDate day = it.key();
 
-            const QString key = day.toString(Qt::ISODate) + QLatin1Char('|') + v.serverId + QLatin1Char('|')
-                                + v.client.toLower() + QLatin1Char('|') + v.address;
+            const QString key = day.toString(Qt::ISODate) + keySuffix;
             DayGroup &g = groups[key];
             if (g.visits.isEmpty()) {
                 g.day = day;
@@ -516,7 +645,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
                 g.client = v.client;
             if (!v.user.isEmpty() && !g.users.contains(v.user, Qt::CaseInsensitive))
                 g.users << v.user;
-            if (dayOf(v.start(), zone) == day)
+            if (visitStartDay == day)
                 ++g.entries;
             g.firstIn = qMin(g.firstIn, d.start);
             g.lastOut = qMax(g.lastOut, d.end);
@@ -525,7 +654,8 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
             g.activeMs += d.activeMs;
             g.afkMs += d.afkMs;
             g.unknownMs += d.unknownMs;
-            g.uncertain |= v.inferred() || (!v.startKnown() && !d.fromPreviousDay) || (!v.endKnown() && !d.intoNextDay);
+            g.uncertain |= v.inferred() || (!v.startKnown() && !d.fromPreviousDay)
+                           || (!v.endKnown() && !d.intoNextDay && !d.open);
             g.visits << d;
         }
     }
@@ -545,7 +675,7 @@ Report compute(const QList<Event> &allEvents, const QList<Sample> &allSamples, q
     return report;
 }
 
-Time unionOf(const QList<Part> &parts)
+QList<Part> mergeParts(const QList<Part> &parts)
 {
     struct Edge {
         qint64 at = 0;
@@ -561,21 +691,44 @@ Time unionOf(const QList<Part> &parts)
     }
     std::sort(edges.begin(), edges.end(), [](const Edge &x, const Edge &y) { return x.at < y.at; });
 
-    Time time;
+    QList<Part> merged;
     int open[3] = {};
     qint64 previous = 0;
     for (const Edge &e : std::as_const(edges)) {
         if (e.at > previous) {
-            const qint64 span = e.at - previous;
+            Kind kind;
+            bool has = true;
             if (open[int(Kind::Active)] > 0)
-                time.activeMs += span;
+                kind = Kind::Active;
             else if (open[int(Kind::Unknown)] > 0)
-                time.unknownMs += span;
+                kind = Kind::Unknown;
             else if (open[int(Kind::Afk)] > 0)
-                time.afkMs += span;
+                kind = Kind::Afk;
+            else
+                has = false;
+            if (has) {
+                if (!merged.isEmpty() && merged.last().kind == kind && merged.last().end == previous)
+                    merged.last().end = e.at;
+                else
+                    merged << Part{previous, e.at, kind};
+            }
         }
         open[e.kind] += e.delta;
         previous = e.at;
+    }
+    return merged;
+}
+
+Time unionOf(const QList<Part> &parts)
+{
+    Time time;
+    for (const Part &p : mergeParts(parts)) {
+        const qint64 span = p.end - p.start;
+        switch (p.kind) {
+        case Kind::Active:  time.activeMs += span; break;
+        case Kind::Unknown: time.unknownMs += span; break;
+        case Kind::Afk:     time.afkMs += span; break;
+        }
     }
     return time;
 }
@@ -588,7 +741,7 @@ QList<Person> people(const Report &report, const QDate &from, const QDate &to, c
         QList<QList<Part>> shareParts;
         QHash<QString, int> shareIndex;
         QSet<QDate> days;
-        qint64 summedNetMs = 0;
+        qint64 summedTotalMs = 0;
     };
     auto note = [](QStringList &list, const QString &text) {
         if (!text.isEmpty() && !list.contains(text, Qt::CaseInsensitive))
@@ -644,7 +797,7 @@ QList<Person> people(const Report &report, const QDate &from, const QDate &to, c
             a.shareParts[si] += dv.parts;
 
             a.parts += dv.parts;
-            a.summedNetMs += dv.activeMs + dv.unknownMs;
+            a.summedTotalMs += dv.totalMs();
             if (!dv.parts.isEmpty() || dv.open)
                 a.days.insert(g.day);
             p.lastEnd = qMax(p.lastEnd, dv.end);
@@ -662,11 +815,20 @@ QList<Person> people(const Report &report, const QDate &from, const QDate &to, c
     for (Acc &a : accs) {
         Person &p = a.person;
         p.time = unionOf(a.parts);
-        p.overlapMs = qMax<qint64>(0, a.summedNetMs - p.time.netMs());
+        p.overlapMs = qMax<qint64>(0, a.summedTotalMs - p.time.totalMs());
         p.days = int(a.days.size());
         for (qsizetype i = 0; i < p.shares.size(); ++i) {
             Share &s = p.shares[i];
-            s.time = unionOf(a.shareParts.at(i));
+            s.timeline = mergeParts(a.shareParts.at(i));
+            s.time = {};
+            for (const Part &part : std::as_const(s.timeline)) {
+                const qint64 span = part.end - part.start;
+                switch (part.kind) {
+                case Kind::Active:  s.time.activeMs += span; break;
+                case Kind::Unknown: s.time.unknownMs += span; break;
+                case Kind::Afk:     s.time.afkMs += span; break;
+                }
+            }
             std::sort(s.entries.begin(), s.entries.end(), [](const Entry &x, const Entry &y) {
                 return x.slice.start < y.slice.start;
             });

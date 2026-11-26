@@ -96,6 +96,7 @@ QString eventCommand(const QHash<QString, EventCursor> &cursors)
 
 // Sessions, then the client name of each session from the users' volatile environment. The access
 // events (when asked for) come first, because `for` takes the rest of the line as its body.
+// Server UTC time is read from the WinRM HTTP Date response header rather than spawning PowerShell.
 QString sessionCommand(const QHash<QString, EventCursor> *cursors, bool includeTimes)
 {
     const QString connections = includeTimes
@@ -105,17 +106,14 @@ QString sessionCommand(const QHash<QString, EventCursor> *cursors, bool includeT
         : QString();
     return (cursors ? eventCommand(*cursors) : QString())
          + connections
-         + QStringLiteral("(quser && echo %1) & echo ##RCSTART## & ").arg(QString::fromLatin1(kSessionListMarker))
-         // Read the UTC clock on the server for connection times and usage samples.
-         + (cursors || includeTimes ? QStringLiteral("powershell -NoProfile -NonInteractive -Command "
-                                     "\"'NOW ' + [DateTime]::UtcNow.ToString('o')\" 2>nul & ")
-                    : QString())
-         + QStringLiteral("echo ##RCONNECT## & for /f \"delims=\" %k in ('reg query HKU') do "
-                          "@reg query \"%k\\Volatile Environment\" /s /v CLIENTNAME 2>nul");
+         + QStringLiteral("(quser && echo %1) & echo ##RCONNECT## & for /f \"delims=\" %k in ('reg query HKU') do "
+                          "@reg query \"%k\\Volatile Environment\" /s /v CLIENTNAME 2>nul")
+               .arg(QString::fromLatin1(kSessionListMarker));
 }
 
 struct HttpResponse {
     int status = 0;
+    qint64 dateUtcMs = 0;
     QList<QByteArray> authenticate;
     QByteArray contentType;
     QByteArray body;
@@ -167,11 +165,11 @@ public:
     bool receive(HttpResponse &r)
     {
         qsizetype end;
-        while ((end = m_buffer.indexOf("\r\n\r\n")) < 0)
+        while ((end = m_buffer.indexOf("\r\n\r\n", m_pos)) < 0)
             if (!fill())
                 return false;
-        const QList<QByteArray> lines = m_buffer.left(end).split('\n');
-        m_buffer.remove(0, end + 4);
+        const QList<QByteArray> lines = m_buffer.mid(m_pos, end - m_pos).split('\n');
+        consume(end - m_pos + 4);
 
         const QList<QByteArray> statusLine = lines.value(0).trimmed().split(' ');
         r = {};
@@ -197,26 +195,42 @@ public:
                 length = value.toLongLong();
             else if (name == "transfer-encoding")
                 chunked = value.toLower().contains("chunked");
+            else if (name == "date") {
+                const QDateTime dt = QDateTime::fromString(QString::fromLatin1(value), Qt::RFC2822Date);
+                if (dt.isValid())
+                    r.dateUtcMs = dt.toMSecsSinceEpoch();
+            }
         }
 
         if (!chunked)
-            return read(length, r.body);
+            return readInto(length, r.body);
         for (;;) {
             QByteArray sizeLine;
             if (!readLine(sizeLine))
                 return false;
-            const qsizetype size = sizeLine.split(';').value(0).trimmed().toLongLong(nullptr, 16);
+            const qsizetype semi = sizeLine.indexOf(';');
+            const qsizetype size = (semi < 0 ? sizeLine : sizeLine.left(semi)).trimmed().toLongLong(nullptr, 16);
             QByteArray crlf;
             if (size == 0)
                 return readLine(crlf);
-            QByteArray chunk;
-            if (!read(size, chunk) || !readLine(crlf))
+            if (!readInto(size, r.body) || !readLine(crlf))
                 return false;
-            r.body += chunk;
         }
     }
 
 private:
+    void consume(qsizetype n)
+    {
+        m_pos += n;
+        if (m_pos >= m_buffer.size()) {
+            m_buffer.clear();
+            m_pos = 0;
+        } else if (m_pos >= 16384 && m_pos * 2 >= m_buffer.size()) {
+            m_buffer.remove(0, m_pos);
+            m_pos = 0;
+        }
+    }
+
     bool fill()
     {
         char buf[16384];
@@ -230,29 +244,30 @@ private:
         return true;
     }
 
-    bool read(qsizetype size, QByteArray &out)
+    bool readInto(qsizetype size, QByteArray &out)
     {
-        while (m_buffer.size() < size)
+        while (m_buffer.size() - m_pos < size)
             if (!fill())
                 return false;
-        out = m_buffer.left(size);
-        m_buffer.remove(0, size);
+        out.append(m_buffer.constData() + m_pos, size);
+        consume(size);
         return true;
     }
 
     bool readLine(QByteArray &out)
     {
         qsizetype end;
-        while ((end = m_buffer.indexOf("\r\n")) < 0)
+        while ((end = m_buffer.indexOf("\r\n", m_pos)) < 0)
             if (!fill())
                 return false;
-        out = m_buffer.left(end);
-        m_buffer.remove(0, end + 2);
+        out = m_buffer.mid(m_pos, end - m_pos);
+        consume(end - m_pos + 2);
         return true;
     }
 
     SOCKET m_socket = INVALID_SOCKET;
     QByteArray m_buffer;
+    qsizetype m_pos = 0;
     QString m_error;
 };
 
@@ -433,7 +448,7 @@ void applyConnectionTimes(QList<RemoteSession> &sessions, const QList<AccessEven
         if (user.isEmpty() || session.user.compare(user, Qt::CaseInsensitive) != 0)
             continue;
         const QDateTime time = QDateTime::fromString(event->timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-        if (time.isValid() && time.toMSecsSinceEpoch() <= serverNow) {
+        if (time.isValid() && (serverNow <= 0 || time.toMSecsSinceEpoch() <= serverNow + 1000)) {
             session.connectedSinceUtcMs = time.toMSecsSinceEpoch();
             if (event->kind == AccessEvent::Logon)
                 session.logonUtcMs = session.connectedSinceUtcMs;
@@ -546,6 +561,8 @@ public:
             out.remove(0, out.indexOf('\n', split) + 1);
         }
         q.sessions = parseSessions(out, &q.serverNowUtcMs);
+        if (q.serverNowUtcMs <= 0 && m_serverNowUtcMs > 0)
+            q.serverNowUtcMs = m_serverNowUtcMs;
         q.sessionsRead = out.contains(kSessionListMarker) || !q.sessions.isEmpty();
         applyConnectionTimes(q.sessions, connectionEvents, q.serverNowUtcMs);
         return q;
@@ -662,6 +679,8 @@ private:
                                               .arg(action.section(QLatin1Char('/'), -1), m_conn.error()));
             return false;
         }
+        if (resp.dateUtcMs > 0)
+            m_serverNowUtcMs = resp.dateUtcMs;
         if (resp.status == 401) {
             fail(q, SessionQuery::AuthFailed,
                  QCoreApplication::translate("WinRm", "Authentication rejected (HTTP 401)."));
@@ -720,10 +739,13 @@ public:
         for (const AccessEvent &event : std::as_const(q.events))
             q.moreEvents |= ++counts[event.source] == kMaxEvents;
         QSet<QByteArray> completed;
-        for (const QByteArray &line : output.split('\n')) {
-            const QByteArray marker = line.trimmed();
-            if (marker.startsWith("##RCLOGOK:") && marker.endsWith("##"))
-                completed.insert(marker);
+        qsizetype pos = output.indexOf("##RCLOGOK:");
+        while (pos >= 0) {
+            const qsizetype end = output.indexOf("##", pos + 10);
+            if (end < 0)
+                break;
+            completed.insert(output.mid(pos, end - pos + 2));
+            pos = output.indexOf("##RCLOGOK:", end + 2);
         }
         for (const QString &source : WinRm::eventSources())
             if (!completed.contains("##RCLOGOK:" + source.toLatin1() + "##"))
@@ -768,7 +790,7 @@ private:
     // 1: keep, 0: not logged, -1: unreadable.
     static int parseEvent(QStringView xml, AccessEvent &e)
     {
-        QXmlStreamReader x(xml.toString());
+        QXmlStreamReader x(xml);
         int eventId = 0;
         QString time;
         qint64 record = 0;
@@ -924,11 +946,14 @@ private:
                                                             d.value(QStringLiteral("TaskContent")))); !command.isEmpty())
                 e.detail += QStringLiteral(": ") + command;
             return true;
-        case AccessEvent::AuditPolicyChanged:
+        case AccessEvent::AuditPolicyChanged: {
             e.source = QStringLiteral("AUD");
             e.user = actor(d);
-            e.detail = d.value(QStringLiteral("SubcategoryGuid"));
+            const QString guid = d.value(QStringLiteral("SubcategoryGuid"));
+            const QString changes = d.value(QStringLiteral("AuditPolicyChanges")).simplified();
+            e.detail = changes.isEmpty() ? guid : (guid + QLatin1Char('|') + changes);
             return true;
+        }
         case AccessEvent::LogCleared:
         case AccessEvent::SystemLogCleared: // the one who cleared it; detail: which log
             e.source = id == AccessEvent::LogCleared ? QStringLiteral("SEC") : QStringLiteral("SYS");
@@ -1030,10 +1055,18 @@ private:
         return sessions;
     }
 
-    // ".", "none": under a minute; "5"; "1:05"; "2+03:04" (days+hours:minutes)
+    // ".", "none" (and localized equivalents like Turkish "yok"): under a minute; "5"; "1:05"; "2+03:04" (days+hours:minutes)
     static int parseIdle(const QString &text)
     {
-        if (text == QLatin1String(".") || text.compare(QLatin1String("none"), Qt::CaseInsensitive) == 0)
+        if (text == QLatin1String("."))
+            return 0;
+        const QString lower = text.toLower();
+        static const QStringList kZeroWords = {
+            QStringLiteral("none"), QStringLiteral("yok"), QStringLiteral("keine"), QStringLiteral("aucun"),
+            QStringLiteral("ninguno"), QStringLiteral("nenhum"), QStringLiteral("nessuno"), QStringLiteral("geen"),
+            QStringLiteral("нет")
+        };
+        if (kZeroWords.contains(lower))
             return 0;
         static const QRegularExpression format(QStringLiteral("^(?:(\\d{1,6})\\+)?(?:(\\d{1,6}):)?(\\d{1,6})$"));
         const auto match = format.match(text);
@@ -1041,12 +1074,16 @@ private:
             return -1;
         const qint64 minutes = match.captured(1).toLongLong() * 1440
             + match.captured(2).toLongLong() * 60 + match.captured(3).toLongLong();
+        // Guard against Windows' known epoch-overflow idle output (e.g. 24692+13:29 when LastInputTime == 0).
+        if (minutes < 0 || minutes > 365LL * 1440)
+            return -1;
         return int(minutes);
     }
 
     QString m_host;
     Mode m_mode = Sessions;
     int m_timeoutMs;
+    qint64 m_serverNowUtcMs = 0;
     QByteArray m_hostHeader;
     QString m_to;
     QElapsedTimer m_clock;

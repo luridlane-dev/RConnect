@@ -6,36 +6,38 @@
 
 #include "core/AccessLog.h"
 #include "core/Contacts.h"
-#include "core/HostNames.h"
 #include "core/GeoIp.h"
+#include "core/HostNames.h"
 #include "core/Threats.h"
 
 #include <QAbstractTableModel>
-#include <QBrush>
+#include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QApplication>
 #include <QDateTime>
-#include <QDesktopServices>
 #include <QEvent>
 #include <QFile>
-#include <QFileInfo>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
-#include <QPointer>
-#include <QThreadPool>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QMenu>
 #include <QLineEdit>
-#include <QMap>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollBar>
+#include <QSet>
+#include <QStyledItemDelegate>
 #include <QTableView>
+#include <QThreadPool>
 #include <QTimer>
-#include <QUrl>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -45,17 +47,62 @@
 
 namespace {
 
-enum Column { Time, Server, Event, User, Address, Computer, Details, By, ColumnCount };
-enum Category { All, Logons, Failed, Leaves, Mine, Alerts, Changes };
+enum Column { Time, Server, Event, Who, Address, Details, ColumnCount };
+enum Category { All, Logons, Leaves, Failed, Alerts, Changes };
 
-constexpr int kEventRole = Qt::UserRole + 1;
-constexpr int kServerRole = Qt::UserRole + 3; // server id of the row
+enum class EventTone { SignIn, Reconnect, Disconnect, Logoff, Failed, Alert, Change, App, Neutral };
+
 constexpr int kLineRole = Qt::UserRole + 2;
+constexpr int kToneRole = Qt::UserRole + 4;
 
-// How far back the period filter reaches, by position in the combo box (0 = everything).
-constexpr int kPeriodHours[] = {0, 1, 24, 24 * 7, 24 * 30};
+// Period filter in hours (0 = all).
+constexpr int kPeriodHours[] = {24, 24 * 7, 24 * 30, 0};
 constexpr int kRefreshMs = 15000;
-constexpr int kMaxRows = 20000; // the newest are shown; the file has all
+
+EventTone toneOfEvent(const QString &event)
+{
+    if (event.startsWith(QLatin1String("Alert")) || Threats::isTampering(event)
+        || event == QLatin1String("AccountLocked"))
+        return EventTone::Alert;
+    if (event == QLatin1String("FailedLogon"))
+        return EventTone::Failed;
+    if (event == QLatin1String("Logon") || event == QLatin1String("SecurityLogon")
+        || event == QLatin1String("Authenticated"))
+        return EventTone::SignIn;
+    if (event == QLatin1String("Reconnect") || event == QLatin1String("SecurityReconnect"))
+        return EventTone::Reconnect;
+    if (event == QLatin1String("Disconnect") || event == QLatin1String("SecurityDisconnect"))
+        return EventTone::Disconnect;
+    if (event == QLatin1String("Logoff"))
+        return EventTone::Logoff;
+    if (event.startsWith(QLatin1String("User")) || event.startsWith(QLatin1String("GroupMember"))
+        || event.startsWith(QLatin1String("Task")) || event.startsWith(QLatin1String("Password"))
+        || event == QLatin1String("ServiceInstalled"))
+        return EventTone::Change;
+    if (event == QLatin1String("Connect") || event == QLatin1String("Monitor")
+        || event == QLatin1String("AuditEnable") || event == QLatin1String("Message")
+        || event == QLatin1String("DisplayTuned") || event == QLatin1String("Closed")
+        || event.startsWith(QLatin1String("Server")) || event == QLatin1String("Import")
+        || event == QLatin1String("Update"))
+        return EventTone::App;
+    return EventTone::Neutral;
+}
+
+QColor colorForTone(EventTone tone)
+{
+    switch (tone) {
+    case EventTone::SignIn:     return Theme::kGreen;
+    case EventTone::Reconnect:  return Theme::kTeal;
+    case EventTone::Disconnect: return Theme::kOrange;
+    case EventTone::Logoff:     return Theme::kLabelSecondary;
+    case EventTone::Failed:     return Theme::kRed;
+    case EventTone::Alert:      return Theme::kRed;
+    case EventTone::Change:     return Theme::kPurple;
+    case EventTone::App:        return Theme::kLabelSecondary;
+    case EventTone::Neutral:    return Theme::kLabelSecondary;
+    }
+    return Theme::kLabelSecondary;
+}
 
 bool inCategory(const QString &event, int category)
 {
@@ -64,30 +111,25 @@ bool inCategory(const QString &event, int category)
         return event == QLatin1String("Logon") || event == QLatin1String("Authenticated")
             || event == QLatin1String("SecurityLogon") || event == QLatin1String("Reconnect")
             || event == QLatin1String("SecurityReconnect");
-    case Failed:
-        return event == QLatin1String("FailedLogon");
     case Leaves:
         return event == QLatin1String("Logoff") || event == QLatin1String("Disconnect")
             || event == QLatin1String("SecurityDisconnect");
-    case Mine:
-        return event == QLatin1String("Connect") || event == QLatin1String("Monitor")
-            || event == QLatin1String("AuditEnable") || event == QLatin1String("Message")
-            || event == QLatin1String("DisplayTuned") || event == QLatin1String("Closed") || event == QLatin1String("ServerAdded")
-            || event == QLatin1String("ServerEdited") || event == QLatin1String("ServerRemoved")
-            || event == QLatin1String("Import") || event == QLatin1String("Update");
+    case Failed:
+        return event == QLatin1String("FailedLogon");
     case Alerts:
         return event.startsWith(QLatin1String("Alert")) || Threats::isTampering(event);
     case Changes:
         return event.startsWith(QLatin1String("User")) || event.startsWith(QLatin1String("GroupMember"))
             || event.startsWith(QLatin1String("Task")) || event.startsWith(QLatin1String("Password"))
             || event == QLatin1String("ServiceInstalled") || event == QLatin1String("AccountLocked")
-            || event == QLatin1String("AuditPolicyChanged") || event == QLatin1String("LogCleared");
+            || event == QLatin1String("AuditPolicyChanged") || event == QLatin1String("LogCleared")
+            || event == QLatin1String("ServerConfigured") || event == QLatin1String("ServerEdited")
+            || event == QLatin1String("ServerAdded") || event == QLatin1String("ServerRemoved");
     default:
         return true;
     }
 }
 
-// The details of a logon as the server's log gave them ("logon type 3: wrong password"), in plain words.
 QString detailText(const QString &detail)
 {
     static const QRegularExpression format(QStringLiteral("^logon type (\\d+)(?:: (.+))?$"));
@@ -99,23 +141,20 @@ QString detailText(const QString &detail)
         {QStringLiteral("unknown user name"), QT_TRANSLATE_NOOP("AccessLogPage", "Unknown user name")},
         {QStringLiteral("wrong password"), QT_TRANSLATE_NOOP("AccessLogPage", "Wrong password")},
         {QStringLiteral("logon failed"), QT_TRANSLATE_NOOP("AccessLogPage", "Sign-in failed")},
-        {QStringLiteral("account restriction"), QT_TRANSLATE_NOOP("AccessLogPage", "Account restriction")},
+        {QStringLiteral("account restriction"), QT_TRANSLATE_NOOP("AccessLogPage", "Account restricted")},
         {QStringLiteral("outside allowed hours"), QT_TRANSLATE_NOOP("AccessLogPage", "Outside allowed hours")},
         {QStringLiteral("workstation restriction"), QT_TRANSLATE_NOOP("AccessLogPage", "Not allowed from this device")},
         {QStringLiteral("password expired"), QT_TRANSLATE_NOOP("AccessLogPage", "Password expired")},
         {QStringLiteral("account disabled"), QT_TRANSLATE_NOOP("AccessLogPage", "Account disabled")},
         {QStringLiteral("clocks out of sync"), QT_TRANSLATE_NOOP("AccessLogPage", "Clocks out of sync")},
-        {QStringLiteral("logon type not allowed"), QT_TRANSLATE_NOOP("AccessLogPage", "Sign-in type not allowed")},
+        {QStringLiteral("logon type not allowed"), QT_TRANSLATE_NOOP("AccessLogPage", "Sign-in not allowed")},
         {QStringLiteral("account expired"), QT_TRANSLATE_NOOP("AccessLogPage", "Account expired")},
         {QStringLiteral("account locked out"), QT_TRANSLATE_NOOP("AccessLogPage", "Account locked")},
     };
-    const int type = m.captured(1).toInt();
-    const QString how = type == 10 ? t("Remote Desktop") : type == 3 ? t("Network") : QString();
     const QString reason = m.captured(2);
     if (reason.isEmpty())
-        return how;
-    const QString why = reasons.contains(reason) ? t(reasons.value(reason)) : reason;
-    return how.isEmpty() ? why : why + QStringLiteral(" (") + how + QLatin1Char(')');
+        return {};
+    return reasons.contains(reason) ? t(reasons.value(reason)) : reason;
 }
 
 bool looksLikeIp(const QString &text)
@@ -124,7 +163,6 @@ bool looksLikeIp(const QString &text)
     return ip.match(text).hasMatch();
 }
 
-// Country code of an address, remembered: the table asks for the same few addresses over and over.
 QString countryOfAddress(const QString &address)
 {
     static QHash<QString, QString> known;
@@ -132,28 +170,259 @@ QString countryOfAddress(const QString &address)
     if (it != known.constEnd())
         return it.value();
     const QString code = GeoIp::countryOf(address);
+    if (known.size() >= 8192)
+        known.clear();
     known.insert(address, code);
     return code;
 }
 
 QString csvField(QString text)
 {
-    // Names come from the network: keep a spreadsheet from running them as a formula.
     if (!text.isEmpty() && QStringLiteral("=+-@\t").contains(text.at(0)))
         text.prepend(QLatin1Char('\''));
     text.replace(QLatin1Char('"'), QStringLiteral("\"\""));
     return QLatin1Char('"') + text + QLatin1Char('"');
 }
 
+qint64 parseUtcMs(QStringView s)
+{
+    if (s.size() < 19)
+        return 0;
+    const auto dig2 = [&](qsizetype i, int &out) {
+        const ushort c0 = s.at(i).unicode() - '0';
+        const ushort c1 = s.at(i + 1).unicode() - '0';
+        if (c0 > 9 || c1 > 9)
+            return false;
+        out = c0 * 10 + c1;
+        return true;
+    };
+    if (s.at(4) != QLatin1Char('-') || s.at(7) != QLatin1Char('-')
+        || (s.at(10) != QLatin1Char('T') && s.at(10) != QLatin1Char(' '))
+        || s.at(13) != QLatin1Char(':') || s.at(16) != QLatin1Char(':'))
+        return 0;
+    int yHi = 0, yLo = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    if (!dig2(0, yHi) || !dig2(2, yLo) || !dig2(5, mo) || !dig2(8, d)
+        || !dig2(11, h) || !dig2(14, mi) || !dig2(17, se))
+        return 0;
+    const int y = yHi * 100 + yLo;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59)
+        return 0;
+    int ms = 0;
+    if (s.size() > 19 && s.at(19) == QLatin1Char('.')) {
+        int mul = 100;
+        for (qsizetype i = 20; i < s.size() && mul >= 1; ++i) {
+            const ushort c = s.at(i).unicode() - '0';
+            if (c > 9)
+                break;
+            ms += int(c) * mul;
+            mul /= 10;
+        }
+    }
+    const qint64 yr = y - (mo <= 2 ? 1 : 0);
+    const qint64 era = (yr >= 0 ? yr : yr - 399) / 400;
+    const qint64 yoe = yr - era * 400;
+    const qint64 doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const qint64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const qint64 days = era * 146097 + doe - 719468;
+    return ((days * 86400 + qint64(h) * 3600 + qint64(mi) * 60 + se) * 1000) + ms;
+}
+
+QDateTime parseUtc(const QString &timeUtc)
+{
+    const qint64 ms = parseUtcMs(timeUtc);
+    return ms != 0 ? QDateTime::fromMSecsSinceEpoch(ms, QTimeZone::UTC) : QDateTime();
+}
+
+QString shortName(const QString &user)
+{
+    return user.mid(user.lastIndexOf(QLatin1Char('\\')) + 1);
+}
+
+QString auditSubcategoryName(const QString &guid)
+{
+    const QString key = guid.trimmed().toUpper();
+    if (key.isEmpty())
+        return {};
+    static const QHash<QString, const char *> map = {
+        {QStringLiteral("{0CCE9210-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Security state change")},
+        {QStringLiteral("{0CCE9211-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Security system extension")},
+        {QStringLiteral("{0CCE9212-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "System integrity")},
+        {QStringLiteral("{0CCE9215-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Logon")},
+        {QStringLiteral("{0CCE9216-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Logoff")},
+        {QStringLiteral("{0CCE9217-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Account lockout")},
+        {QStringLiteral("{0CCE921B-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Special logon")},
+        {QStringLiteral("{0CCE921C-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "RDP session tracking (Other Logon/Logoff)")},
+        {QStringLiteral("{0CCE922B-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Process creation")},
+        {QStringLiteral("{0CCE922F-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Audit policy change")},
+        {QStringLiteral("{0CCE9230-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Authentication policy change")},
+        {QStringLiteral("{0CCE9235-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "User account management")},
+        {QStringLiteral("{0CCE9237-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Security group management")},
+        {QStringLiteral("{0CCE923F-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Credential validation")},
+        {QStringLiteral("{0CCE9240-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Kerberos service ticket")},
+        {QStringLiteral("{0CCE9242-69AE-11D9-BED3-505054503030}"), QT_TRANSLATE_NOOP("AccessLogPage", "Kerberos authentication")},
+    };
+    const auto it = map.constFind(key);
+    return it != map.cend() ? QCoreApplication::translate("AccessLogPage", it.value()) : guid.trimmed();
+}
+
+QString auditChangesText(const QString &raw)
+{
+    if (raw.trimmed().isEmpty())
+        return {};
+    QStringList out;
+    const auto t = [](const char *s) { return QCoreApplication::translate("AccessLogPage", s); };
+    for (const QString &tok : raw.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        const QString s = tok.trimmed();
+        if (s == QLatin1String("%%8448"))
+            out << t("Success removed");
+        else if (s == QLatin1String("%%8449"))
+            out << t("Success added");
+        else if (s == QLatin1String("%%8450"))
+            out << t("Failure removed");
+        else if (s == QLatin1String("%%8451"))
+            out << t("Failure added");
+        else if (!s.isEmpty())
+            out << s;
+    }
+    return out.join(QStringLiteral(", "));
+}
+
+QString changeActorOf(const AccessRecord &r)
+{
+    const QString &e = r.event;
+    if (e == QLatin1String("UserCreated") || e == QLatin1String("UserEnabled")
+        || e == QLatin1String("UserDisabled") || e == QLatin1String("UserDeleted")
+        || e == QLatin1String("PasswordChangeAttempt") || e == QLatin1String("PasswordResetAttempt"))
+        return shortName(r.detail);
+    if (e == QLatin1String("GroupMemberAdded") || e == QLatin1String("GroupMemberRemoved"))
+        return shortName(r.detail.section(QLatin1Char('|'), 1, 1));
+    if (e.startsWith(QLatin1String("Task")) || e == QLatin1String("AuditPolicyChanged")
+        || e == QLatin1String("LogCleared"))
+        return shortName(r.user);
+    if (r.source == QLatin1String("RCONNECT"))
+        return shortName(r.operatorName.isEmpty() ? r.client : r.operatorName);
+    return {};
+}
+
+QString serverEditFieldsText(const QString &raw)
+{
+    static const QHash<QString, const char *> fields = {
+        {QStringLiteral("name"), QT_TRANSLATE_NOOP("AccessLogPage", "name")},
+        {QStringLiteral("host"), QT_TRANSLATE_NOOP("AccessLogPage", "address")},
+        {QStringLiteral("port"), QT_TRANSLATE_NOOP("AccessLogPage", "port")},
+        {QStringLiteral("user"), QT_TRANSLATE_NOOP("AccessLogPage", "user")},
+        {QStringLiteral("domain"), QT_TRANSLATE_NOOP("AccessLogPage", "domain")},
+        {QStringLiteral("password"), QT_TRANSLATE_NOOP("AccessLogPage", "password")},
+        {QStringLiteral("notes"), QT_TRANSLATE_NOOP("AccessLogPage", "notes")},
+        {QStringLiteral("display"), QT_TRANSLATE_NOOP("AccessLogPage", "display")},
+        {QStringLiteral("redirection"), QT_TRANSLATE_NOOP("AccessLogPage", "redirection")},
+        {QStringLiteral("monitoring"), QT_TRANSLATE_NOOP("AccessLogPage", "monitoring")},
+    };
+    QStringList out;
+    for (const QString &part : raw.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        const QString key = part.trimmed();
+        const auto it = fields.constFind(key);
+        out << (it != fields.cend() ? QCoreApplication::translate("AccessLogPage", it.value()) : key);
+    }
+    return out.join(QStringLiteral(", "));
+}
+
+// Clean iOS-inspired log table delegate: soft translucent event pills, crisp mono timestamps/IPs.
+class AccessLogDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem o = opt;
+        initStyleOption(&o, index);
+        const bool selected = o.state & QStyle::State_Selected;
+        const bool dark = Theme::mode() == Theme::Dark;
+        const auto tone = static_cast<EventTone>(index.data(kToneRole).toInt());
+        const QColor toneColor = colorForTone(tone);
+        const int col = index.column();
+
+        if (!selected && tone == EventTone::Alert) {
+            QColor bg = Theme::kRed;
+            bg.setAlpha(dark ? 22 : 14);
+            p->fillRect(o.rect, bg);
+        }
+
+        const QWidget *widget = o.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+
+        if (col == Event) {
+            const QString text = o.text;
+            o.text.clear();
+            style->drawControl(QStyle::CE_ItemViewItem, &o, p, widget);
+
+            p->save();
+            p->setRenderHint(QPainter::Antialiasing, true);
+            p->setRenderHint(QPainter::TextAntialiasing, true);
+
+            const bool alert = tone == EventTone::Alert;
+            const QFont badgeFont = Theme::font(11, alert ? QFont::DemiBold : QFont::Medium);
+            static const QFontMetrics fmAlert(Theme::font(11, QFont::DemiBold));
+            static const QFontMetrics fmNormal(Theme::font(11, QFont::Medium));
+            const QFontMetrics &fm = alert ? fmAlert : fmNormal;
+            const int maxW = qMax(36, o.rect.width() - 12);
+            const int dotSpace = 12;
+            const int availTextW = qMax(12, maxW - dotSpace - 16);
+            const QString elided = fm.elidedText(text, Qt::ElideRight, availTextW);
+            const int pillW = qMin(maxW, fm.horizontalAdvance(elided) + dotSpace + 16);
+            const int pillH = 22;
+            const QRectF pill(o.rect.left() + 6, o.rect.center().y() - pillH / 2.0, pillW, pillH);
+
+            QColor bg = toneColor;
+            bg.setAlpha(selected ? (dark ? 54 : 34) : (tone == EventTone::Alert ? (dark ? 44 : 26) : (dark ? 28 : 18)));
+
+            p->setBrush(bg);
+            p->setPen(Qt::NoPen);
+            p->drawRect(pill);
+
+            p->setBrush(toneColor);
+            p->drawEllipse(QRectF(pill.left() + 8, pill.center().y() - 3.0, 6.0, 6.0));
+
+            p->setFont(badgeFont);
+            p->setPen(selected ? Theme::kLabel : toneColor);
+            p->drawText(QRectF(pill.left() + 18, pill.top(), pill.width() - 24, pill.height()),
+                        Qt::AlignLeft | Qt::AlignVCenter, elided);
+            p->restore();
+            return;
+        }
+
+        if (col == Time || col == Address) {
+            o.font = Theme::monoFont(12);
+            if (!selected)
+                o.palette.setColor(QPalette::Text, col == Time ? Theme::kLabelSecondary : Theme::kLabel);
+        } else if (col == Server) {
+            o.font = Theme::font(12, QFont::Medium);
+        } else if (col == Details && !selected) {
+            o.palette.setColor(QPalette::Text, tone == EventTone::Alert || tone == EventTone::Failed
+                                   ? toneColor : Theme::kLabelSecondary);
+        }
+
+        style->drawControl(QStyle::CE_ItemViewItem, &o, p, widget);
+
+        if (col == Time && (tone == EventTone::Alert || tone == EventTone::Failed)) {
+            p->save();
+            QColor bar = toneColor;
+            bar.setAlpha(selected ? 235 : 190);
+            p->fillRect(QRect(o.rect.left(), o.rect.top() + 3, 2, o.rect.height() - 6), bar);
+            p->restore();
+        }
+    }
+};
+
+QString lineIdentity(const AccessLine &line)
+{
+    const AccessRecord &r = line.r;
+    return r.serverId + QLatin1Char('|') + r.event + QLatin1Char('|') + r.address + QLatin1Char('|')
+         + line.firstUtc + QLatin1Char('|') + QString::number(r.recordId);
+}
+
 } // namespace
 
-namespace {
-QDateTime parseUtc(const QString &timeUtc); // defined with the helpers below
-} // namespace
-
-// The rows of the table are indexes into the page's list, filtered and sorted. Nothing is copied into items: the
-// text of a row is made when it is first painted (or searched, or sorted on), so a reload or a filter change costs
-// a few passes over the list instead of hundreds of thousands of objects on the GUI thread.
 class AccessTableModel : public QAbstractTableModel {
 public:
     using Cells = std::array<QString, ColumnCount>;
@@ -174,18 +443,19 @@ public:
         emit headerDataChanged(Qt::Horizontal, 0, ColumnCount - 1);
     }
 
-    // `lines` is owned by the page and must outlive the model's use of it.
     void setLines(const QList<AccessLine> *lines)
     {
         m_lines = lines;
         m_cells.clear();
         m_cells.resize(lines->size());
         m_built.assign(size_t(lines->size()), false);
+        m_tones.resize(lines->size());
+        for (qsizetype i = 0; i < lines->size(); ++i)
+            m_tones[i] = quint8(toneOfEvent(lines->at(i).r.event));
         m_refilter.stop();
         refilter();
     }
 
-    // Names came in for addresses: the texts are made again, without losing the selection.
     void invalidateCells()
     {
         if (!m_lines || m_rows.isEmpty())
@@ -194,12 +464,24 @@ public:
         emit dataChanged(index(0, 0), index(int(m_rows.size()) - 1, ColumnCount - 1), {Qt::DisplayRole});
     }
 
-    void setCategory(int category) { change(m_category, category); }
-    void setServer(const QString &serverId) { change(m_server, serverId); }
-    void setSource(const QString &source) { change(m_source, source); }
-    // Only rows at or after this UTC time ("2026-10-31T08:15:30"); empty = all.
-    void setSince(const QString &sinceUtc) { change(m_since, sinceUtc); }
-    void setText(const QString &text) { change(m_text, text.trimmed()); }
+    void setCategory(int category) { change(m_category, category, 0); }
+    void setServer(const QString &serverId) { change(m_server, serverId, 0); }
+    void setSince(const QString &sinceUtc) { change(m_since, sinceUtc, 0); }
+    void setText(const QString &text) { change(m_text, text.trimmed(), 150); }
+    void setHideFailed(bool hide) { change(m_hideFailed, hide, 0); }
+
+    qint64 hiddenFailedAttempts() const { return m_hiddenFailedAttempts; }
+    int hiddenFailedGroups() const { return m_hiddenFailedGroups; }
+
+    int findRowByIdentity(const QString &identity) const
+    {
+        if (!m_lines || identity.isEmpty())
+            return -1;
+        for (int row = 0; row < m_rows.size(); ++row)
+            if (lineIdentity(m_lines->at(m_rows.at(row))) == identity)
+                return row;
+        return -1;
+    }
 
     int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : int(m_rows.size()); }
     int columnCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : int(ColumnCount); }
@@ -214,15 +496,8 @@ public:
             return cells(line)[size_t(index.column())];
         case kLineRole:
             return line;
-        case Qt::ForegroundRole: {
-            if (index.column() != Event)
-                return {};
-            const QString &event = m_lines->at(line).r.event;
-            if (event == QLatin1String("FailedLogon") || event.startsWith(QLatin1String("Alert"))
-                || Threats::isTampering(event))
-                return QBrush(Theme::kRed);
-            return {};
-        }
+        case kToneRole:
+            return int(m_tones.at(line));
         default:
             return {};
         }
@@ -239,20 +514,20 @@ public:
     {
         m_sortColumn = column;
         m_order = order;
-        beginResetModel();
+        emit layoutAboutToBeChanged();
         sortRows();
-        endResetModel();
+        emit layoutChanged();
     }
 
 private:
     template <typename T>
-    void change(T &field, const T &value)
+    void change(T &field, const T &value, int delayMs)
     {
         if (field == value)
             return;
         field = value;
         if (m_lines)
-            m_refilter.start(); // several filters change together when a reload ends: filtered once
+            m_refilter.start(delayMs);
     }
 
     const Cells &cells(int line) const
@@ -268,14 +543,15 @@ private:
     {
         beginResetModel();
         m_rows.clear();
+        m_hiddenFailedAttempts = 0;
+        m_hiddenFailedGroups = 0;
         if (m_lines) {
             for (int i = 0; i < m_lines->size(); ++i) {
-                const AccessRecord &r = m_lines->at(i).r;
+                const AccessLine &line = m_lines->at(i);
+                const AccessRecord &r = line.r;
                 if (!inCategory(r.event, m_category))
                     continue;
                 if (!m_server.isEmpty() && r.serverId != m_server)
-                    continue;
-                if (!m_source.isEmpty() && r.source != m_source)
                     continue;
                 if (!m_since.isEmpty() && r.timeUtc < m_since)
                     continue;
@@ -288,6 +564,11 @@ private:
                         }
                     if (!hit)
                         continue;
+                }
+                if (m_category == All && m_hideFailed && r.event == QLatin1String("FailedLogon")) {
+                    m_hiddenFailedAttempts += line.attempts;
+                    ++m_hiddenFailedGroups;
+                    continue;
                 }
                 m_rows.append(i);
             }
@@ -302,7 +583,6 @@ private:
             return;
         const bool desc = m_order == Qt::DescendingOrder;
         const int column = m_sortColumn;
-        // The time sorts as text ("2026-10-31T08:15:30"); the other columns by what is shown.
         std::stable_sort(m_rows.begin(), m_rows.end(), [&](int a, int b) {
             const int c = column == Time ? m_lines->at(a).r.timeUtc.compare(m_lines->at(b).r.timeUtc)
                                          : cells(a)[size_t(column)].compare(cells(b)[size_t(column)]);
@@ -314,13 +594,17 @@ private:
     const QList<AccessLine> *m_lines = nullptr;
     mutable QVector<Cells> m_cells;
     mutable std::vector<bool> m_built;
-    QVector<int> m_rows; // indexes into m_lines, in the order shown
+    QVector<quint8> m_tones;
+    QVector<int> m_rows;
     QStringList m_headers;
     QTimer m_refilter;
     int m_category = All;
-    QString m_server, m_source;
+    QString m_server;
     QString m_since;
     QString m_text;
+    bool m_hideFailed = true;
+    qint64 m_hiddenFailedAttempts = 0;
+    int m_hiddenFailedGroups = 0;
     int m_sortColumn = Time;
     Qt::SortOrder m_order = Qt::DescendingOrder;
 };
@@ -332,39 +616,47 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
         [this](const AccessLine &line) {
             const AccessRecord &r = line.r;
             const QDateTime utc = parseUtc(r.timeUtc);
-            const QString time = utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+            const QString time = utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm"))
                                                : r.timeUtc;
-            QStringList details;
-            if (line.attempts > 1)
-                details << tr("%1 attempts").arg(line.attempts);
-            // Where it came from: the address and its country; for a failed attempt the computer is whatever the
-            // server logged, else (inside the network) the name that address answers to.
+
             QString where = r.address;
-            if (looksLikeIp(r.address)) {
+            const bool isIp = !r.address.isEmpty() && looksLikeIp(r.address);
+            if (isIp) {
                 const QString code = countryOfAddress(r.address);
                 if (!code.isEmpty())
                     where += QStringLiteral(" · ") + GeoIp::countryName(code);
             }
+
             QString computer = r.client;
-            if (computer.isEmpty() && looksLikeIp(r.address) && HostNames::isLocalAddress(r.address)) {
-                computer = HostNames::cached(r.address);
-                if (computer.isEmpty())
-                    HostNames::request(r.address);
-            }
+            if (computer.isEmpty() && isIp && HostNames::isLocalAddress(r.address))
+                computer = HostNames::cachedOrRequest(r.address);
             if (line.clients.size() > 1)
-                computer = tr("%1 and %2 more").arg(line.clients.first()).arg(line.clients.size() - 1);
+                computer = tr("%1 (+%2)").arg(line.clients.first()).arg(line.clients.size() - 1);
+
+            const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
+            const QString changeActor = changeActorOf(r);
+            const QString device = r.source == QLatin1String("RCONNECT")
+                ? (r.operatorName.isEmpty() ? r.client : shortName(r.operatorName))
+                : line.clients.size() > 1 ? computer
+                                          : Contacts::instance().label(computer, r.user, r.address);
+            const QString who = !changeActor.isEmpty() ? changeActor : (!device.isEmpty() ? device : user);
+
+            QStringList details;
+            if (line.attempts > 1)
+                details << tr("%1 attempts").arg(line.attempts);
             const QString summary = alertSummary(r);
             if (!summary.isEmpty())
                 details << summary;
-            else if (!r.detail.isEmpty())
-                details << detailText(r.detail);
-            // Without the computer name in front: the full account is in the details below.
-            const QString user = line.users.size() > 1 ? tr("%1 accounts").arg(line.users.size()) : line.users.value(0);
-            const QString device = r.source == QLatin1String("RCONNECT") ? r.client
-                                   : line.clients.size() > 1         ? computer
-                                                                      : Contacts::instance().label(computer, r.user);
-            return AccessTableModel::Cells{time, r.server, eventText(r.event), user, where, device,
-                                           details.join(QStringLiteral(", ")), r.operatorName};
+            else if (!r.detail.isEmpty()) {
+                const QString d = detailText(r.detail);
+                if (!d.isEmpty())
+                    details << d;
+            }
+            if (!user.isEmpty() && summary.isEmpty() && who.compare(user, Qt::CaseInsensitive) != 0)
+                details << user;
+
+            return AccessTableModel::Cells{time, r.server, eventText(r.event), who, where,
+                                           details.join(QStringLiteral(" · "))};
         },
         this);
 
@@ -385,53 +677,56 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
     });
     m_export = new QPushButton(this);
     connect(m_export, &QPushButton::clicked, this, &AccessLogPage::exportCsv);
-    m_open = new QPushButton(this);
-    connect(m_open, &QPushButton::clicked, this, [] { QDesktopServices::openUrl(QUrl::fromLocalFile(AccessLog::path())); });
 
     auto *head = new QHBoxLayout;
+    head->setSpacing(8);
     head->addLayout(titles, 1);
     head->addWidget(m_refresh, 0, Qt::AlignTop);
     head->addWidget(m_export, 0, Qt::AlignTop);
-    head->addWidget(m_open, 0, Qt::AlignTop);
 
     m_category = new QComboBox(this);
-    m_category->setMinimumWidth(155);
+    m_category->setMinimumWidth(150);
     m_category->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_category, &QComboBox::currentIndexChanged, this, [this](int i) {
         m_model->setCategory(i);
+        m_showFailed->setVisible(i == All);
     });
     m_server = new QComboBox(this);
-    m_server->setMinimumWidth(134);
+    m_server->setMinimumWidth(140);
     m_server->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_server, &QComboBox::currentIndexChanged, this, [this] {
         m_model->setServer(m_server->currentData().toString());
         updateSyncStatus();
     });
     m_period = new QComboBox(this);
-    m_period->setMinimumWidth(116);
+    m_period->setMinimumWidth(120);
     m_period->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connect(m_period, &QComboBox::currentIndexChanged, this, [this] { applyPeriod(); });
-    m_source = new QComboBox(this);
-    m_source->setMinimumWidth(118);
-    m_source->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    connect(m_source, &QComboBox::currentIndexChanged, this, [this] {
-        m_model->setSource(m_source->currentData().toString());
-    });
     m_filter = new QLineEdit(this);
     m_filter->setClearButtonEnabled(true);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString &text) {
         m_model->setText(text);
     });
+    m_showFailed = new QPushButton(this);
+    m_showFailed->setObjectName(QStringLiteral("pillToggle"));
+    m_showFailed->setCheckable(true);
+    m_showFailed->setChecked(false);
+    m_showFailed->setCursor(Qt::PointingHandCursor);
+    connect(m_showFailed, &QPushButton::toggled, this, [this](bool show) {
+        m_model->setHideFailed(!show);
+    });
+
     auto *filters = new QHBoxLayout;
-    filters->setSpacing(10);
+    filters->setSpacing(8);
     filters->addWidget(m_category);
     filters->addWidget(m_server);
     filters->addWidget(m_period);
-    filters->addWidget(m_source);
     filters->addWidget(m_filter, 1);
+    filters->addWidget(m_showFailed);
 
     auto *view = m_view = new QTableView(this);
     view->setModel(m_model);
+    view->setItemDelegate(new AccessLogDelegate(view));
     view->setAlternatingRowColors(true);
     view->setSelectionBehavior(QAbstractItemView::SelectRows);
     view->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -439,39 +734,39 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
     view->setShowGrid(false);
     view->setWordWrap(false);
     view->verticalHeader()->hide();
-    view->verticalHeader()->setDefaultSectionSize(30);
+    view->verticalHeader()->setDefaultSectionSize(32);
     view->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     view->horizontalHeader()->setSectionResizeMode(Details, QHeaderView::Stretch);
     view->horizontalHeader()->setHighlightSections(false);
     view->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    view->setColumnWidth(Time, 150);
-    view->setColumnWidth(Server, 150);
-    view->setColumnWidth(Event, 200);
-    view->setColumnWidth(User, 170);
-    view->setColumnWidth(Address, 120);
-    view->setColumnWidth(Computer, 130);
-    view->setColumnWidth(By, 160);
+    view->setColumnWidth(Time, 138);
+    view->setColumnWidth(Server, 145);
+    view->setColumnWidth(Event, 195);
+    view->setColumnWidth(Who, 165);
+    view->setColumnWidth(Address, 155);
     view->sortByColumn(Time, Qt::DescendingOrder);
 
     m_syncStatus = new QLabel(this);
     m_syncStatus->setObjectName(QStringLiteral("fieldHint"));
     m_syncStatus->setTextFormat(Qt::PlainText);
     m_syncStatus->setWordWrap(true);
+    m_syncStatus->hide();
+
     m_count = new QLabel(this);
-    m_count->setObjectName(QStringLiteral("pageSubtitle"));
-    // The count under the table follows every refilter.
+    m_count->setObjectName(QStringLiteral("fieldHint"));
     connect(m_model, &QAbstractItemModel::modelReset, this, &AccessLogPage::updateCount);
 
     m_detail = new QFrame(this);
     m_detail->setObjectName(QStringLiteral("detailCard"));
     m_detail->hide();
     auto *detailLay = new QVBoxLayout(m_detail);
-    detailLay->setContentsMargins(16, 12, 16, 12);
+    detailLay->setContentsMargins(14, 10, 14, 10);
     m_detailText = new QLabel(m_detail);
     m_detailText->setTextFormat(Qt::RichText);
     m_detailText->setTextInteractionFlags(Qt::TextSelectableByMouse);
     detailLay->addWidget(m_detailText);
     connect(view->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this] { showDetail(); });
+
     view->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(view, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
         const QModelIndex index = m_view->indexAt(pos);
@@ -479,25 +774,46 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
         if (row < 0 || row >= m_lines.size())
             return;
         const AccessRecord &r = m_lines.at(row).r;
-        if (r.source == QLatin1String("RCONNECT"))
-            return;
-        const bool known = Contacts::instance().match(r.client, r.user) != nullptr;
-        if (!known && r.client.isEmpty())
-            return; // nothing to tell this person by
         QMenu menu(this);
-        menu.addAction(known ? tr("Edit contact…") : tr("Add to contacts…"), this,
-                       [this, r] { ContactsDialog::editFor(r.client, r.user, this); });
+        if (!r.address.isEmpty()) {
+            menu.addAction(tr("Copy IP address"), this, [addr = r.address] {
+                QApplication::clipboard()->setText(addr);
+            });
+        }
+        menu.addAction(tr("Copy row"), this, [this, viewRow = index.row()] {
+            QStringList cols;
+            for (int c = 0; c < ColumnCount; ++c) {
+                const QString v = m_model->index(viewRow, c).data().toString();
+                if (!v.isEmpty())
+                    cols << v;
+            }
+            QApplication::clipboard()->setText(cols.join(QStringLiteral(" | ")));
+        });
+        if (r.source != QLatin1String("RCONNECT")) {
+            const bool known = Contacts::instance().match(r.client, r.user, r.address) != nullptr;
+            if (known || !r.client.isEmpty() || !r.address.isEmpty()) {
+                menu.addSeparator();
+                menu.addAction(known ? tr("Edit contact…") : tr("Add to contacts…"), this,
+                               [this, r] { ContactsDialog::editFor(r.client, r.user, this, r.address); });
+            }
+        }
         menu.exec(m_view->viewport()->mapToGlobal(pos));
     });
-    // A new nickname shows on the lines already listed.
+
     connect(&Contacts::instance(), &Contacts::changed, this, [this] {
-        if (m_loaded && !m_busy)
-            apply(m_lines);
+        if (m_loaded && !m_busy) {
+            m_model->invalidateCells();
+            showDetail();
+        }
+    });
+    connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
+        m_view->viewport()->update();
+        showDetail();
     });
 
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(6, 0, 6, 0);
-    lay->setSpacing(14);
+    lay->setSpacing(10);
     lay->addLayout(head);
     lay->addLayout(filters);
     lay->addWidget(m_syncStatus);
@@ -505,10 +821,9 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
     lay->addWidget(m_detail);
     lay->addWidget(m_count);
 
-    // A computer name found for an address shows on the lines and in the card.
     auto *namesTimer = new QTimer(this);
     namesTimer->setSingleShot(true);
-    namesTimer->setInterval(300); // names come in one by one
+    namesTimer->setInterval(300);
     connect(namesTimer, &QTimer::timeout, this, [this] {
         m_model->invalidateCells();
         showDetail();
@@ -519,6 +834,11 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
     m_timer->setInterval(kRefreshMs);
     connect(m_timer, &QTimer::timeout, this, &AccessLogPage::reload);
 
+    m_syncReloadTimer = new QTimer(this);
+    m_syncReloadTimer->setSingleShot(true);
+    m_syncReloadTimer->setInterval(1000);
+    connect(m_syncReloadTimer, &QTimer::timeout, this, &AccessLogPage::reload);
+
     connect(m_store, &QAbstractItemModel::rowsInserted, this, &AccessLogPage::fillServers);
     connect(m_store, &QAbstractItemModel::rowsRemoved, this, &AccessLogPage::fillServers);
     connect(m_store, &QAbstractItemModel::modelReset, this, &AccessLogPage::fillServers);
@@ -527,129 +847,173 @@ AccessLogPage::AccessLogPage(ServerStore *store, QWidget *parent)
 
 QString AccessLogPage::sourceText(const QString &source)
 {
-    if (source == QLatin1String("LSM"))
-        return tr("Remote Desktop session log");
-    if (source == QLatin1String("RCM"))
-        return tr("Remote Desktop connection log");
-    if (source == QLatin1String("SEC"))
-        return tr("Windows security log");
-    if (source == QLatin1String("AUD"))
-        return tr("Windows account and policy audit");
+    if (source == QLatin1String("LSM") || source == QLatin1String("RCM"))
+        return tr("Remote Desktop");
+    if (source == QLatin1String("SEC") || source == QLatin1String("AUD"))
+        return tr("Security");
     if (source == QLatin1String("SYS"))
-        return tr("Windows system log");
+        return tr("System");
     return source == QLatin1String("RCONNECT") ? QStringLiteral("RConnect") : source;
 }
 
 QString AccessLogPage::eventText(const QString &event)
 {
     const auto is = [&event](const char *name) { return event == QLatin1String(name); };
-    // The security log repeats what the Remote Desktop logs say, so both read the same.
     if (is("Logon") || is("SecurityLogon"))             return tr("Signed in");
     if (is("Logoff"))                                   return tr("Signed out");
     if (is("Disconnect") || is("SecurityDisconnect"))   return tr("Disconnected");
     if (is("Reconnect") || is("SecurityReconnect"))     return tr("Reconnected");
     if (is("Authenticated"))                            return tr("Connection accepted");
     if (is("FailedLogon"))                              return tr("Failed sign-in");
-    if (is("Connect"))            return tr("Connected with RConnect");
-    if (is("Monitor"))            return tr("Screen viewed in RConnect");
-    if (is("AuditEnable"))        return tr("Sign-in tracking turned on");
-    if (is("DisplayTuned"))       return tr("Picture settings changed (60 fps, sharp text)");
-    if (is("Message"))            return tr("Message sent in RConnect");
-    if (is("Closed"))             return tr("Connection closed in RConnect");
-    if (is("ServerAdded"))        return tr("Server added in RConnect");
-    if (is("ServerEdited"))       return tr("Server changed in RConnect");
-    if (is("ServerRemoved"))      return tr("Server removed in RConnect");
-    if (is("Import"))             return tr("Servers imported in RConnect");
-    if (is("Update"))             return tr("RConnect updated");
-    if (is("UserCreated"))        return tr("User account created");
-    if (is("GroupMemberAdded"))   return tr("Added to a privileged group");
-    if (is("TaskCreated"))        return tr("Scheduled task created");
+    if (is("Connect"))            return tr("Connected");
+    if (is("Monitor"))            return tr("Screen viewed");
+    if (is("AuditEnable"))        return tr("Tracking enabled");
+    if (is("DisplayTuned"))       return tr("Display updated");
+    if (is("Message"))            return tr("Message sent");
+    if (is("Closed"))             return tr("Connection closed");
+    if (is("ServerAdded"))        return tr("Server added");
+    if (is("ServerEdited"))       return tr("Server updated");
+    if (is("ServerRemoved"))      return tr("Server removed");
+    if (is("ServerConfigured"))   return tr("Server configured");
+    if (is("Import"))             return tr("Servers imported");
+    if (is("Update"))             return tr("App updated");
+    if (is("UserCreated"))        return tr("Account created");
+    if (is("GroupMemberAdded"))   return tr("Admin rights granted");
+    if (is("TaskCreated"))        return tr("Scheduled task added");
     if (is("ServiceInstalled"))   return tr("Service installed");
-    if (is("UserEnabled")) return tr("User account enabled");
-    if (is("UserDisabled")) return tr("User account disabled");
-    if (is("UserDeleted")) return tr("User account deleted");
-    if (is("PasswordChangeAttempt")) return tr("Password change attempted");
-    if (is("PasswordResetAttempt")) return tr("Password reset attempted");
-    if (is("AccountLocked")) return tr("User account locked");
-    if (is("GroupMemberRemoved")) return tr("Removed from a privileged group");
-    if (is("TaskRemoved")) return tr("Scheduled task deleted");
-    if (is("TaskEnabled")) return tr("Scheduled task enabled");
-    if (is("TaskDisabled")) return tr("Scheduled task disabled");
-    if (is("TaskUpdated")) return tr("Scheduled task changed");
-    if (is("AuditPolicyChanged")) return tr("Audit policy changed");
-    if (is("LogCleared"))         return tr("Event log cleared");
+    if (is("UserEnabled"))        return tr("Account enabled");
+    if (is("UserDisabled"))       return tr("Account disabled");
+    if (is("UserDeleted"))        return tr("Account deleted");
+    if (is("PasswordChangeAttempt")) return tr("Password change tried");
+    if (is("PasswordResetAttempt"))  return tr("Password reset tried");
+    if (is("AccountLocked"))      return tr("Account locked");
+    if (is("GroupMemberRemoved")) return tr("Admin rights removed");
+    if (is("TaskRemoved"))        return tr("Scheduled task removed");
+    if (is("TaskEnabled"))        return tr("Scheduled task enabled");
+    if (is("TaskDisabled"))       return tr("Scheduled task disabled");
+    if (is("TaskUpdated"))        return tr("Scheduled task updated");
+    if (is("AuditPolicyChanged")) return tr("Audit setting changed");
+    if (is("LogCleared"))         return tr("Log cleared");
     if (is("AlertBruteForce"))    return tr("Alert: password guessing");
-    if (is("AlertBreakIn"))       return tr("Alert: sign-in after failed attempts");
-    if (is("AlertNewCountry"))    return tr("Alert: sign-in from a new country");
-    if (is("AlertSuspicious"))    return tr("Alert: suspicious new program");
+    if (is("AlertBreakIn"))       return tr("Alert: sign-in after failures");
+    if (is("AlertNewCountry"))    return tr("Alert: new country");
+    if (is("AlertSuspicious"))    return tr("Alert: new background program");
     return event;
 }
 
-// What a warning or a tampering event says, in a sentence. Empty for the other events.
 QString AccessLogPage::alertSummary(const AccessRecord &r)
 {
     const QString &e = r.event;
+    // Fast short-circuit for the ~99% of rows (sign-ins, disconnects, failed logons) before splitting/allocating.
+    if (e == QLatin1String("Logon") || e == QLatin1String("Logoff") || e == QLatin1String("Disconnect")
+        || e == QLatin1String("Reconnect") || e == QLatin1String("Authenticated")
+        || e == QLatin1String("SecurityLogon") || e == QLatin1String("FailedLogon")
+        || e == QLatin1String("SecurityReconnect") || e == QLatin1String("SecurityDisconnect")
+        || e == QLatin1String("Connect") || e == QLatin1String("Closed") || e == QLatin1String("Monitor")
+        || e == QLatin1String("Message") || e == QLatin1String("DisplayTuned") || e == QLatin1String("AuditEnable")
+        || e == QLatin1String("Import") || e == QLatin1String("Update"))
+        return {};
     const QStringList parts = r.detail.split(QLatin1Char('|'));
     const QString first = parts.value(0), second = parts.value(1);
+    const QString target = shortName(r.user);
+    const QString actor = shortName(r.detail);
+    const QString op = shortName(r.operatorName.isEmpty() ? r.client : r.operatorName);
     if (e == QLatin1String("AlertBruteForce"))
-        return tr("%1 failed sign-ins from %2, %3 accounts tried").arg(first, r.address, second);
+        return tr("%1 failed attempts from %2 (%3 accounts)").arg(first, r.address, second);
     if (e == QLatin1String("AlertBreakIn"))
-        return tr("%1 signed in from %2 right after %3 failed attempts").arg(r.user, r.address, first);
+        return tr("%1 signed in from %2 after %3 failed tries").arg(r.user, r.address, first);
     if (e == QLatin1String("AlertNewCountry"))
         return tr("%1 signed in from %2 (%3) for the first time").arg(r.user, r.address, GeoIp::countryName(first));
     if (e == QLatin1String("AlertSuspicious"))
-        return (first == QLatin1String("TaskCreated") ? tr("New scheduled task: %1") : tr("New service: %1"))
+        return (first == QLatin1String("TaskCreated") ? tr("New task: %1") : tr("New service: %1"))
             .arg(r.detail.mid(first.size() + 1));
     if (e == QLatin1String("UserCreated"))
-        return tr("User account %1 created by %2").arg(r.user, r.detail);
+        return tr("Account %1 created by %2").arg(target, actor);
+    if (e == QLatin1String("UserEnabled"))
+        return tr("Account %1 enabled by %2").arg(target, actor);
+    if (e == QLatin1String("UserDisabled"))
+        return tr("Account %1 disabled by %2").arg(target, actor);
+    if (e == QLatin1String("UserDeleted"))
+        return tr("Account %1 deleted by %2").arg(target, actor);
+    if (e == QLatin1String("PasswordChangeAttempt"))
+        return tr("Password change for %1 by %2").arg(target, actor);
+    if (e == QLatin1String("PasswordResetAttempt"))
+        return tr("Password reset for %1 by %2").arg(target, actor);
+    if (e == QLatin1String("AccountLocked"))
+        return r.client.isEmpty() ? tr("Account %1 locked").arg(target)
+                                  : tr("Account %1 locked (from %2)").arg(target, r.client);
     if (e == QLatin1String("GroupMemberAdded"))
-        return tr("%1 added to %2 by %3").arg(r.user, first, second);
+        return tr("%1 added to %2 by %3").arg(target, first, shortName(second));
+    if (e == QLatin1String("GroupMemberRemoved"))
+        return tr("%1 removed from %2 by %3").arg(target, first, shortName(second));
     if (e == QLatin1String("LogCleared"))
-        return tr("%1 log cleared by %2").arg(r.detail, r.user);
+        return tr("%1 log cleared by %2").arg(r.detail, target);
     if (e == QLatin1String("TaskCreated"))
-        return tr("New scheduled task %1 by %2").arg(r.detail, r.user);
-    if (e == QLatin1String("AuditPolicyChanged"))
-        return tr("Windows audit policy was changed by %1").arg(r.user);
+        return tr("Task %1 added by %2").arg(r.detail, target);
+    if (e == QLatin1String("TaskRemoved"))
+        return tr("Task %1 removed by %2").arg(r.detail, target);
+    if (e == QLatin1String("TaskEnabled"))
+        return tr("Task %1 enabled by %2").arg(r.detail, target);
+    if (e == QLatin1String("TaskDisabled"))
+        return tr("Task %1 disabled by %2").arg(r.detail, target);
+    if (e == QLatin1String("TaskUpdated"))
+        return tr("Task %1 updated by %2").arg(r.detail, target);
+    if (e == QLatin1String("AuditPolicyChanged")) {
+        const QString policy = auditSubcategoryName(first);
+        const QString what = auditChangesText(second);
+        if (!policy.isEmpty() && !what.isEmpty())
+            return tr("%1 (%2) — by %3").arg(policy, what, target);
+        if (!policy.isEmpty())
+            return tr("%1 — changed by %2").arg(policy, target);
+        return tr("Changed by %1").arg(target);
+    }
     if (e == QLatin1String("ServiceInstalled"))
-        return tr("New service %1").arg(r.detail);
+        return r.user.isEmpty() ? tr("Service: %1").arg(r.detail)
+                                : tr("Service: %1 (runs as %2)").arg(r.detail, r.user);
+    if (e == QLatin1String("ServerEdited")) {
+        const QString fields = serverEditFieldsText(r.detail);
+        if (!fields.isEmpty() && !op.isEmpty())
+            return tr("Changed: %1 — by %2").arg(fields, op);
+        return fields.isEmpty() ? tr("Edited by %1").arg(op) : tr("Changed: %1").arg(fields);
+    }
+    if (e == QLatin1String("ServerConfigured"))
+        return op.isEmpty() ? tr("Session logging and idle limit applied")
+                            : tr("Session logging and idle limit applied by %1").arg(op);
+    if (e == QLatin1String("ServerAdded"))
+        return op.isEmpty() ? r.detail : tr("%1 — added by %2").arg(r.detail, op);
+    if (e == QLatin1String("ServerRemoved"))
+        return op.isEmpty() ? r.detail : tr("%1 — removed by %2").arg(r.detail, op);
     return {};
 }
 
 void AccessLogPage::retranslate()
 {
     m_title->setText(tr("Activity history"));
-    m_subtitle->setText(tr("Sign-ins, failed attempts, disconnections, security alerts and what was done in RConnect."));
-    m_refresh->setText(tr("Fetch from servers"));
+    m_subtitle->setText(tr("Who signed in, disconnected, or failed to sign in."));
+    m_refresh->setText(tr("Refresh"));
     m_export->setText(tr("Export…"));
-    m_open->setText(tr("Open file"));
-    m_filter->setPlaceholderText(tr("Search activity"));
+    m_filter->setPlaceholderText(tr("Search name, server or IP"));
+
     const int current = m_category->currentIndex();
     m_category->blockSignals(true);
     m_category->clear();
-    m_category->addItems({tr("All activity"), tr("Sign-ins"), tr("Failed sign-ins"), tr("Sign-outs and disconnections"),
-                          tr("Done in RConnect"), tr("Security alerts"), tr("Changes on the server")});
+    m_category->addItems({tr("All events"), tr("Sign-ins"), tr("Sign-outs"),
+                          tr("Failed sign-ins"), tr("Security alerts"), tr("Server changes")});
     m_category->setCurrentIndex(qMax(0, current));
     m_category->blockSignals(false);
+
     const int period = m_period->currentIndex();
     m_period->blockSignals(true);
     m_period->clear();
-    m_period->addItems({tr("Any time"), tr("Last hour"), tr("Last 24 hours"), tr("Last 7 days"), tr("Last 30 days")});
-    m_period->setCurrentIndex(qMax(0, period));
+    m_period->addItems({tr("Last 24 hours"), tr("Last 7 days"), tr("Last 30 days"), tr("All time")});
+    m_period->setCurrentIndex(period < 0 ? 1 : period);
     m_period->blockSignals(false);
     applyPeriod();
-    const QString source = m_source->currentData().toString();
-    m_source->blockSignals(true);
-    m_source->clear();
-    m_source->addItem(tr("All sources"), QString());
-    for (const QString &code : WinRm::eventSources() + QStringList{QStringLiteral("RCONNECT")})
-        m_source->addItem(sourceText(code), code);
-    m_source->setCurrentIndex(qMax(0, m_source->findData(source)));
-    m_source->blockSignals(false);
-    m_model->setSource(m_source->currentData().toString());
+
     fillServers();
     updateSyncStatus();
-    m_model->setHeaders({tr("Time"), tr("Server"), tr("Activity"), tr("User"), tr("IP address"),
-                                        tr("Device"), tr("Details"), tr("By")});
+    m_model->setHeaders({tr("Date"), tr("Server"), tr("Event"), tr("Person / Device"), tr("IP address"), tr("Details")});
+    updateCount();
     if (isVisible())
         reload();
 }
@@ -659,7 +1023,7 @@ void AccessLogPage::showEvent(QShowEvent *e)
     QWidget::showEvent(e);
     reload();
     m_timer->start();
-    applyPeriod(); // the window moves with the clock
+    applyPeriod();
 }
 
 void AccessLogPage::hideEvent(QHideEvent *e)
@@ -677,26 +1041,35 @@ void AccessLogPage::changeEvent(QEvent *e)
 
 namespace {
 
-constexpr qint64 kTailBytes = 8 * 1024 * 1024; // how much of the end of the file is read
-constexpr int kMaxRaw = 60000;                   // entries kept before grouping
-constexpr int kRunSeconds = 600;                  // failed attempts this close together are one run
+constexpr qint64 kTailBytes = 8 * 1024 * 1024;
+constexpr int kMaxRaw = 60000;
+constexpr int kRunSeconds = 3600;
 
-QDateTime parseUtc(const QString &timeUtc)
-{
-    return QDateTime::fromString(timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-}
-
-QString shortName(const QString &user)
-{
-    return user.mid(user.lastIndexOf(QLatin1Char('\\')) + 1);
-}
-
-// Failed attempts from one server and address are shown together.
 QList<AccessLine> buildLines(QList<AccessRecord> records)
 {
-    if (records.size() > kMaxRaw)
-        records = records.mid(records.size() - kMaxRaw);
-    // The same address is the same computer: a line that has the name tells it to the others.
+    if (records.size() > kMaxRaw) {
+        // Never let failed sign-in spam evict legitimate sign-in/sign-out/alert records.
+        QList<AccessRecord> nonFailed;
+        QList<AccessRecord> failed;
+        nonFailed.reserve(records.size());
+        for (AccessRecord &r : records) {
+            if (r.event == QLatin1String("FailedLogon"))
+                failed << std::move(r);
+            else
+                nonFailed << std::move(r);
+        }
+        const qsizetype keepFailed = qMax<qsizetype>(0, kMaxRaw - nonFailed.size());
+        if (failed.size() > keepFailed)
+            failed = failed.mid(failed.size() - keepFailed);
+        records.clear();
+        records.reserve(nonFailed.size() + failed.size());
+        for (AccessRecord &r : nonFailed)
+            records << std::move(r);
+        for (AccessRecord &r : failed)
+            records << std::move(r);
+        std::stable_sort(records.begin(), records.end(),
+                         [](const AccessRecord &a, const AccessRecord &b) { return a.timeUtc < b.timeUtc; });
+    }
     QHash<QString, QString> clientByAddress;
     for (const AccessRecord &r : std::as_const(records))
         if (!r.client.isEmpty() && !r.address.isEmpty() && r.source != QLatin1String("RCONNECT"))
@@ -706,39 +1079,68 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
             r.client = clientByAddress.value(r.address);
 
     QList<AccessLine> lines;
-    QHash<QString, int> growing; // server and address -> the line still taking attempts
+    lines.reserve(records.size());
+    struct ActiveRun {
+        int index = 0;
+        qint64 lastMs = 0;
+        QSet<QString> users;
+        QSet<QString> clients;
+        QSet<QString> reasons;
+    };
+    QHash<QString, ActiveRun> growing;
+    constexpr qint64 kRunMs = qint64(kRunSeconds) * 1000;
     for (AccessRecord &r : records) {
-        // A summary line of the log stands for the attempts that were left out ("|more=N").
         int standsFor = 1;
         if (const qsizetype marker = r.detail.indexOf(QLatin1String("|more=")); marker >= 0) {
-            standsFor += r.detail.mid(marker + 6).toInt();
+            standsFor += qMax(0, QStringView(r.detail).mid(marker + 6).toInt());
             r.detail.truncate(marker);
         }
-        if (r.event == QLatin1String("FailedLogon") && !r.address.isEmpty()) {
-            const QString key = r.serverId + QLatin1Char('|') + r.address;
-            const auto it = growing.constFind(key);
-            if (it != growing.cend()) {
-                AccessLine &line = lines[it.value()];
-                const QDateTime last = parseUtc(line.r.timeUtc), now = parseUtc(r.timeUtc);
-                if (last.isValid() && now.isValid() && qAbs(last.secsTo(now)) <= kRunSeconds) {
+        const QString userShort = shortName(r.user);
+        if (r.event == QLatin1String("FailedLogon")) {
+            const QString addrKey = !r.address.isEmpty() ? r.address : (QStringLiteral("C:") + r.client);
+            const QString key = r.serverId + QLatin1Char('|') + addrKey;
+            const qint64 nowMs = parseUtcMs(r.timeUtc);
+            const auto it = growing.find(key);
+            if (it != growing.end()) {
+                ActiveRun &run = it.value();
+                if (run.lastMs != 0 && nowMs != 0 && qAbs(run.lastMs - nowMs) <= kRunMs) {
+                    AccessLine &line = lines[run.index];
                     line.attempts += standsFor;
-                    if (r.timeUtc > line.r.timeUtc)
+                    if (r.timeUtc > line.r.timeUtc) {
                         line.r.timeUtc = r.timeUtc;
+                        run.lastMs = nowMs;
+                    }
                     if (r.timeUtc < line.firstUtc)
                         line.firstUtc = r.timeUtc;
-                    if (!line.users.contains(shortName(r.user)))
-                        line.users << shortName(r.user);
-                    if (!r.client.isEmpty() && !line.clients.contains(r.client))
+                    if (!run.users.contains(userShort)) {
+                        run.users.insert(userShort);
+                        line.users << userShort;
+                    }
+                    if (!r.client.isEmpty() && !run.clients.contains(r.client)) {
+                        run.clients.insert(r.client);
                         line.clients << r.client;
-                    if (!r.detail.isEmpty() && !line.reasons.contains(r.detail))
+                    }
+                    if (!r.detail.isEmpty() && !run.reasons.contains(r.detail)) {
+                        run.reasons.insert(r.detail);
                         line.reasons << r.detail;
+                    }
                     continue;
                 }
             }
-            growing.insert(key, int(lines.size()));
+            ActiveRun run;
+            run.index = int(lines.size());
+            run.lastMs = nowMs;
+            run.users.insert(userShort);
+            if (!r.client.isEmpty())
+                run.clients.insert(r.client);
+            if (!r.detail.isEmpty())
+                run.reasons.insert(r.detail);
+            growing.insert(key, std::move(run));
         }
-        lines.append({r, r.timeUtc, standsFor, {shortName(r.user)}, r.client.isEmpty() ? QStringList() : QStringList{r.client},
-                      r.detail.isEmpty() ? QStringList() : QStringList{r.detail}});
+        QString firstUtc = r.timeUtc;
+        QStringList clients = r.client.isEmpty() ? QStringList() : QStringList{r.client};
+        QStringList reasons = r.detail.isEmpty() ? QStringList() : QStringList{r.detail};
+        lines.append({std::move(r), std::move(firstUtc), standsFor, {userShort}, std::move(clients), std::move(reasons)});
     }
     return lines;
 }
@@ -747,7 +1149,6 @@ QList<AccessLine> buildLines(QList<AccessRecord> records)
 
 void AccessLogPage::reload()
 {
-    // Only when the file changed: the page also refreshes on a timer.
     const QFileInfo info(AccessLog::path());
     const QPair<qint64, qint64> stamp(info.size(), info.lastModified().toMSecsSinceEpoch());
     if (m_loaded && stamp == m_stamp)
@@ -760,7 +1161,6 @@ void AccessLogPage::reload()
     m_loaded = true;
     m_busy = true;
 
-    // The file can be large with many servers: it is read and grouped off the GUI thread.
     QPointer<AccessLogPage> self(this);
     QThreadPool::globalInstance()->start([self] {
         QList<AccessLine> lines = buildLines(AccessLog::readRecent(kTailBytes));
@@ -774,17 +1174,29 @@ void AccessLogPage::reload()
 void AccessLogPage::apply(QList<AccessLine> lines)
 {
     m_busy = false;
+
+    QString selectedId;
+    const QModelIndex current = m_view->currentIndex();
+    const int curLine = current.isValid() ? current.sibling(current.row(), Time).data(kLineRole).toInt() : -1;
+    if (curLine >= 0 && curLine < m_lines.size())
+        selectedId = lineIdentity(m_lines.at(curLine));
+    const int scroll = m_view->verticalScrollBar()->value();
+
     m_lines = std::move(lines);
 
-    // The model only points at the list, so swapping it is cheap; the header keeps its sizes and sort order.
     QHeaderView *header = m_view->horizontalHeader();
     const QByteArray headerState = header->saveState();
     m_view->setUpdatesEnabled(false);
-    m_model->setLines(&m_lines);
     fillServers();
-    header->restoreState(headerState);
-    m_view->setUpdatesEnabled(true);
     applyPeriod();
+    m_model->setLines(&m_lines);
+    header->restoreState(headerState);
+    if (const int row = m_model->findRowByIdentity(selectedId); row >= 0) {
+        m_view->selectionModel()->setCurrentIndex(
+            m_model->index(row, 0), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+    m_view->verticalScrollBar()->setValue(scroll);
+    m_view->setUpdatesEnabled(true);
     showDetail();
     if (m_again) {
         m_again = false;
@@ -792,7 +1204,6 @@ void AccessLogPage::apply(QList<AccessLine> lines)
     }
 }
 
-// Everything known about the selected row.
 void AccessLogPage::showDetail()
 {
     const QModelIndex current = m_view->currentIndex();
@@ -805,53 +1216,61 @@ void AccessLogPage::showDetail()
     const AccessRecord &r = line.r;
     const auto local = [](const QString &timeUtc) {
         const QDateTime utc = parseUtc(timeUtc);
-        return utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : timeUtc;
+        return utc.isValid() ? utc.toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : timeUtc;
     };
+    const QString labelColor = Theme::kLabelSecondary.name();
+    const QString toneHex = colorForTone(toneOfEvent(r.event)).name();
     QStringList cells;
-    const auto add = [&cells](const QString &label, const QString &value) {
-        if (!value.isEmpty())
-            cells << QStringLiteral("<td style='color:#98989d;padding:2px 18px 2px 0'>%1</td><td style='padding:2px 28px 2px 0'>%2</td>")
-                         .arg(label.toHtmlEscaped(), value.toHtmlEscaped());
+    const auto add = [&cells, &labelColor](const QString &label, const QString &value, bool mono = false, const QString &color = {}) {
+        if (value.isEmpty())
+            return;
+        QString valStyle = QStringLiteral("padding:2px 26px 2px 0;");
+        if (mono)
+            valStyle += QStringLiteral("font-family:Consolas,monospace;");
+        if (!color.isEmpty())
+            valStyle += QStringLiteral("color:%1;font-weight:600;").arg(color);
+        cells << QStringLiteral("<td style='color:%1;padding:2px 12px 2px 0'>%2</td><td style='%3'>%4</td>")
+                     .arg(labelColor, label.toHtmlEscaped(), valStyle, value.toHtmlEscaped());
     };
-    add(tr("Time"), line.attempts > 1 ? tr("%1 to %2").arg(local(line.firstUtc), local(r.timeUtc)) : local(r.timeUtc));
+    add(tr("Date"), line.attempts > 1 ? tr("%1 – %2").arg(local(line.firstUtc), local(r.timeUtc)) : local(r.timeUtc), true);
     add(tr("Server"), r.host.isEmpty() ? r.server : QStringLiteral("%1 (%2)").arg(r.server, r.host));
-    add(tr("Activity"), eventText(r.event));
-    add(line.users.size() > 1 ? tr("Accounts tried") : tr("Account"),
-        line.users.size() > 1 ? line.users.mid(0, 12).join(QStringLiteral(", ")) + (line.users.size() > 12 ? QStringLiteral(" …") : QString())
-                              : r.user);
+    add(tr("Event"), eventText(r.event), false, toneHex);
+    const QString actor = changeActorOf(r);
+    if (!actor.isEmpty())
+        add(tr("Changed by"), actor);
+    else if (r.source != QLatin1String("RCONNECT"))
+        add(tr("Person"), Contacts::instance().nameFor(r.client, r.user, r.address));
+    add(line.clients.size() > 1 ? tr("Devices") : tr("Device"),
+        line.clients.size() > 1 ? line.clients.mid(0, 8).join(QStringLiteral(", ")) + (line.clients.size() > 8 ? QStringLiteral(" …") : QString())
+                                : r.client);
+    const QString targetUser = shortName(r.user);
+    if (actor.isEmpty() || targetUser.compare(actor, Qt::CaseInsensitive) != 0) {
+        add(line.users.size() > 1 ? tr("Accounts tried") : (!actor.isEmpty() ? tr("Target account") : tr("Account")),
+            line.users.size() > 1 ? line.users.mid(0, 12).join(QStringLiteral(", ")) + (line.users.size() > 12 ? QStringLiteral(" …") : QString())
+                                  : targetUser);
+    }
     QString where = r.address;
-    QString hostName;
     if (looksLikeIp(r.address)) {
         const QString code = countryOfAddress(r.address);
         if (!code.isEmpty())
             where += QStringLiteral(" · ") + GeoIp::countryName(code);
-        hostName = HostNames::cached(r.address);
-        if (hostName.isEmpty())
-            HostNames::request(r.address);
     }
-    add(tr("IP address"), where);
-    if (r.source != QLatin1String("RCONNECT"))
-        add(tr("Nickname"), Contacts::instance().nameFor(r.client, r.user));
-    add(line.clients.size() > 1 ? tr("Computers") : tr("Device"),
-        line.clients.size() > 1 ? line.clients.mid(0, 8).join(QStringLiteral(", ")) + (line.clients.size() > 8 ? QStringLiteral(" …") : QString())
-                                : r.client);
-    add(tr("Name of the address"), hostName == r.client ? QString() : hostName);
+    add(tr("IP address"), where, true);
+    if (line.attempts > 1)
+        add(tr("Attempts"), QString::number(line.attempts), true);
     if (line.reasons.size() > 1) {
         QStringList why;
-        for (const QString &reason : line.reasons.mid(0, 6))
-            why << detailText(reason);
-        add(tr("Reasons"), why.join(QStringLiteral(", ")));
+        for (const QString &reason : line.reasons.mid(0, 6)) {
+            const QString d = detailText(reason);
+            if (!d.isEmpty() && !why.contains(d))
+                why << d;
+        }
+        add(tr("Reason"), why.join(QStringLiteral(", ")));
+    } else {
+        const QString summary = alertSummary(r);
+        add(tr("Details"), summary.isEmpty() ? detailText(r.detail) : summary);
     }
-    add(tr("Windows session no."), r.sessionId > 0 ? QString::number(r.sessionId) : QString());
-    add(tr("Attempts"), line.attempts > 1 ? QString::number(line.attempts) : QString());
-    add(tr("How"), alertSummary(r).isEmpty() ? detailText(r.detail) : alertSummary(r));
-    add(tr("Done by"), r.operatorName);
-    add(tr("Seen in"), sourceText(r.source));
-    if (r.recordId > 0 && line.attempts == 1)
-        add(tr("Windows record number"), QString::number(r.recordId));
-    add(tr("Record no."), r.recordId > 0 ? QString::number(r.recordId) : QString());
 
-    // Two entries per row of the table.
     QString html = QStringLiteral("<table cellspacing='0'>");
     for (int k = 0; k < cells.size(); k += 2)
         html += QStringLiteral("<tr>") + cells.at(k) + (k + 1 < cells.size() ? cells.at(k + 1) : QString()) + QStringLiteral("</tr>");
@@ -859,7 +1278,6 @@ void AccessLogPage::showDetail()
     m_detail->show();
 }
 
-// The servers that appear in the history, keeping the choice made.
 void AccessLogPage::fillServers()
 {
     const QString chosen = m_server->currentData().toString();
@@ -892,54 +1310,44 @@ void AccessLogPage::setSyncState(const QString &id, const QString &name, bool ru
     m_syncStates.insert(id, {name, running, failedChannels, error});
     updateSyncStatus();
     if (!running && isVisible())
-        reload();
+        m_syncReloadTimer->start();
 }
 
 void AccessLogPage::updateSyncStatus()
 {
     const QString selected = m_server->currentData().toString();
     QStringList details;
-    int running = 0, incomplete = 0, complete = 0;
+    int running = 0, incomplete = 0;
     for (auto it = m_syncStates.cbegin(); it != m_syncStates.cend(); ++it) {
         if (!selected.isEmpty() && selected != it.key())
             continue;
         const SyncState &state = it.value();
-        QStringList issues;
-        if (!state.error.isEmpty())
-            issues << state.error;
-        QStringList channels;
-        for (const QString &channel : state.failedChannels)
-            channels << sourceText(channel);
-        if (!channels.isEmpty())
-            issues << tr("Could not read: %1").arg(channels.join(QStringLiteral(", ")));
-        if (!issues.isEmpty()) {
+        if (!state.error.isEmpty()) {
             ++incomplete;
-            details << state.name + QStringLiteral(" · ") + issues.join(QStringLiteral(" · "));
+            details << state.name + QStringLiteral(" · ") + state.error;
         }
         if (state.running)
             ++running;
-        else if (issues.isEmpty())
-            ++complete;
     }
     QStringList states;
     if (running > 0)
-        states << tr("Reading %1 servers").arg(running);
+        states << tr("Updating %1 servers…").arg(running);
     if (incomplete > 0)
-        states << tr("Missing data on %1 servers").arg(incomplete);
-    if (complete > 0)
-        states << tr("Logs read on %1 servers").arg(complete);
-    m_syncStatus->setText(states.isEmpty() ? tr("Windows logs are read over WinRM.") : states.join(QStringLiteral(" · ")));
-    if (!selected.isEmpty() && !details.isEmpty())
-        m_syncStatus->setText(details.first());
-    m_syncStatus->setToolTip(details.isEmpty() ? QString() : QStringLiteral("<qt>") +
-                             details.join(QLatin1Char('\n')).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"))
+        states << tr("Could not reach %1 servers").arg(incomplete);
+    if (states.isEmpty()) {
+        m_syncStatus->hide();
+        return;
+    }
+    m_syncStatus->setText(!selected.isEmpty() && !details.isEmpty() ? details.first() : states.join(QStringLiteral(" · ")));
+    m_syncStatus->setToolTip(details.isEmpty() ? QString() : QStringLiteral("<qt>")
+                             + details.join(QLatin1Char('\n')).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"))
                              + QStringLiteral("</qt>"));
+    m_syncStatus->show();
 }
 
 void AccessLogPage::applyPeriod()
 {
-    const int hours = kPeriodHours[qBound(0, m_period->currentIndex(), 4)];
-    // To the minute, so the clock moving on does not refilter the list every time the page is shown.
+    const int hours = kPeriodHours[qBound(0, m_period->currentIndex(), 3)];
     m_model->setSince(hours == 0 ? QString()
                                  : QDateTime::currentDateTimeUtc().addSecs(-qint64(hours) * 3600)
                                        .toString(QStringLiteral("yyyy-MM-ddTHH:mm:00")));
@@ -947,15 +1355,30 @@ void AccessLogPage::applyPeriod()
 
 void AccessLogPage::updateCount()
 {
-    m_count->setText(m_lines.isEmpty()
-                         ? tr("Nothing recorded yet. Activity appears here after your servers have been checked.")
-                         : tr("Showing %1 of %2 recent rows").arg(m_model->rowCount()).arg(m_lines.size()));
+    const qint64 hiddenAttempts = m_model->hiddenFailedAttempts();
+    const bool showFailed = m_showFailed->isChecked();
+    m_showFailed->setVisible(m_category->currentIndex() == All);
+    if (showFailed)
+        m_showFailed->setText(tr("Hide failed sign-ins"));
+    else if (hiddenAttempts > 0)
+        m_showFailed->setText(tr("Show failed (%1)").arg(hiddenAttempts));
+    else
+        m_showFailed->setText(tr("Show failed"));
+
+    if (m_lines.isEmpty()) {
+        m_count->setText(tr("No activity recorded yet."));
+    } else if (hiddenAttempts > 0) {
+        m_count->setText(tr("Showing %1 records · %2 failed attempts hidden")
+                             .arg(m_model->rowCount())
+                             .arg(hiddenAttempts));
+    } else {
+        m_count->setText(tr("Showing %1 records").arg(m_model->rowCount()));
+    }
 }
 
-// The rows shown now, in the order shown, for a report.
 void AccessLogPage::exportCsv()
 {
-    const QString name = QStringLiteral("rconnect-access-log-%1.csv")
+    const QString name = QStringLiteral("rconnect-activity-%1.csv")
                              .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmm")));
     const QString path = QFileDialog::getSaveFileName(this, tr("Export"), name, tr("CSV files (*.csv)"));
     if (path.isEmpty())
@@ -965,15 +1388,27 @@ void AccessLogPage::exportCsv()
         QMessageBox::warning(this, tr("Export"), tr("Could not write the file."));
         return;
     }
-    f.write("\xEF\xBB\xBF"); // so Excel reads it as UTF-8
+    QByteArray buf;
+    buf.reserve(65536);
+    buf.append("\xEF\xBB\xBF");
     QStringList header;
+    header.reserve(ColumnCount);
     for (int c = 0; c < ColumnCount; ++c)
         header << csvField(m_model->headerData(c, Qt::Horizontal, Qt::DisplayRole).toString());
-    f.write(header.join(QLatin1Char(',')).toUtf8() + "\r\n");
+    buf.append(header.join(QLatin1Char(',')).toUtf8());
+    buf.append("\r\n");
     for (int row = 0; row < m_model->rowCount(); ++row) {
         QStringList fields;
+        fields.reserve(ColumnCount);
         for (int c = 0; c < ColumnCount; ++c)
             fields << csvField(m_model->index(row, c).data().toString());
-        f.write(fields.join(QLatin1Char(',')).toUtf8() + "\r\n");
+        buf.append(fields.join(QLatin1Char(',')).toUtf8());
+        buf.append("\r\n");
+        if (buf.size() >= 65536) {
+            f.write(buf);
+            buf.clear();
+        }
     }
+    if (!buf.isEmpty())
+        f.write(buf);
 }

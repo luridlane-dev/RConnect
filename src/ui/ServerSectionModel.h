@@ -22,6 +22,10 @@ public:
     // `source` must be sorted by group; it is not owned.
     explicit ServerSectionModel(QAbstractItemModel *source, QObject *parent = nullptr);
 
+    static const QString &favoritesSectionKey();
+    void setFavoritesFirst(bool favoritesFirst);
+    bool favoritesFirst() const { return m_favoritesFirst; }
+
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role) const override;
 
@@ -47,6 +51,7 @@ private:
         QVector<QString> id;
         QHash<QString, Totals> totals;
     };
+    QString sectionKey(const QModelIndex &index) const;
     Snapshot snapshot(bool withIds) const;
 
     void rebuild();
@@ -61,4 +66,5 @@ private:
     QVector<QString> m_groupOfSource; // as of the last rebuild
     QSet<QString> m_collapsed;  // group names
     bool m_headersQueued = false;
+    bool m_favoritesFirst = true;
 };

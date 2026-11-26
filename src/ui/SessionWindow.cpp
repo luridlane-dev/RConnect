@@ -2,6 +2,7 @@
 
 #include "SessionTabs.h"
 #include "Theme.h"
+#include "core/JumpList.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -361,7 +362,11 @@ void SessionWindow::updateSessionTab(RdpSession *s, bool attention)
 void SessionWindow::pulseTabs()
 {
     const qreal phase = 0.5 + 0.5 * std::sin(QTime::currentTime().msecsSinceStartOfDay() / 1000.0 * 5.0);
+    const int step = qRound((0.35 + 0.65 * phase) * 8);
     bool any = false;
+    QColor c = Theme::kBlue;
+    c.setAlpha(step * 255 / 8);
+    const QIcon icon = step != m_lastPulseStep ? dotIcon(c) : QIcon{};
     for (RdpSession *s : std::as_const(m_sessions)) {
         if (s->state() != RdpSession::Connecting)
             continue;
@@ -369,12 +374,15 @@ void SessionWindow::pulseTabs()
         if (i < 0)
             continue;
         any = true;
-        QColor c = Theme::kBlue;
-        c.setAlpha(qRound((0.35 + 0.65 * phase) * 8) * 255 / 8);
-        m_tabBar->setTabIcon(i, dotIcon(c));
+        if (step != m_lastPulseStep)
+            m_tabBar->setTabIcon(i, icon);
     }
-    if (!any)
+    if (any) {
+        m_lastPulseStep = step;
+    } else {
+        m_lastPulseStep = -1;
         m_pulse.stop();
+    }
 }
 
 void SessionWindow::onTabChanged(int index)
@@ -415,16 +423,19 @@ void SessionWindow::showTabMenu(const QPoint &pos)
     menu.exec(m_tabBar->mapToGlobal(pos));
 }
 
-void SessionWindow::setNotesProvider(std::function<QString(const QString &)> provider)
+void SessionWindow::setNotesProvider(std::function<QString(const QString &)> provider,
+                                     std::function<bool(const QString &)> hasNotes)
 {
     m_notes = std::move(provider);
+    m_hasNotes = std::move(hasNotes);
     updateNotesButton();
 }
 
 void SessionWindow::updateNotesButton()
 {
     RdpSession *s = currentSession();
-    m_notesButton->setVisible(s && m_notes && !m_notes(s->serverId()).isEmpty());
+    const bool has = s && (m_hasNotes ? m_hasNotes(s->serverId()) : (m_notes && !m_notes(s->serverId()).isEmpty()));
+    m_notesButton->setVisible(has);
 }
 
 void SessionWindow::showNotes()
@@ -466,6 +477,9 @@ void SessionWindow::showNotes()
     popup->resize(380, 230);
     const QPoint anchor = m_notesButton->mapToGlobal(QPoint(m_notesButton->width(), m_notesButton->height() + 2));
     popup->move(anchor.x() - popup->width(), anchor.y());
+    // Release native Win32 focus from the active RDP control (IHWindowClass) so keyboard shortcuts work in the popup.
+    if (HWND host = reinterpret_cast<HWND>(winId()))
+        SetFocus(host);
     popup->show();
 }
 
@@ -592,13 +606,41 @@ void SessionWindow::changeEvent(QEvent *e)
                     enterFullscreen();
             });
         }
-        if (!isMinimized())
-            markFullscreen(this, isFullScreen());
+        const bool full = isFullScreen();
+        if (!isMinimized() && full != m_wasFullscreen) {
+            m_wasFullscreen = full;
+            markFullscreen(this, full);
+        }
         applyChrome();
         emit minimizedChanged(isMinimized());
     } else if (e->type() == QEvent::LanguageChange) {
         retranslate();
+        emit languageChanged();
     }
+}
+
+bool SessionWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    if (isMain() && eventType == "windows_generic_MSG") {
+        const auto *msg = static_cast<const MSG *>(message);
+        if (msg->message == WM_COPYDATA && msg->lParam) {
+            const auto *cds = reinterpret_cast<const COPYDATASTRUCT *>(msg->lParam);
+            if (cds->dwData == JumpList::kCopyDataConnect && cds->lpData && cds->cbData > 0 && cds->cbData <= 256) {
+                const QString id = QString::fromUtf8(static_cast<const char *>(cds->lpData), int(cds->cbData)).trimmed();
+                if (!id.isEmpty()) {
+                    if (isMinimized())
+                        showNormal();
+                    raise();
+                    activateWindow();
+                    QTimer::singleShot(0, this, [this, id] { emit connectServerRequested(id); });
+                }
+                if (result)
+                    *result = 1;
+                return true;
+            }
+        }
+    }
+    return QWidget::nativeEvent(eventType, message, result);
 }
 
 void SessionWindow::closeEvent(QCloseEvent *e)

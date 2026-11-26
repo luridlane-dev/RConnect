@@ -70,7 +70,12 @@ inline QString idleText(int minutes)
         return QCoreApplication::translate("ServerStatus", "using it right now");
     if (minutes < 60)
         return QCoreApplication::translate("ServerStatus", "not used for %1 min").arg(minutes);
-    return QCoreApplication::translate("ServerStatus", "not used for %1 h").arg(minutes / 60);
+    if (minutes < 24 * 60) {
+        return minutes % 60 == 0
+            ? QCoreApplication::translate("ServerStatus", "not used for %1 h").arg(minutes / 60)
+            : QCoreApplication::translate("ServerStatus", "not used for %1 h %2 min").arg(minutes / 60).arg(minutes % 60);
+    }
+    return QCoreApplication::translate("ServerStatus", "not used for %1 d %2 h").arg(minutes / (24 * 60)).arg(minutes / 60 % 24);
 }
 
 // The nickname from the contacts, else the computer name, or the user name when the computer is unknown.
@@ -110,13 +115,31 @@ inline QString statusBadge(const ServerStatus &s)
     return {};
 }
 
+// Compact duration for scannable card tags: "<1m", "45m", "2h 30m", "1d 4h".
+inline QString compactDuration(qint64 minutes)
+{
+    if (minutes < 0)
+        return {};
+    if (minutes == 0)
+        return QCoreApplication::translate("ServerStatus", "<1m");
+    if (minutes < 60)
+        return QCoreApplication::translate("ServerStatus", "%1m").arg(minutes);
+    if (minutes < 24 * 60) {
+        return minutes % 60 == 0
+            ? QCoreApplication::translate("ServerStatus", "%1h").arg(minutes / 60)
+            : QCoreApplication::translate("ServerStatus", "%1h %2m").arg(minutes / 60).arg(minutes % 60);
+    }
+    return minutes / 60 % 24 == 0
+        ? QCoreApplication::translate("ServerStatus", "%1d").arg(minutes / (24 * 60))
+        : QCoreApplication::translate("ServerStatus", "%1d %2h").arg(minutes / (24 * 60)).arg(minutes / 60 % 24);
+}
+
 // A short activity label for a busy card.
 inline QString idleShort(int minutes)
 {
     if (minutes < 1)
         return QCoreApplication::translate("ServerStatus", "Active");
-    return minutes < 60 ? QCoreApplication::translate("ServerStatus", "Idle %1 min").arg(minutes)
-                        : QCoreApplication::translate("ServerStatus", "Idle %1 h").arg(minutes / 60);
+    return QCoreApplication::translate("ServerStatus", "%1 idle").arg(compactDuration(minutes));
 }
 
 inline qint64 connectionMinutes(const ServerStatus &status, const RemoteSession &session)
@@ -124,6 +147,13 @@ inline qint64 connectionMinutes(const ServerStatus &status, const RemoteSession 
     if (!session.connected || session.connectedSinceUtcMs <= 0 || status.serverNowUtcMs < session.connectedSinceUtcMs)
         return -1;
     return (status.serverNowUtcMs - session.connectedSinceUtcMs) / 60000;
+}
+
+inline QString sessionTagText(qint64 minutes)
+{
+    if (minutes < 0)
+        return {};
+    return QCoreApplication::translate("ServerStatus", "Session %1").arg(compactDuration(minutes));
 }
 
 inline QString connectionDurationText(qint64 minutes)

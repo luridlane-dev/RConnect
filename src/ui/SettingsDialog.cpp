@@ -168,8 +168,36 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
     connect(m_clearCache, &QPushButton::clicked, this, [this] { scanCache(true); });
 
     QFrame *data = block(serversPage);
+    m_sorting = new QComboBox(data);
+    m_sorting->setFixedWidth(210);
+    m_sorting->addItems({QString(), QString()});
+    m_sorting->setCurrentIndex(QSettings().value(QStringLiteral("ui/favoritesFirst"), true).toBool() ? 0 : 1);
+    connect(m_sorting, &QComboBox::activated, this, [this](int i) {
+        QSettings().setValue(QStringLiteral("ui/favoritesFirst"), i == 0);
+        emit serverLayoutChanged();
+    });
+    row(data, m_sortingLabel, m_sorting);
+
     sectionLabel(serversPage, m_groupHeading);
     QFrame *groups = block(serversPage);
+    auto *addGroupRow = new QHBoxLayout;
+    addGroupRow->setSpacing(8);
+    m_newGroup = new QLineEdit(groups);
+    m_newGroup->setClearButtonEnabled(true);
+    m_addGroup = new QPushButton(groups);
+    m_addGroup->setAutoDefault(false);
+    auto createGroup = [this] {
+        const QString name = m_newGroup->text().trimmed();
+        if (name.isEmpty())
+            return;
+        m_store->addGroup(name);
+        m_newGroup->clear();
+    };
+    connect(m_addGroup, &QPushButton::clicked, this, createGroup);
+    connect(m_newGroup, &QLineEdit::returnPressed, this, createGroup);
+    addGroupRow->addWidget(m_newGroup, 1);
+    addGroupRow->addWidget(m_addGroup);
+    static_cast<QVBoxLayout *>(groups->layout())->addLayout(addGroupRow);
     m_groupRows = new QVBoxLayout;
     m_groupRows->setSpacing(6);
     static_cast<QVBoxLayout *>(groups->layout())->addLayout(m_groupRows);
@@ -177,6 +205,7 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
     m_groupHint->setObjectName(QStringLiteral("fieldHint"));
     m_groupHint->setWordWrap(true);
     groups->layout()->addWidget(m_groupHint);
+    connect(m_store, &ServerStore::groupsChanged, this, &SettingsDialog::rebuildGroups);
     // dataChanged also comes with every status check: only a change of the group names rebuilds the rows.
     connect(m_store, &QAbstractItemModel::dataChanged, this, [this] {
         if (m_store->groups() != m_shownGroups)
@@ -293,7 +322,12 @@ void SettingsDialog::retranslate()
     m_pagesHeading->setText(tr("Pages"));
     m_logHeading->setText(tr("Logging"));
     m_groupHeading->setText(tr("Groups"));
-    m_groupHint->setText(tr("A group appears when a server is put in it: right-click a server, then Group."));
+    m_newGroup->setPlaceholderText(tr("New group name"));
+    m_addGroup->setText(tr("Add group"));
+    m_groupHint->setText(tr("Create groups here, or right-click a server to assign one."));
+    m_sortingLabel->setText(tr("Server sorting"));
+    m_sorting->setItemText(0, tr("All favourites first"));
+    m_sorting->setItemText(1, tr("Group by category"));
     rebuildGroups();
     m_labels[0]->setText(tr("Language"));
     m_labels[1]->setText(tr("Appearance"));
@@ -394,9 +428,16 @@ void SettingsDialog::rebuildGroups()
         label->setTextFormat(Qt::PlainText);
         label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         label->setToolTip(name.toHtmlEscaped());
+        const int serverCount = m_store->groupServerCount(name);
+        auto *countLabel = new QLabel(serverCount == 0 ? tr("empty")
+                                                       : (serverCount == 1 ? tr("1 server") : tr("%1 servers").arg(serverCount)));
+        countLabel->setObjectName(QStringLiteral("fieldHint"));
         auto *rename = new QPushButton(tr("Rename…"));
+        rename->setAutoDefault(false);
         auto *remove = new QPushButton(tr("Remove"));
+        remove->setAutoDefault(false);
         row->addWidget(label, 1);
+        row->addWidget(countLabel);
         row->addWidget(rename);
         row->addWidget(remove);
         connect(rename, &QPushButton::clicked, this, [this, name] {

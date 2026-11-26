@@ -33,17 +33,22 @@ class Rc4(key: ByteArray) {
         }
     }
 
-    fun process(data: ByteArray): ByteArray {
-        val out = ByteArray(data.size)
-        for (n in data.indices) {
+    fun process(data: ByteArray, offset: Int = 0, length: Int = data.size - offset): ByteArray {
+        val out = ByteArray(length)
+        for (n in 0 until length) {
             i = (i + 1) and 0xFF
             j = (j + s[i]) and 0xFF
             val t = s[i]; s[i] = s[j]; s[j] = t
-            out[n] = (data[n].toInt() xor s[(s[i] + s[j]) and 0xFF]).toByte()
+            out[n] = (data[offset + n].toInt() xor s[(s[i] + s[j]) and 0xFF]).toByte()
         }
         return out
     }
 }
+
+private val MD4_S1 = intArrayOf(3, 7, 11, 19)
+private val MD4_S2 = intArrayOf(3, 5, 9, 13)
+private val MD4_S3 = intArrayOf(3, 9, 11, 15)
+private val MD4_ORDER = intArrayOf(0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)
 
 fun md4(message: ByteArray): ByteArray {
     val padLen = ((56 - (message.size + 1) % 64) + 64) % 64
@@ -73,27 +78,27 @@ fun md4(message: ByteArray): ByteArray {
         }
         val aa = a; val bb = b; val cc = c; val dd = d
 
-        val s1 = intArrayOf(3, 7, 11, 19)
         for (n in 0 until 16) {
-            val t = rol(a + f(b, c, d) + x[n], s1[n % 4])
+            val t = rol(a + f(b, c, d) + x[n], MD4_S1[n and 3])
             a = d; d = c; c = b; b = t
         }
-        val s2 = intArrayOf(3, 5, 9, 13)
         for (n in 0 until 16) {
-            val k = (n % 4) * 4 + n / 4
-            val t = rol(a + g(b, c, d) + x[k] + 0x5a827999, s2[n % 4])
+            val k = (n and 3) * 4 + (n ushr 2)
+            val t = rol(a + g(b, c, d) + x[k] + 0x5a827999, MD4_S2[n and 3])
             a = d; d = c; c = b; b = t
         }
-        val s3 = intArrayOf(3, 9, 11, 15)
-        val order = intArrayOf(0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)
         for (n in 0 until 16) {
-            val t = rol(a + h(b, c, d) + x[order[n]] + 0x6ed9eba1, s3[n % 4])
+            val t = rol(a + h(b, c, d) + x[MD4_ORDER[n]] + 0x6ed9eba1, MD4_S3[n and 3])
             a = d; d = c; c = b; b = t
         }
         a += aa; b += bb; c += cc; d += dd
     }
     val out = ByteArray(16)
-    for ((n, v) in intArrayOf(a, b, c, d).withIndex())
-        for (k in 0 until 4) out[n * 4 + k] = (v ushr (8 * k)).toByte()
+    for (k in 0 until 4) {
+        out[k] = (a ushr (8 * k)).toByte()
+        out[4 + k] = (b ushr (8 * k)).toByte()
+        out[8 + k] = (c ushr (8 * k)).toByte()
+        out[12 + k] = (d ushr (8 * k)).toByte()
+    }
     return out
 }

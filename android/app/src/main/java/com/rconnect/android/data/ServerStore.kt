@@ -36,14 +36,21 @@ private object Vault {
     private const val ALIAS = "rconnect_passwords"
     private const val IV_BYTES = 12
     private const val TAG_BYTES = 16
+    @Volatile
+    private var cachedKey: SecretKey? = null
 
     @Synchronized
     private fun key(recreate: Boolean = false): SecretKey {
+        if (!recreate) cachedKey?.let { return it }
+        cachedKey = null
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         if (recreate) {
             runCatching { store.deleteEntry(ALIAS) }
         } else {
-            runCatching { store.getKey(ALIAS, null) as? SecretKey }.getOrNull()?.let { return it }
+            runCatching { store.getKey(ALIAS, null) as? SecretKey }.getOrNull()?.let {
+                cachedKey = it
+                return it
+            }
             runCatching { if (store.containsAlias(ALIAS)) store.deleteEntry(ALIAS) }
         }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
@@ -54,7 +61,7 @@ private object Vault {
                 .setKeySize(256)
                 .build(),
         )
-        return generator.generateKey()
+        return generator.generateKey().also { cachedKey = it }
     }
 
     @Synchronized
@@ -105,22 +112,32 @@ class ClientNames(context: Context) {
 
 class ServerStore(context: Context) {
     private val prefs = context.getSharedPreferences("servers", Context.MODE_PRIVATE)
+    // Caches (plaintext -> ciphertext) per server id so non-password edits (favorite, group) don't re-encrypt every server.
+    private val encryptedPasswords = HashMap<String, Pair<String, String>>()
 
     // One damaged entry must not take the whole list with it: the next save would write the shortened list back.
+    @Synchronized
     fun load(): List<ServerEntry> {
         val array = try { JSONArray(prefs.getString("list", "[]")) } catch (_: Exception) { return emptyList() }
+        encryptedPasswords.clear()
         return (0 until array.length()).mapNotNull {
             try {
                 val o = array.getJSONObject(it)
                 val extraStr = o.optString("extra")
                 val favorite = if (o.has("favorite")) o.optBoolean("favorite", false)
                 else runCatching { JSONObject(extraStr).optBoolean("IsFavorite", false) }.getOrDefault(false)
+                val id = o.getString("id")
+                val encPw = o.optString("password")
+                val plainPw = Vault.decrypt(encPw)
+                if (plainPw.isNotEmpty() && encPw.isNotEmpty()) {
+                    encryptedPasswords[id] = plainPw to encPw
+                }
                 ServerEntry(
-                    id = o.getString("id"),
+                    id = id,
                     name = o.optString("name"),
                     host = o.getString("host"),
                     user = o.optString("user"),
-                    password = Vault.decrypt(o.optString("password")),
+                    password = plainPw,
                     group = o.optString("group"),
                     port = o.optInt("port", 3389).takeIf { p -> p in 1..65535 } ?: 3389,
                     favorite = favorite,
@@ -132,20 +149,36 @@ class ServerStore(context: Context) {
         }
     }
 
+    @Synchronized
     fun save(servers: List<ServerEntry>) {
         val array = JSONArray()
-        for (s in servers) array.put(
-            JSONObject()
-                .put("id", s.id)
-                .put("name", s.name)
-                .put("host", s.host)
-                .put("user", s.user)
-                .put("password", Vault.encrypt(s.password))
-                .put("group", s.group)
-                .put("port", s.port)
-                .put("favorite", s.favorite)
-                .put("extra", s.extra),
-        )
+        val nextCache = HashMap<String, Pair<String, String>>(servers.size)
+        for (s in servers) {
+            val encPw = if (s.password.isEmpty()) {
+                ""
+            } else {
+                val cached = encryptedPasswords[s.id]
+                if (cached != null && cached.first == s.password) cached.second
+                else Vault.encrypt(s.password)
+            }
+            if (s.password.isNotEmpty() && encPw.isNotEmpty()) {
+                nextCache[s.id] = s.password to encPw
+            }
+            array.put(
+                JSONObject()
+                    .put("id", s.id)
+                    .put("name", s.name)
+                    .put("host", s.host)
+                    .put("user", s.user)
+                    .put("password", encPw)
+                    .put("group", s.group)
+                    .put("port", s.port)
+                    .put("favorite", s.favorite)
+                    .put("extra", s.extra),
+            )
+        }
+        encryptedPasswords.clear()
+        encryptedPasswords.putAll(nextCache)
         prefs.edit(commit = true) { putString("list", array.toString()) }
     }
 }

@@ -1,12 +1,16 @@
 package com.rconnect.android.winrm
 
+import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.Locale
 import java.util.UUID
@@ -24,7 +28,13 @@ class WinRmClient(
     private val port: Int = 5985,
     private val rdpPort: Int = RDP_PORT,
 ) {
-    private class Response(val status: Int, val authenticate: List<String>, val contentType: String, val body: ByteArray)
+    private class Response(
+        val status: Int,
+        val authenticate: List<String>,
+        val contentType: String,
+        val body: ByteArray,
+        val dateUtcMs: Long = 0L,
+    )
 
     private var socket: Socket? = null
     private lateinit var input: InputStream
@@ -34,21 +44,40 @@ class WinRmClient(
     private val to = "http://$hostHeader/wsman"
     private var startedAt = 0L
     private var lastLatencyMs = -1
+    private var lastServerNowUtcMs = 0L
 
-    /** The server's sessions, and (when [withEvents]) the session events after [lookbackMs] ago. */
-    fun snapshot(withEvents: Boolean, lookbackMs: Long = DEFAULT_LOOKBACK_MS): ServerSnapshot {
-        val text = run(sessionCommand(if (withEvents) lookbackMs else null))
-        return Parsing.snapshot(text, withEvents).copy(latencyMs = lastLatencyMs)
+    /** The server's sessions, recent connection times, and (when [withEvents]) the full event log after [lookbackMs] ago. */
+    fun snapshot(
+        withEvents: Boolean,
+        lookbackMs: Long = DEFAULT_LOOKBACK_MS,
+        includeTimes: Boolean = true,
+    ): ServerSnapshot {
+        val text = run(sessionCommand(if (withEvents) lookbackMs else null, includeTimes))
+        return Parsing.snapshot(text, withEvents, fallbackServerNowMs = lastServerNowUtcMs)
+            .copy(latencyMs = lastLatencyMs)
+    }
+
+    /** Sends a popup message to an active Windows session using msg.exe. */
+    fun sendMessage(sessionId: Int, message: String) {
+        val safe = message.replace('\r', ' ').replace('\n', ' ')
+            .replace("\"", "'").replace("&", " ").replace("|", " ").replace("<", " ").replace(">", " ")
+            .replace("^", " ").replace("%", " ").trim().take(255)
+        if (sessionId <= 0 || safe.isEmpty()) throw WinRmException.Failed("Invalid message.")
+        run("msg $sessionId /TIME:0 $safe")
     }
 
     fun run(command: String): String {
         startedAt = System.currentTimeMillis()
         lastLatencyMs = -1
+        lastServerNowUtcMs = 0L
         try {
             connect()
         } catch (e: Exception) {
             if (e !is IOException && e !is IllegalArgumentException) throw e
-            // One lost connection attempt is not an outage (mobile networks drop some); try once more.
+            // An explicit TCP RST (ConnectException: port closed) will fail immediately again; only retry transient drops.
+            if (e is ConnectException) {
+                throw WinRmException.Unreachable("Could not reach the server's remote management service (port $port).", rdpOpen())
+            }
             try {
                 Thread.sleep(RETRY_DELAY_MS)
                 connect()
@@ -81,8 +110,8 @@ class WinRmClient(
             s.soTimeout = timeoutMs
             s.tcpNoDelay = true
             socket = s
-            input = s.getInputStream().buffered()
-            output = s.getOutputStream()
+            input = s.getInputStream().buffered(16384)
+            output = BufferedOutputStream(s.getOutputStream(), 8192)
         } catch (e: Exception) {
             try { s.close() } catch (_: IOException) {}
             throw e
@@ -97,25 +126,27 @@ class WinRmClient(
         false
     }
 
-    private fun request(contentType: String, body: ByteArray, auth: ByteArray? = null): ByteArray {
-        val head = StringBuilder()
+    private fun writeRequest(contentType: String, body: ByteArray, auth: ByteArray? = null) {
+        val head = StringBuilder(256)
             .append("POST /wsman HTTP/1.1\r\nHost: ").append(hostHeader).append("\r\nUser-Agent: RConnect\r\n")
             .append("Connection: Keep-Alive\r\nContent-Type: ").append(contentType).append("\r\n")
             .append("Content-Length: ").append(body.size).append("\r\n")
         if (auth != null) head.append("Authorization: Negotiate ").append(Base64.getEncoder().encodeToString(auth)).append("\r\n")
         head.append("\r\n")
-        return head.toString().toByteArray(Charsets.ISO_8859_1) + body
+        output.write(head.toString().toByteArray(Charsets.ISO_8859_1))
+        if (body.isNotEmpty()) output.write(body)
+        output.flush()
     }
 
     private fun readLine(): String {
-        val line = ByteArrayOutputStream()
+        val sb = StringBuilder(64)
         while (true) {
             val b = input.read()
             if (b < 0) throw IOException("closed")
             if (b == '\n'.code) break
-            if (b != '\r'.code) line.write(b)
+            if (b != '\r'.code) sb.append(b.toChar())
         }
-        return String(line.toByteArray(), Charsets.ISO_8859_1)
+        return sb.toString()
     }
 
     private fun readBytes(n: Int): ByteArray {
@@ -129,6 +160,16 @@ class WinRmClient(
         return buf
     }
 
+    private fun copyBytes(n: Int, dest: ByteArrayOutputStream, scratch: ByteArray) {
+        var remaining = n
+        while (remaining > 0) {
+            val r = input.read(scratch, 0, minOf(remaining, scratch.size))
+            if (r < 0) throw IOException("closed")
+            dest.write(scratch, 0, r)
+            remaining -= r
+        }
+    }
+
     private fun receive(): Response {
         var status = readLine().split(' ').getOrNull(1)?.toIntOrNull() ?: 0
         while (status == 100) {
@@ -139,6 +180,7 @@ class WinRmClient(
         var contentType = ""
         var length = 0
         var chunked = false
+        var dateUtcMs = 0L
         while (true) {
             val line = readLine()
             if (line.isEmpty()) break
@@ -151,13 +193,16 @@ class WinRmClient(
                 "content-type" -> contentType = value
                 "content-length" -> length = value.toIntOrNull() ?: 0
                 "transfer-encoding" -> chunked = value.lowercase(Locale.ROOT).contains("chunked")
+                "date" -> runCatching { ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }
+                    .getOrNull()?.let { dateUtcMs = it }
             }
         }
         if (!chunked) {
             if (length < 0 || length > MAX_RESPONSE_BYTES) throw IOException("invalid content length")
-            return Response(status, authenticate, contentType, readBytes(length))
+            return Response(status, authenticate, contentType, readBytes(length), dateUtcMs)
         }
         val body = ByteArrayOutputStream()
+        val scratch = ByteArray(8192)
         while (true) {
             val size = readLine().substringBefore(';').trim().toIntOrNull(16)
                 ?: throw IOException("invalid chunk size")
@@ -166,17 +211,17 @@ class WinRmClient(
                 while (readLine().isNotEmpty()) {}
                 break
             }
-            body.write(readBytes(size))
+            copyBytes(size, body, scratch)
             readLine()
         }
-        return Response(status, authenticate, contentType, body.toByteArray())
+        return Response(status, authenticate, contentType, body.toByteArray(), dateUtcMs)
     }
 
     // ---- sign-in ----------------------------------------------------------------------------
 
     private fun authenticate() {
         val type = "application/soap+xml;charset=UTF-8"
-        output.write(request(type, ByteArray(0), ntlm.negotiateMessage())); output.flush()
+        writeRequest(type, EMPTY_BYTES, ntlm.negotiateMessage())
         var resp = receive()
         val challenge = resp.authenticate.firstOrNull { it.startsWith("Negotiate ") }
             ?.let { Base64.getDecoder().decode(it.substring(10).trim()) }
@@ -187,7 +232,7 @@ class WinRmClient(
         } catch (e: IllegalArgumentException) {
             throw WinRmException.Failed(e.message ?: "NTLM sign-in failed.")
         }
-        output.write(request(type, ByteArray(0), token)); output.flush()
+        writeRequest(type, EMPTY_BYTES, token)
         resp = receive()
         if (resp.status == 401)
             throw WinRmException.AuthFailed("Sign-in was refused. Use one of the server's administrator accounts.")
@@ -248,70 +293,91 @@ class WinRmClient(
     private fun call(action: String, shellId: String, options: String, body: String, timeoutIsOk: Boolean = false): Reply {
         val plain = envelope(action, shellId, options, body)
         val (signature, sealed) = ntlm.seal(plain)
-        val payload = ByteArrayOutputStream().apply {
+        val payload = ByteArrayOutputStream(plain.size + 256).apply {
             write("$BOUNDARY\r\n\tContent-Type: $PROTOCOL\r\n\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length=${plain.size}\r\n$BOUNDARY\r\n".toByteArray())
             write(OCTET_HEADER)
             write(Ntlm.le32(signature.size)); write(signature); write(sealed)
-            write("$BOUNDARY--\r\n".toByteArray())
+            write(BOUNDARY_END_CRLF)
         }.toByteArray()
-        val contentType = "multipart/encrypted;protocol=\"$PROTOCOL\";boundary=\"Encrypted Boundary\""
-        output.write(request(contentType, payload)); output.flush()
+        writeRequest(ENCRYPTED_CONTENT_TYPE, payload)
         val resp = receive()
+        if (resp.dateUtcMs > 0L) lastServerNowUtcMs = resp.dateUtcMs
         if (resp.status == 401)
             throw WinRmException.AuthFailed("Sign-in was refused. Use one of the server's administrator accounts.")
 
         var xml = resp.body
         if (resp.contentType.contains("multipart/encrypted")) {
             val start = indexOf(resp.body, OCTET_HEADER)
-            val end = lastIndexOf(resp.body, "$BOUNDARY--".toByteArray())
+            val end = lastIndexOf(resp.body, BOUNDARY_END)
             if (start < 0 || end < start) throw WinRmException.Failed("Could not read the encrypted reply.")
-            val blob = resp.body.copyOfRange(start + OCTET_HEADER.size, end)
-            val sigLen = if (blob.size >= 4) (blob[0].toInt() and 0xFF) or ((blob[1].toInt() and 0xFF) shl 8) or
-                ((blob[2].toInt() and 0xFF) shl 16) or ((blob[3].toInt() and 0xFF) shl 24) else -1
-            if (sigLen != 16 || blob.size < 4 + sigLen) throw WinRmException.Failed("Could not decrypt the reply.")
-            val (plainReply, ok) = ntlm.unseal(blob.copyOfRange(4, 4 + sigLen), blob.copyOfRange(4 + sigLen, blob.size))
+            val blobStart = start + OCTET_HEADER.size
+            val blobLen = end - blobStart
+            val sigLen = if (blobLen >= 4) {
+                (resp.body[blobStart].toInt() and 0xFF) or
+                    ((resp.body[blobStart + 1].toInt() and 0xFF) shl 8) or
+                    ((resp.body[blobStart + 2].toInt() and 0xFF) shl 16) or
+                    ((resp.body[blobStart + 3].toInt() and 0xFF) shl 24)
+            } else -1
+            if (sigLen != 16 || blobLen < 4 + sigLen) throw WinRmException.Failed("Could not decrypt the reply.")
+            val (plainReply, ok) = ntlm.unsealSlice(
+                sigBuf = resp.body,
+                sigOffset = blobStart + 4,
+                sealedBuf = resp.body,
+                sealedOffset = blobStart + 4 + sigLen,
+                sealedLen = blobLen - 4 - sigLen,
+            )
             if (!ok) throw WinRmException.Failed("The reply failed its integrity check.")
             xml = plainReply
         }
         val reply = parseReply(String(xml, Charsets.UTF_8))
         if (resp.status == 200) return reply
-        if (timeoutIsOk && reply.faultCode == TIMED_OUT_CODE) return Reply("", "", ByteArray(0), false, reply.faultCode, reply.faultText)
+        if (timeoutIsOk && reply.faultCode == TIMED_OUT_CODE) return Reply("", "", EMPTY_BYTES, false, reply.faultCode, reply.faultText)
         throw WinRmException.Failed(reply.faultText.ifEmpty { "The server returned an error (code ${resp.status})." })
     }
 
     private fun parseReply(xml: String): Reply {
         fun first(re: Regex) = re.find(xml)?.groupValues?.get(1).orEmpty()
-        val shellId = first(Regex("<[\\w:]*ShellId>([^<]*)</[\\w:]*ShellId>")).ifEmpty {
-            first(Regex("<[\\w:]*Selector Name=\"ShellId\">([^<]*)</[\\w:]*Selector>"))
-        }
+        val shellId = first(RE_SHELL_ID).ifEmpty { first(RE_SELECTOR_SHELL_ID) }
         val stdout = ByteArrayOutputStream()
-        for (m in Regex("<[\\w:]*Stream\\s+([^>]*)>([^<]*)</[\\w:]*Stream>").findAll(xml))
+        for (m in RE_STREAM.findAll(xml))
             if (m.groupValues[1].contains("Name=\"stdout\"")) {
                 runCatching { Base64.getMimeDecoder().decode(m.groupValues[2]) }.getOrNull()?.let(stdout::write)
             }
         return Reply(
             shellId = shellId,
-            commandId = first(Regex("<[\\w:]*CommandId>([^<]*)</[\\w:]*CommandId>")),
+            commandId = first(RE_COMMAND_ID),
             stdout = stdout.toByteArray(),
-            done = Regex("<[\\w:]*CommandState[^>]*State=\"[^\"]*/Done\"").containsMatchIn(xml),
-            faultCode = first(Regex("<[\\w:]*WSManFault[^>]*Code=\"(\\d+)\"")),
-            faultText = first(Regex("<[\\w:]*(?:Message|Text)[^>]*>([^<]*)</[\\w:]*(?:Message|Text)>")).trim().replace(Regex("\\s+"), " "),
+            done = RE_COMMAND_DONE.containsMatchIn(xml),
+            faultCode = first(RE_FAULT_CODE),
+            faultText = first(RE_FAULT_TEXT).trim().replace(RE_WHITESPACE, " "),
         )
     }
 
     companion object {
-        const val DEFAULT_LOOKBACK_MS = 2L * 24 * 3600 * 1000
+        const val DEFAULT_LOOKBACK_MS = 7L * 24 * 3600 * 1000
         private const val RETRY_DELAY_MS = 1500L
         private const val RDP_PORT = 3389
         private const val BOUNDARY = "--Encrypted Boundary"
         private const val PROTOCOL = "application/HTTP-SPNEGO-session-encrypted"
+        private const val ENCRYPTED_CONTENT_TYPE = "multipart/encrypted;protocol=\"$PROTOCOL\";boundary=\"Encrypted Boundary\""
+        private val EMPTY_BYTES = ByteArray(0)
         private val OCTET_HEADER = "\tContent-Type: application/octet-stream\r\n".toByteArray()
+        private val BOUNDARY_END = "$BOUNDARY--".toByteArray()
+        private val BOUNDARY_END_CRLF = "$BOUNDARY--\r\n".toByteArray()
+        private val RE_SHELL_ID = Regex("<[\\w:]*ShellId>([^<]*)</[\\w:]*ShellId>")
+        private val RE_SELECTOR_SHELL_ID = Regex("<[\\w:]*Selector Name=\"ShellId\">([^<]*)</[\\w:]*Selector>")
+        private val RE_STREAM = Regex("<[\\w:]*Stream\\s+([^>]*)>([^<]*)</[\\w:]*Stream>")
+        private val RE_COMMAND_ID = Regex("<[\\w:]*CommandId>([^<]*)</[\\w:]*CommandId>")
+        private val RE_COMMAND_DONE = Regex("<[\\w:]*CommandState[^>]*State=\"[^\"]*/Done\"")
+        private val RE_FAULT_CODE = Regex("<[\\w:]*WSManFault[^>]*Code=\"(\\d+)\"")
+        private val RE_FAULT_TEXT = Regex("<[\\w:]*(?:Message|Text)[^>]*>([^<]*)</[\\w:]*(?:Message|Text)>")
+        private val RE_WHITESPACE = Regex("\\s+")
         private const val SHELL_URI = "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd"
         private const val SHELL_NS = "http://schemas.microsoft.com/wbem/wsman/1/windows/shell"
         private const val TRANSFER_NS = "http://schemas.xmlsoap.org/ws/2004/09/transfer"
         // Receive timed out with no output yet; ask again.
         private const val TIMED_OUT_CODE = "2150858793"
-        private const val MAX_EVENTS = 100
+        private const val MAX_EVENTS = 150
         private const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
         fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
@@ -337,25 +403,32 @@ class WinRmClient(
                 "/q:\"${xpath.replace("TIME", "timediff(@SystemTime)<=$lookbackMs")}\" 2>nul & "
 
         /**
-         * Session list, and (with [lookbackMs]) the newest sign-in/out events of the session log and failed
-         * sign-ins. The events come first, because `for` takes the rest of the line as its body.
+         * Session list, recent LSM connection events (for exact connection duration), and (with [lookbackMs])
+         * sign-in/out history, failed sign-ins and security changes.
          */
-        fun sessionCommand(lookbackMs: Long?): String {
+        fun sessionCommand(lookbackMs: Long?, includeTimes: Boolean = true): String {
             val events = if (lookbackMs == null) "" else
                 eventLog("LSM", "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
                     "*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25) and TimeCreated[TIME]]]", lookbackMs) +
                     eventLog("SEC", "Security",
-                        "*[System[EventID=4625 and TimeCreated[TIME]] and EventData[Data[@Name='LogonType']='10' or Data[@Name='LogonType']='3']]", lookbackMs) +
-                    eventLog("LOGON", "Security",
-                        "*[System[(EventID=4778 or EventID=4779) and TimeCreated[TIME]]]", lookbackMs) +
+                        "*[System[TimeCreated[TIME]] and (System[EventID=4778 or EventID=4779 or EventID=4720 or EventID=4698 or EventID=1102] " +
+                            "or (System[EventID=4625] and EventData[Data[@Name='LogonType']='10' or Data[@Name='LogonType']='3']) " +
+                            "or (System[EventID=4732] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' or Data[@Name='TargetSid']='S-1-5-32-555']))]",
+                        lookbackMs) +
+                    eventLog("SYS", "System",
+                        "*[System[TimeCreated[TIME] and ((Provider[@Name='Service Control Manager'] and EventID=7045) " +
+                            "or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=104))]]",
+                        lookbackMs) +
                     "echo ${Parsing.EVENTS_MARKER} & "
-            // The sign-in time of each session is when its shell (explorer) started, as UTC, so the server's
-            // time zone and the language of quser do not matter.
-            return events + "quser & echo ${Parsing.START_MARKER} & powershell -NoProfile -NonInteractive -Command " +
-                "\"'NOW ' + [DateTime]::UtcNow.ToString('o'); " +
-                "Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f " +
-                "\$_.SessionId, \$_.StartTime.ToUniversalTime().ToString('o') }\" 2>nul" +
-                " & echo ${Parsing.MARKER} & for /f \"delims=\" %k in ('reg query HKU') do " +
+            // When lookbackMs != null, the LSM log is already queried in `events` above, so don't query it a second time.
+            val connections = if (includeTimes && lookbackMs == null) {
+                "echo ${Parsing.LOG_MARKER}LSM## & wevtutil qe Microsoft-Windows-TerminalServices-LocalSessionManager/Operational " +
+                    "/rd:true /c:48 /f:xml /q:\"*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25)]]\" " +
+                    "2>nul & echo ${Parsing.CONNECTIONS_MARKER} & "
+            } else ""
+            // Server UTC time comes from the HTTP Date response header — no need to spawn powershell.exe.
+            return events + connections + "quser & " +
+                "echo ${Parsing.MARKER} & for /f \"delims=\" %k in ('reg query HKU') do " +
                 "@reg query \"%k\\Volatile Environment\" /s /v CLIENTNAME 2>nul"
         }
     }

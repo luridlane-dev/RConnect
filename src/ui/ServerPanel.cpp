@@ -33,6 +33,8 @@
 #include <QTimeZone>
 #include <QVBoxLayout>
 
+#include <windows.h>
+
 // Filters by search text and availability. Sorted by group (named groups by name, then the servers without
 // one), favourites first inside a group, then by name with numbers in natural order ("srv2" before "srv10").
 class ServerProxy : public QSortFilterProxyModel {
@@ -66,6 +68,14 @@ public:
         endFilterChange();
     }
 
+    void setFavoritesFirst(bool favoritesFirst)
+    {
+        if (favoritesFirst == m_favoritesFirst)
+            return;
+        m_favoritesFirst = favoritesFirst;
+        invalidate();
+    }
+
 protected:
     bool filterAcceptsRow(int row, const QModelIndex &parent) const override
     {
@@ -88,15 +98,21 @@ protected:
 
     bool lessThan(const QModelIndex &l, const QModelIndex &r) const override
     {
+        const bool lf = l.data(ServerStore::FavoriteRole).toBool(), rf = r.data(ServerStore::FavoriteRole).toBool();
+        if (m_favoritesFirst) {
+            if (lf != rf)
+                return lf; // all favourites first, unsplit across categories
+            if (lf)
+                return m_collator.compare(l.data(Qt::DisplayRole).toString(), r.data(Qt::DisplayRole).toString()) < 0;
+        }
         const QString lg = l.data(ServerStore::GroupRole).toString(), rg = r.data(ServerStore::GroupRole).toString();
         if (lg != rg) {
             if (lg.isEmpty() || rg.isEmpty())
                 return rg.isEmpty(); // the servers without a group come last
             return m_collator.compare(lg, rg) < 0;
         }
-        const bool lf = l.data(ServerStore::FavoriteRole).toBool(), rf = r.data(ServerStore::FavoriteRole).toBool();
         if (lf != rf)
-            return lf; // favourites first
+            return lf; // favourites first inside each group
         return m_collator.compare(l.data(Qt::DisplayRole).toString(), r.data(Qt::DisplayRole).toString()) < 0;
     }
 
@@ -104,6 +120,7 @@ private:
     Mode m_mode = All;
     QString m_text;
     QCollator m_collator;
+    bool m_favoritesFirst = true;
 };
 
 // Lets the panel ask for a fresh layout when the card width changes.
@@ -167,16 +184,30 @@ ServerPanel::ServerPanel(ServerStore *store, QWidget *parent)
 
     m_proxy = new ServerProxy(this);
     m_proxy->setSourceModel(store);
+    m_proxy->setFavoritesFirst(QSettings().value(QStringLiteral("ui/favoritesFirst"), true).toBool());
     m_proxy->sort(0);
 
     m_search = new QLineEdit(this);
     m_search->setObjectName(QStringLiteral("searchField"));
     m_search->setClearButtonEnabled(true);
+    m_search->installEventFilter(this);
     QAction *magnifier = m_search->addAction(magnifierIcon(), QLineEdit::LeadingPosition);
     connect(Theme::notifier(), &ThemeNotifier::changed, magnifier, [magnifier] { magnifier->setIcon(magnifierIcon()); });
-    connect(m_search, &QLineEdit::textChanged, this, [this](const QString &t) {
-        m_proxy->setText(t);
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(120);
+    connect(m_searchTimer, &QTimer::timeout, this, [this] {
+        m_proxy->setText(m_search->text());
         updateEmptyState();
+    });
+    connect(m_search, &QLineEdit::textChanged, this, [this](const QString &t) {
+        if (t.isEmpty()) {
+            m_searchTimer->stop();
+            m_proxy->setText({});
+            updateEmptyState();
+        } else {
+            m_searchTimer->start();
+        }
     });
     connect(m_search, &QLineEdit::returnPressed, this, &ServerPanel::openFirstMatch);
 
@@ -415,7 +446,21 @@ void ServerPanel::fitCards()
 
 bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
 {
-    if (watched == m_list->viewport()) {
+    if (watched == m_search) {
+        if (e->type() == QEvent::MouseButtonPress) {
+            // When hosted inside a Qt::Popup above an active RDP ActiveX control, clicking the line edit does not move
+            // native Win32 focus out of IHWindowClass on its own. Pull Win32 focus back to the owning Qt window.
+            if (QWidget *top = window(); top && (top->windowFlags() & Qt::Popup) && top->parentWidget()) {
+                if (HWND host = reinterpret_cast<HWND>(top->parentWidget()->window()->winId()))
+                    SetFocus(host);
+            }
+        }
+        return QWidget::eventFilter(watched, e);
+    }
+    if (!m_list)
+        return QWidget::eventFilter(watched, e);
+    QWidget *viewport = m_list->viewport();
+    if (watched == viewport) {
         if (e->type() == QEvent::MouseMove)
             m_delegate->setHovered(m_list->indexAt(static_cast<QMouseEvent *>(e)->pos()));
         if (e->type() == QEvent::MouseButtonPress) {
@@ -429,7 +474,7 @@ bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
         if (e->type() == QEvent::Leave || e->type() == QEvent::Hide)
             m_delegate->setHovered({});
     }
-    if (watched == m_list->viewport() && e->type() == QEvent::MouseButtonRelease) {
+    if (watched == viewport && e->type() == QEvent::MouseButtonRelease) {
         // The star toggles the favourite; the click does not open the server.
         const auto *me = static_cast<QMouseEvent *>(e);
         const QModelIndex i = m_list->indexAt(me->pos());
@@ -439,10 +484,10 @@ bool ServerPanel::eventFilter(QObject *watched, QEvent *e)
             return true;
         }
     }
-    if (watched == m_list->viewport() && e->type() == QEvent::Resize) {
+    if (watched == viewport && e->type() == QEvent::Resize) {
         fitCards();
-        if (m_empty->isVisible())
-            m_empty->setGeometry(m_list->viewport()->rect().adjusted(24, 0, -24, 0));
+        if (m_empty && m_empty->isVisible())
+            m_empty->setGeometry(viewport->rect().adjusted(24, 0, -24, 0));
     }
     return QWidget::eventFilter(watched, e);
 }
@@ -467,7 +512,11 @@ void ServerPanel::setImportVisible(bool visible)
 
 void ServerPanel::focusSearch()
 {
-    m_search->setFocus();
+    if (QWidget *top = window(); top && (top->windowFlags() & Qt::Popup) && top->parentWidget()) {
+        if (HWND host = reinterpret_cast<HWND>(top->parentWidget()->window()->winId()))
+            SetFocus(host);
+    }
+    m_search->setFocus(Qt::PopupFocusReason);
     m_search->selectAll();
 }
 
@@ -476,8 +525,20 @@ void ServerPanel::clearSearch()
     m_search->clear();
 }
 
+void ServerPanel::reloadLayoutSettings()
+{
+    const bool favoritesFirst = QSettings().value(QStringLiteral("ui/favoritesFirst"), true).toBool();
+    m_proxy->setFavoritesFirst(favoritesFirst);
+    m_sections->setFavoritesFirst(favoritesFirst);
+}
+
 void ServerPanel::openFirstMatch()
 {
+    if (m_searchTimer && m_searchTimer->isActive()) {
+        m_searchTimer->stop();
+        m_proxy->setText(m_search->text());
+        updateEmptyState();
+    }
     if (m_proxy->rowCount() > 0)
         emit openRequested(m_proxy->index(0, 0).data(ServerStore::IdRole).toString());
 }
@@ -488,6 +549,7 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     if (!i.isValid() || i.data(ServerSectionModel::HeaderRole).toBool())
         return;
     const QString id = i.data(ServerStore::IdRole).toString();
+    const ServerStatus currentStatus = m_store->status(id);
 
     QMenu menu(this);
     menu.addAction(tr("Connect"), this, [this, id] { emit openRequested(id); });
@@ -495,7 +557,7 @@ void ServerPanel::showContextMenu(const QPoint &pos)
     menu.addAction(favorite ? tr("Remove from favourites") : tr("Add to favourites"), this,
                    [this, id, favorite] { m_store->setFavorite(id, !favorite); });
     menu.addAction(tr("Check status now"), this, [this, id] { emit refreshRequested(id); });
-    if (!sessionErrorDetails(m_store->status(id)).isEmpty()) {
+    if (!sessionErrorDetails(currentStatus).isEmpty()) {
         menu.addAction(tr("Copy connection diagnostics"), this, [this, id] {
             const ServerProfile profile = m_store->profileById(id);
             const ServerStatus status = m_store->status(id);
@@ -533,10 +595,10 @@ void ServerPanel::showContextMenu(const QPoint &pos)
         group->addAction(tr("No group"), this, [this, id] { m_store->setGroup(id, {}); });
 
     // Whoever is connected: name them with one click. Own sessions (this PC) are left out.
-    const QString thisPc = qEnvironmentVariable("COMPUTERNAME");
+    static const QString thisPc = qEnvironmentVariable("COMPUTERNAME");
     QSet<QString> offered;
     int shown = 0;
-    for (const RemoteSession &s : m_store->status(id).all) {
+    for (const RemoteSession &s : currentStatus.all) {
         const QString key = s.client;
         if (key.isEmpty() || key.compare(thisPc, Qt::CaseInsensitive) == 0 || offered.contains(key.toLower()) || shown >= 4)
             continue;
@@ -544,15 +606,15 @@ void ServerPanel::showContextMenu(const QPoint &pos)
         if (shown++ == 0)
             menu.addSeparator();
         const QString nickname = Contacts::instance().nameFor(s.client, s.user);
+        const QString contactLabel = nickname.isEmpty() ? key : QStringLiteral("%1 (%2)").arg(nickname, key);
         menu.addAction(nickname.isEmpty() ? tr("Add “%1” to contacts…").arg(key)
-                                          : tr("Edit contact “%1”…").arg(Contacts::instance().label(s.client, s.user)),
+                                          : tr("Edit contact “%1”…").arg(contactLabel),
                        this, [this, s] { ContactsDialog::editFor(s.client, s.user, this); });
     }
     const ServerProfile profile = m_store->profileById(id);
     if (StatusMonitor::canCheckSessions(profile)) {
         QMenu *recipients = nullptr;
-        const auto sessions = m_store->status(id).all;
-        for (const RemoteSession &session : sessions) {
+        for (const RemoteSession &session : currentStatus.all) {
             if (!session.connected || session.id <= 0 || session.user.isEmpty())
                 continue;
             if (!recipients) {

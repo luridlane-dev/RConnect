@@ -1,26 +1,31 @@
 #include "UsagePage.h"
 
+#include "ContactsDialog.h"
 #include "Theme.h"
 #include "core/Contacts.h"
 #include "core/UsageEngine.h"
 #include "core/UsageLog.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDate>
 #include <QEvent>
 #include <QFrame>
-#include <QPointer>
-#include <QThreadPool>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QLabel>
-#include <QMessageBox>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSet>
 #include <QStandardItemModel>
-#include <QTimeZone>
+#include <QThreadPool>
 #include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -29,82 +34,143 @@
 
 namespace {
 
-using UsageEngine::Breakdown;
-
-enum Column { Name, Net, Idle, Connected, Status, ColumnCount };
+enum Column { Name, Net, Idle, Total, Status, ColumnCount };
 enum Range { Today, Yesterday, Week, Month, Everything };
 constexpr int kKeyRole = Qt::UserRole + 1;
-
+constexpr int kDeviceRole = Qt::UserRole + 2;
+constexpr int kAddressRole = Qt::UserRole + 3;
+constexpr int kUserRole = Qt::UserRole + 4;
+constexpr int kAddressesRole = Qt::UserRole + 5;
 constexpr int kRefreshMs = 30000;
 
-QString clock(qint64 ms)
+struct ContactTarget {
+    QString device;
+    QString address;
+    QString user;
+    QStringList addresses;
+    bool valid() const { return !device.isEmpty() || !address.isEmpty(); }
+};
+
+ContactTarget targetForIndex(const QModelIndex &index)
+{
+    ContactTarget t;
+    if (!index.isValid())
+        return t;
+    QModelIndex cur = index.siblingAtColumn(Name);
+    while (cur.isValid()) {
+        const QString dev = cur.data(kDeviceRole).toString();
+        const QString addr = cur.data(kAddressRole).toString();
+        const QString usr = cur.data(kUserRole).toString();
+        const QStringList addrs = cur.data(kAddressesRole).toStringList();
+        if (!dev.isEmpty() || !addr.isEmpty() || !addrs.isEmpty()) {
+            t.device = dev;
+            t.address = addr;
+            t.user = usr;
+            t.addresses = addrs;
+            if (t.address.isEmpty() && !t.addresses.isEmpty())
+                t.address = t.addresses.first();
+            return t;
+        }
+        cur = cur.parent();
+    }
+    return t;
+}
+
+// Paints a uniform full-row hover and selection background (including the branch gutter) so Fusion's
+// expand triangles stay crisp and never suffer double-blended seams.
+class UsageTreeView : public QTreeView {
+public:
+    explicit UsageTreeView(QWidget *parent = nullptr)
+        : QTreeView(parent)
+    {
+        setMouseTracking(true);
+    }
+
+protected:
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        setHovered(indexAt(e->pos()));
+        QTreeView::mouseMoveEvent(e);
+    }
+
+    void leaveEvent(QEvent *e) override
+    {
+        setHovered({});
+        QTreeView::leaveEvent(e);
+    }
+
+    void drawRow(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        const bool selected = selectionModel() && selectionModel()->isRowSelected(index.row(), index.parent());
+        const bool hovered = m_hovered.isValid() && m_hovered.row() == index.row() && m_hovered.parent() == index.parent();
+        static const QColor kSelHoverDark("#192c44"), kSelHoverLight("#d3e5fc");
+        static const QColor kSelDark("#142336"), kSelLight("#e1edfd");
+        static const QColor kHoverDark("#17171b"), kHoverLight("#eef0f5");
+        const bool dark = Theme::mode() == Theme::Dark;
+        if (selected) {
+            painter->fillRect(option.rect, hovered ? (dark ? kSelHoverDark : kSelHoverLight)
+                                                   : (dark ? kSelDark : kSelLight));
+        } else if (hovered) {
+            painter->fillRect(option.rect, dark ? kHoverDark : kHoverLight);
+        }
+        QTreeView::drawRow(painter, option, index);
+    }
+
+private:
+    void setHovered(const QModelIndex &idx)
+    {
+        const QModelIndex rowIdx = idx.isValid() ? idx.siblingAtColumn(0) : QModelIndex();
+        if (m_hovered == rowIdx)
+            return;
+        const QPersistentModelIndex prev = m_hovered;
+        m_hovered = rowIdx;
+        if (prev.isValid())
+            viewport()->update(QRect(0, visualRect(prev).top(), viewport()->width(), visualRect(prev).height()));
+        if (m_hovered.isValid())
+            viewport()->update(QRect(0, visualRect(m_hovered).top(), viewport()->width(), visualRect(m_hovered).height()));
+    }
+
+    QPersistentModelIndex m_hovered;
+};
+
+QString clockText(qint64 ms)
 {
     return QDateTime::fromMSecsSinceEpoch(ms).toString(QStringLiteral("HH:mm"));
 }
 
-QString duration(qint64 ms)
+QString durationText(qint64 ms)
 {
     const qint64 seconds = (ms + 500) / 1000;
     if (seconds <= 0)
         return QStringLiteral("—");
     if (seconds < 60)
         return UsagePage::tr("%1 sec").arg(seconds);
-    const qint64 minutes = seconds / 60;
+    const qint64 minutes = (seconds + 30) / 60;
     if (minutes < 60)
         return UsagePage::tr("%1 min").arg(minutes);
     return minutes % 60 == 0 ? UsagePage::tr("%1 h").arg(minutes / 60)
                              : UsagePage::tr("%1 h %2 min").arg(minutes / 60).arg(minutes % 60);
 }
 
-// A time that is a minimum because a start or end record is missing.
-QString minimum(qint64 ms, bool uncertain)
+QString dayText(const QDate &day, const QDate &today)
 {
-    return uncertain && ms > 0 ? UsagePage::tr("At least %1").arg(duration(ms)) : duration(ms);
-}
-
-QString dayText(const QDate &day)
-{
-    if (day == QDate::currentDate())
+    if (day == today)
         return UsagePage::tr("Today");
-    if (day == QDate::currentDate().addDays(-1))
+    if (day == today.addDays(-1))
         return UsagePage::tr("Yesterday");
     return day.toString(QStringLiteral("dd.MM.yyyy ddd"));
 }
 
-QString shortDay(const QDate &day)
-{
-    return day.toString(QStringLiteral("dd.MM ddd"));
-}
-
-// "14:20", "Yesterday 14:20" or "21.11.2026 14:20".
-QString lastSeen(qint64 ms)
+QString lastSeen(qint64 ms, const QDate &today)
 {
     if (ms <= 0)
         return QStringLiteral("—");
     const QDateTime at = QDateTime::fromMSecsSinceEpoch(ms);
-    if (at.date() == QDate::currentDate())
-        return clock(ms);
-    if (at.date() == QDate::currentDate().addDays(-1))
-        return UsagePage::tr("Yesterday %1").arg(clock(ms));
+    if (at.date() == today)
+        return at.toString(QStringLiteral("HH:mm"));
+    if (at.date() == today.addDays(-1))
+        return UsagePage::tr("Yesterday %1").arg(at.toString(QStringLiteral("HH:mm")));
     return at.toString(QStringLiteral("dd.MM.yyyy HH:mm"));
-}
-
-QList<QStandardItem *> rowOf(const QStringList &texts)
-{
-    QList<QStandardItem *> items;
-    for (const QString &t : texts)
-        items << new QStandardItem(t);
-    return items;
-}
-
-// The cells for a stretch of time; Name and Status are filled by the caller.
-QList<QStandardItem *> timeRow(const QString &name, const UsageEngine::Time &t, bool uncertain)
-{
-    const QList<QStandardItem *> row = rowOf({name, minimum(t.netMs(), uncertain), duration(t.afkMs),
-                                              minimum(t.totalMs(), uncertain), {}});
-    row.at(Idle)->setForeground(Theme::kLabelSecondary);
-    row.at(Connected)->setForeground(Theme::kLabelSecondary);
-    return row;
 }
 
 QString html(const QStringList &lines)
@@ -115,34 +181,61 @@ QString html(const QStringList &lines)
     return QStringLiteral("<qt>%1</qt>").arg(escaped.join(QStringLiteral("<br>")));
 }
 
-// The person behind a visit: the normalized nickname from Contacts ("Emre", "Emre-2", "Emre (3)" all
-// merge into "Emre"), else a computer whose name matches a Contact person, else the computer name, else IP.
-UsageEngine::Who whoOf(const UsageEngine::Visit &v)
+QList<QStandardItem *> timeRow(const QString &name, const UsageEngine::Time &t)
 {
-    const Contact *c = Contacts::instance().match(v.client, v.user);
+    QList<QStandardItem *> row;
+    row << new QStandardItem(name)
+        << new QStandardItem(durationText(t.netMs()))
+        << new QStandardItem(durationText(t.afkMs))
+        << new QStandardItem(durationText(t.totalMs()))
+        << new QStandardItem();
+    row.at(Net)->setForeground(t.netMs() > 0 ? Theme::kGreen : Theme::kLabelTertiary);
+    row.at(Idle)->setForeground(t.afkMs >= 60000 ? Theme::kOrange : Theme::kLabelTertiary);
+    row.at(Total)->setForeground(Theme::kLabelSecondary);
+    return row;
+}
+
+// Builds an O(1) lookup table of normalized contact person names once per aggregation pass
+// instead of calling Contacts::names() (O(C^2)) + regex per unmatched visit.
+QHash<QString, QString> buildContactPersonMap()
+{
+    QHash<QString, QString> map;
+    for (const Contact &c : Contacts::instance().all()) {
+        if (c.name.isEmpty())
+            continue;
+        const QString person = UsageEngine::personNameOf(c.name);
+        if (!person.isEmpty()) {
+            const QString key = person.toLower();
+            if (!map.contains(key))
+                map.insert(key, person);
+        }
+    }
+    return map;
+}
+
+UsageEngine::Who whoOfWithIndex(const UsageEngine::Visit &v, const QHash<QString, QString> &personByName)
+{
+    const Contact *c = Contacts::instance().match(v.client, v.user, v.address);
     if (c && !c->name.trimmed().isEmpty()) {
         const QString person = UsageEngine::personNameOf(c->name);
         return {QStringLiteral("N|") + person.toLower(), person};
     }
     if (!v.client.isEmpty()) {
-        const QString clientBase = UsageEngine::personNameOf(v.client);
-        for (const QString &name : Contacts::instance().names()) {
-            const QString person = UsageEngine::personNameOf(name);
-            if (person.compare(v.client, Qt::CaseInsensitive) == 0
-                || person.compare(clientBase, Qt::CaseInsensitive) == 0)
-                return {QStringLiteral("N|") + person.toLower(), person};
-        }
-        return {QStringLiteral("C|") + v.client.toLower(), v.client};
+        const QString clientLower = v.client.toLower();
+        if (const auto it = personByName.constFind(clientLower); it != personByName.cend())
+            return {QStringLiteral("N|") + it.key(), it.value()};
+        const QString clientBaseLower = UsageEngine::personNameOf(v.client).toLower();
+        if (const auto it = personByName.constFind(clientBaseLower); it != personByName.cend())
+            return {QStringLiteral("N|") + it.key(), it.value()};
+        return {QStringLiteral("C|") + clientLower, v.client};
     }
     if (!v.address.isEmpty())
         return {QStringLiteral("A|") + v.address, v.address};
     if (!v.user.isEmpty())
         return {QStringLiteral("U|") + v.user.toLower(), v.user};
-    return {QStringLiteral("?"), UsagePage::tr("Unknown computer")};
+    return {QStringLiteral("?"), UsagePage::tr("Unknown")};
 }
 
-// Shows the server-side computer name(s) next to a local nickname so different RConnect PCs with
-// different nicknames still transparently show the same underlying server identity.
 QString personDisplayName(const UsageEngine::Person &p)
 {
     if (p.computers.isEmpty())
@@ -151,7 +244,7 @@ QString personDisplayName(const UsageEngine::Person &p)
         return p.name;
     if (p.computers.size() <= 2)
         return QStringLiteral("%1 (%2)").arg(p.name, p.computers.join(QStringLiteral(", ")));
-    return UsagePage::tr("%1 (%2 computers)").arg(p.name).arg(p.computers.size());
+    return UsagePage::tr("%1 (%2 devices)").arg(p.name).arg(p.computers.size());
 }
 
 } // namespace
@@ -173,75 +266,89 @@ UsagePage::UsagePage(QWidget *parent)
 
     m_range = new QComboBox(this);
     m_range->setMinimumHeight(32);
-    connect(m_range, &QComboBox::currentIndexChanged, this, [this] { reload(); });
-    m_breakdown = new QComboBox(this);
-    m_breakdown->setMinimumHeight(32);
-    connect(m_breakdown, &QComboBox::currentIndexChanged, this, [this] { reload(); });
+    m_range->setMinimumWidth(135);
+    connect(m_range, &QComboBox::currentIndexChanged, this, [this] { renderCurrent(); });
+
+    m_search = new QLineEdit(this);
+    m_search->setClearButtonEnabled(true);
+    m_search->setMinimumWidth(190);
+    m_search->setMaximumWidth(280);
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(150);
+    connect(m_searchTimer, &QTimer::timeout, this, &UsagePage::renderCurrent);
+    connect(m_search, &QLineEdit::textChanged, this, [this](const QString &t) {
+        if (t.isEmpty()) {
+            m_searchTimer->stop();
+            renderCurrent();
+        } else {
+            m_searchTimer->start();
+        }
+    });
+
     m_refresh = new QPushButton(this);
+    m_refresh->setCursor(Qt::PointingHandCursor);
     connect(m_refresh, &QPushButton::clicked, this, [this] {
         emit syncRequested({});
         reload();
     });
+    m_addContact = new QPushButton(this);
+    m_addContact->setCursor(Qt::PointingHandCursor);
+    m_addContact->setEnabled(false);
+    connect(m_addContact, &QPushButton::clicked, this, &UsagePage::editSelectedContact);
     m_configure = new QPushButton(this);
+    m_configure->setCursor(Qt::PointingHandCursor);
     connect(m_configure, &QPushButton::clicked, this, [this] { emit configureServersRequested(); });
-    m_rebuild = new QPushButton(this);
-    connect(m_rebuild, &QPushButton::clicked, this, [this] { rebuild(); });
-    m_help = new QPushButton(this);
-    connect(m_help, &QPushButton::clicked, this, [this] { explain(); });
 
     auto *head = new QHBoxLayout;
-    head->addWidget(m_range, 0, Qt::AlignTop);
-    head->addWidget(m_breakdown, 0, Qt::AlignTop);
-    head->addWidget(m_refresh, 0, Qt::AlignTop);
+    head->setSpacing(8);
+    head->addWidget(m_range);
+    head->addWidget(m_search);
+    head->addWidget(m_refresh);
+    head->addWidget(m_addContact);
     head->addStretch(1);
-    head->addWidget(m_configure, 0, Qt::AlignTop);
-    head->addWidget(m_rebuild, 0, Qt::AlignTop);
-    head->addWidget(m_help, 0, Qt::AlignTop);
+    head->addWidget(m_configure);
 
     auto *metrics = new QHBoxLayout;
+    metrics->setSpacing(12);
     for (int i = 0; i < 4; ++i) {
         auto *card = new QFrame(this);
         card->setObjectName(QStringLiteral("detailCard"));
         auto *metric = new QVBoxLayout(card);
-        metric->setContentsMargins(12, 8, 12, 9);
-        metric->setSpacing(1);
+        metric->setContentsMargins(16, 12, 16, 12);
+        metric->setSpacing(4);
         m_metricLabels[i] = new QLabel(card);
         m_metricLabels[i]->setObjectName(QStringLiteral("fieldHint"));
-        m_metricLabels[i]->setWordWrap(true);
         m_metricValues[i] = new QLabel(QStringLiteral("—"), card);
-        m_metricValues[i]->setObjectName(QStringLiteral("brandName"));
+        m_metricValues[i]->setObjectName(QStringLiteral("metricValue"));
         metric->addWidget(m_metricLabels[i]);
         metric->addWidget(m_metricValues[i]);
         metrics->addWidget(card, 1);
     }
 
-    m_warning = new QLabel(this);
-    m_warning->setWordWrap(true);
-    m_warning->setTextFormat(Qt::PlainText);
-    m_warning->setObjectName(QStringLiteral("warningText"));
-    m_warning->hide();
-
-    m_view = new QTreeView(this);
+    m_view = new UsageTreeView(this);
     m_view->setModel(m_model);
     m_view->setAlternatingRowColors(true);
     m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_view->setSelectionMode(QAbstractItemView::SingleSelection);
     m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_view->setUniformRowHeights(true);
-    m_view->setIndentation(22);
-    m_view->setStyleSheet(QStringLiteral("QTreeView::item { padding: 7px 4px; }"));
+    m_view->setIndentation(20);
     m_view->setAllColumnsShowFocus(true);
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     m_view->header()->setSectionResizeMode(QHeaderView::Interactive);
     m_view->header()->setStretchLastSection(false);
     m_view->header()->setHighlightSections(false);
     m_view->header()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    const int widths[ColumnCount] = {240, 130, 100, 130, 130};
+    const int widths[ColumnCount] = {260, 125, 110, 125, 140};
     for (int c = 0; c < ColumnCount; ++c)
         m_view->setColumnWidth(c, widths[c]);
     m_view->header()->setSectionResizeMode(Name, QHeaderView::Stretch);
+    connect(m_view, &QWidget::customContextMenuRequested, this, &UsagePage::showContextMenu);
+    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this, &UsagePage::updateContactButton);
 
     m_total = new QLabel(this);
-    m_total->setObjectName(QStringLiteral("pageSubtitle"));
+    m_total->setObjectName(QStringLiteral("fieldHint"));
     m_total->setWordWrap(true);
 
     auto *lay = new QVBoxLayout(this);
@@ -250,32 +357,43 @@ UsagePage::UsagePage(QWidget *parent)
     lay->addLayout(titles);
     lay->addLayout(head);
     lay->addLayout(metrics);
-    lay->addWidget(m_warning);
     lay->addWidget(m_view, 1);
     lay->addWidget(m_total);
 
     m_timer = new QTimer(this);
     m_timer->setInterval(kRefreshMs);
     connect(m_timer, &QTimer::timeout, this, &UsagePage::reload);
-    connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] { if (isVisible()) reload(); });
-    connect(&Contacts::instance(), &Contacts::changed, this, [this] { if (isVisible()) reload(); });
+    m_syncReloadTimer = new QTimer(this);
+    m_syncReloadTimer->setSingleShot(true);
+    m_syncReloadTimer->setInterval(1000);
+    connect(m_syncReloadTimer, &QTimer::timeout, this, &UsagePage::reload);
+    connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
+        m_activeMetricStyle.clear();
+        m_idleMetricStyle.clear();
+        if (isVisible())
+            renderCurrent();
+    });
+    connect(&Contacts::instance(), &Contacts::changed, this, [this] {
+        m_peopleValid = false;
+        if (isVisible())
+            renderCurrent();
+    });
     retranslate();
 }
 
 void UsagePage::retranslate()
 {
     m_title->setText(tr("Time on servers"));
-    m_subtitle->setText(tr("Server connection time across all servers. Open a row to see each server or day and every connection."));
-    m_metricLabels[0]->setText(tr("Users"));
+    m_subtitle->setText(tr("Daily active and idle time pulled from the servers."));
+    m_metricLabels[0]->setText(tr("People"));
     m_metricLabels[1]->setText(tr("Active"));
     m_metricLabels[2]->setText(tr("Idle"));
-    m_metricLabels[3]->setText(tr("Connected"));
+    m_metricLabels[3]->setText(tr("Total"));
+    m_search->setPlaceholderText(tr("Search name or server"));
     m_refresh->setText(tr("Refresh"));
-    m_configure->setText(tr("Configure servers"));
-    m_configure->setToolTip(tr("Enables built-in Windows client-name logging (4778/4779) and optional RDP idle disconnect on remote servers."));
-    m_rebuild->setText(tr("Rebuild totals"));
-    m_rebuild->setToolTip(tr("Rebuilds the report from the Windows session events already saved on this PC."));
-    m_help->setText(tr("How to read this"));
+    m_configure->setText(tr("Server settings"));
+    m_configure->setToolTip(tr("Enable computer name logging and automatic idle disconnect on servers."));
+    updateContactButton();
 
     const int keep = m_range->currentIndex();
     m_range->blockSignals(true);
@@ -284,21 +402,9 @@ void UsagePage::retranslate()
     m_range->setCurrentIndex(keep < 0 ? Today : keep);
     m_range->blockSignals(false);
 
-    const int keepBreakdown = m_breakdown->currentIndex();
-    m_breakdown->blockSignals(true);
-    m_breakdown->clear();
-    m_breakdown->addItems({tr("By server"), tr("By day")});
-    m_breakdown->setCurrentIndex(keepBreakdown < 0 ? 0 : keepBreakdown);
-    m_breakdown->setToolTip(tr("How each row is grouped when expanded."));
-    m_breakdown->blockSignals(false);
-
-    m_model->setHorizontalHeaderLabels({tr("User"), tr("Active"), tr("Idle"), tr("Connected"), tr("Last seen")});
-    m_model->horizontalHeaderItem(Net)->setToolTip(tr("Server connected time minus detected idle periods. "
-                                                      "Each moment counts once, even across several servers at the same time."));
-    m_model->horizontalHeaderItem(Idle)->setToolTip(tr("Detected idle time (no keyboard or mouse input for %1 minutes or more).")
-                                                        .arg(UsageEngine::kAfkMinutes));
-    m_model->horizontalHeaderItem(Connected)->setToolTip(tr("Total connected time from the remote server logs."));
-    reload();
+    m_model->setHorizontalHeaderLabels({tr("Name"), tr("Active"), tr("Idle"), tr("Total"), tr("Status")});
+    if (isVisible())
+        renderCurrent();
 }
 
 void UsagePage::showEvent(QShowEvent *e)
@@ -312,13 +418,13 @@ void UsagePage::showEvent(QShowEvent *e)
 void UsagePage::onServerSynced(const QString &, const QString &, bool busy, const QStringList &, const QString &)
 {
     if (!busy && isVisible())
-        reload();
+        m_syncReloadTimer->start();
 }
 
 void UsagePage::setConfiguringServers(bool busy)
 {
     m_configure->setEnabled(!busy);
-    m_configure->setText(busy ? tr("Configuring…") : tr("Configure servers"));
+    m_configure->setText(busy ? tr("Applying…") : tr("Server settings"));
 }
 
 void UsagePage::hideEvent(QHideEvent *e)
@@ -332,43 +438,6 @@ void UsagePage::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
     if (e->type() == QEvent::LanguageChange)
         retranslate();
-}
-
-void UsagePage::rebuild()
-{
-    m_rebuild->setEnabled(false);
-    const QPointer<UsagePage> page(this);
-    QThreadPool::globalInstance()->start([page] {
-        const int events = UsageLog::rebuildEvents();
-        QMetaObject::invokeMethod(qApp, [page, events] {
-            if (!page)
-                return;
-            page->m_rebuild->setEnabled(true);
-            page->reload();
-            QMessageBox::information(page, tr("Rebuild totals"), events >= 0
-                ? tr("%1 saved Windows session events were used.").arg(events)
-                : tr("Could not rebuild totals from the saved records."));
-        }, Qt::QueuedConnection);
-    });
-}
-
-void UsagePage::explain()
-{
-    QMessageBox::information(this, tr("How to read this"),
-        tr("<p><b>Server-based calculation.</b> Sign-in, reconnect, disconnect and sign-out times are pulled directly "
-           "from the remote Windows servers' session logs. Connections are counted even when RConnect was not running.</p>"
-           "<p><b>Active.</b> Server connected time minus detected idle stretches. When no keyboard or mouse input is "
-           "detected for %1 minutes or more, that stretch counts as idle.</p>"
-           "<p><b>Several servers at once.</b> Overlapping connections are merged so each minute counts once. If one "
-           "server is active while another is idle, that minute counts as active. As a result, a row's total can be "
-           "less than the sum of its individual servers.</p>"
-           "<p><b>Connected.</b> Total connected time recorded by the remote servers. Disconnected time is never counted. "
-           "Reconnections within %2 minutes are grouped as one connection, without the minutes in between.</p>"
-           "<p><b>Incomplete records.</b> When the server log has no sign-in or sign-out for a connection, it is "
-           "counted from or until the moment it was seen, and shown as a minimum (\"At least\").</p>"
-           "<p><b>Grouping.</b> Uses the label from Contacts (numbered names like \"Ali\" and \"Ali-2\" are combined), "
-           "else the computer name, else the IP address.</p>")
-            .arg(UsageEngine::kAfkMinutes).arg(UsageEngine::kMergeGapSec / 60));
 }
 
 void UsagePage::reload()
@@ -387,19 +456,31 @@ void UsagePage::reload()
             if (!page)
                 return;
             page->m_reading = false;
+            page->m_lastReport = report;
+            page->m_hasReport = true;
+            page->m_peopleValid = false;
             if (page->isVisible())
-                page->showReport(report);
+                page->showReport(page->m_lastReport);
             if (std::exchange(page->m_readAgain, false))
                 page->reload();
         }, Qt::QueuedConnection);
     });
 }
 
+void UsagePage::renderCurrent()
+{
+    if (m_hasReport)
+        showReport(m_lastReport);
+    else
+        reload();
+}
+
 void UsagePage::showReport(const UsageEngine::Report &report)
 {
     const QDate today = QDate::currentDate();
+    const int rangeIdx = m_range->currentIndex();
     QDate from = QDate(1970, 1, 1), to = today;
-    switch (m_range->currentIndex()) {
+    switch (rangeIdx) {
     case Today:      from = today; break;
     case Yesterday:  from = to = today.addDays(-1); break;
     case Week:       from = today.addDays(-6); break;
@@ -407,10 +488,44 @@ void UsagePage::showReport(const UsageEngine::Report &report)
     default:         break;
     }
     const bool oneDay = from == to;
-    const Breakdown by = m_breakdown->currentIndex() == 1 ? Breakdown::ByDay : Breakdown::ByServer;
-    const QList<UsageEngine::Person> people = UsageEngine::people(report, from, to, whoOf, by);
+    if (!m_peopleValid || m_cachedRange != rangeIdx || m_cachedToday != today) {
+        const QHash<QString, QString> personMap = buildContactPersonMap();
+        m_cachedPeople = UsageEngine::people(
+            report, from, to,
+            [&personMap](const UsageEngine::Visit &v) { return whoOfWithIndex(v, personMap); },
+            UsageEngine::Breakdown::ByDay);
+        m_cachedRange = rangeIdx;
+        m_cachedToday = today;
+        m_peopleValid = true;
+    }
 
-    // Keep what was open and where the list was scrolled to.
+    const QString query = m_search->text().trimmed();
+    QList<const UsageEngine::Person *> visiblePeople;
+    visiblePeople.reserve(m_cachedPeople.size());
+    for (const UsageEngine::Person &p : std::as_const(m_cachedPeople)) {
+        if (!query.isEmpty()) {
+            bool hit = p.name.contains(query, Qt::CaseInsensitive);
+            for (const QString &c : p.computers)
+                if (!hit && c.contains(query, Qt::CaseInsensitive))
+                    hit = true;
+            for (const QString &a : p.addresses)
+                if (!hit && a.contains(query, Qt::CaseInsensitive))
+                    hit = true;
+            for (const QString &s : p.servers)
+                if (!hit && s.contains(query, Qt::CaseInsensitive))
+                    hit = true;
+            if (!hit)
+                continue;
+        }
+        visiblePeople << &p;
+    }
+
+    QString selectedKey;
+    const QModelIndexList selectedRows = m_view->selectionModel()->selectedRows(Name);
+    const QModelIndex selectedIdx = !selectedRows.isEmpty() ? selectedRows.first() : m_view->currentIndex().siblingAtColumn(Name);
+    if (selectedIdx.isValid())
+        selectedKey = selectedIdx.data(kKeyRole).toString();
+
     QSet<QString> expanded;
     for (int r = 0; r < m_model->rowCount(); ++r) {
         QStandardItem *person = m_model->item(r, 0);
@@ -423,87 +538,88 @@ void UsagePage::showReport(const UsageEngine::Report &report)
     const int scroll = m_view->verticalScrollBar()->value();
     const bool firstLoad = m_model->rowCount() == 0;
 
+    m_view->setUpdatesEnabled(false);
     m_model->removeRows(0, m_model->rowCount());
     UsageEngine::Time sum;
-    bool incomplete = false;
     int connectedNow = 0;
     const QString dash = QStringLiteral("—");
+    const QFont mediumFont = Theme::font(13, QFont::Medium);
+    const QFont demiFont = Theme::font(13, QFont::DemiBold);
+    QStandardItem *restoreItem = nullptr;
 
-    for (const UsageEngine::Person &p : people) {
+    for (const UsageEngine::Person *pp : std::as_const(visiblePeople)) {
+        const UsageEngine::Person &p = *pp;
         sum.activeMs += p.time.activeMs;
         sum.afkMs += p.time.afkMs;
         sum.unknownMs += p.time.unknownMs;
-        incomplete |= p.uncertain;
         connectedNow += p.open ? 1 : 0;
 
-        const QList<QStandardItem *> person = timeRow(personDisplayName(p), p.time, p.uncertain);
+        const QList<QStandardItem *> person = timeRow(personDisplayName(p), p.time);
         const QString personKey = QStringLiteral("P|") + p.key;
+        if (!selectedKey.isEmpty() && personKey == selectedKey)
+            restoreItem = person.at(Name);
         person.at(Name)->setData(personKey, kKeyRole);
-        QFont bold = person.at(Name)->font();
-        bold.setBold(true);
-        person.at(Name)->setFont(bold);
-        person.at(Net)->setFont(bold);
-        person.at(Status)->setText(p.open ? tr("Connected now") : lastSeen(p.lastEnd));
-        if (p.open)
-            person.at(Status)->setForeground(Theme::kGreen);
+        person.at(Name)->setData(p.computers.isEmpty() ? QString() : p.computers.first(), kDeviceRole);
+        person.at(Name)->setData(p.addresses.isEmpty() ? QString() : p.addresses.first(), kAddressRole);
+        person.at(Name)->setData(p.accounts.isEmpty() ? QString() : p.accounts.first(), kUserRole);
+        person.at(Name)->setData(p.addresses, kAddressesRole);
+        person.at(Name)->setFont(mediumFont);
+        person.at(Net)->setFont(demiFont);
+        person.at(Status)->setText(p.open ? tr("Online") : lastSeen(p.lastEnd, today));
+        person.at(Status)->setForeground(p.open ? Theme::kGreen : Theme::kLabelSecondary);
 
         QStringList about{p.name};
-        if (!p.computers.isEmpty())
-            about << tr("Computers: %1").arg(p.computers.join(QStringLiteral(", ")));
         if (!p.addresses.isEmpty())
-            about << tr("Addresses: %1").arg(p.addresses.join(QStringLiteral(", ")));
-        if (!p.accounts.isEmpty())
-            about << tr("Accounts: %1").arg(p.accounts.join(QStringLiteral(", ")));
-        about << tr("Servers: %1").arg(p.servers.join(QStringLiteral(", ")));
+            about << tr("IP: %1").arg(p.addresses.join(QStringLiteral(", ")));
+        if (!p.servers.isEmpty())
+            about << tr("Servers: %1").arg(p.servers.join(QStringLiteral(", ")));
         if (!oneDay)
-            about << tr("Days with time: %1").arg(p.days);
+            about << tr("Days: %1").arg(p.days);
         person.at(Name)->setToolTip(html(about));
-        QStringList netAbout{tr("Active: %1").arg(duration(p.time.netMs()))};
-        if (p.overlapMs >= 60000)
-            netAbout << tr("%1 of overlapping time across simultaneous connections was counted once.")
-                            .arg(duration(p.overlapMs));
-        person.at(Net)->setToolTip(html(netAbout));
 
         for (const UsageEngine::Share &s : p.shares) {
-            const QString shareName = by == Breakdown::ByServer ? (s.server.isEmpty() ? dash : s.server) : dayText(s.day);
-            const QList<QStandardItem *> share = timeRow(shareName, s.time, s.uncertain);
-            share.at(Name)->setData(personKey + QStringLiteral("|S|") + (by == Breakdown::ByServer
-                                        ? s.serverId : s.day.toString(Qt::ISODate)), kKeyRole);
-            share.at(Status)->setText(s.open ? tr("Connected now") : lastSeen(s.lastEnd));
-            if (s.open)
-                share.at(Status)->setForeground(Theme::kGreen);
+            const QList<QStandardItem *> share = timeRow(dayText(s.day, today), s.time);
+            const QString shareKey = personKey + QStringLiteral("|D|") + s.day.toString(Qt::ISODate);
+            if (!selectedKey.isEmpty() && shareKey == selectedKey)
+                restoreItem = share.at(Name);
+            share.at(Name)->setData(shareKey, kKeyRole);
+            share.at(Status)->setText(s.open ? tr("Online") : lastSeen(s.lastEnd, today));
+            share.at(Status)->setForeground(s.open ? Theme::kGreen : Theme::kLabelSecondary);
 
             for (const UsageEngine::Entry &e : s.entries) {
                 const UsageEngine::Visit &v = report.visits.at(e.visit);
                 const UsageEngine::DayVisit &dv = e.slice;
-                const QString start = dv.fromPreviousDay ? QStringLiteral("00:00") : clock(dv.start);
-                const QString end = dv.open ? tr("now") : dv.intoNextDay ? QStringLiteral("24:00") : clock(dv.end);
+                const QString start = dv.fromPreviousDay ? QStringLiteral("00:00") : clockText(dv.start);
+                const QString end = dv.open ? tr("now") : dv.intoNextDay ? QStringLiteral("24:00") : clockText(dv.end);
                 const QString span = QStringLiteral("%1 – %2").arg(start, end);
-                const QString where = by == Breakdown::ByServer ? (oneDay ? QString() : shortDay(e.day)) : v.server;
+                const QString label = v.server.isEmpty() ? span : v.server + QStringLiteral("   ") + span;
                 const UsageEngine::Time t{dv.activeMs, dv.afkMs, dv.unknownMs};
-                const QList<QStandardItem *> entry = timeRow(
-                    where.isEmpty() ? span : where + QStringLiteral("   ") + span, t, e.uncertain);
+                const QList<QStandardItem *> entry = timeRow(label, t);
+                const QString entryKey = shareKey + QStringLiteral("|V|") + v.serverId + QLatin1Char('|')
+                    + QString::number(dv.start);
+                if (!selectedKey.isEmpty() && entryKey == selectedKey)
+                    restoreItem = entry.at(Name);
+                entry.at(Name)->setData(entryKey, kKeyRole);
+                entry.at(Name)->setData(v.client, kDeviceRole);
+                entry.at(Name)->setData(v.address, kAddressRole);
+                entry.at(Name)->setData(v.user, kUserRole);
+                if (!v.address.isEmpty())
+                    entry.at(Name)->setData(QStringList{v.address}, kAddressesRole);
                 if (dv.open) {
-                    entry.at(Status)->setText(tr("Connected now"));
+                    entry.at(Status)->setText(tr("Online"));
                     entry.at(Status)->setForeground(Theme::kGreen);
-                } else if (e.uncertain) {
-                    entry.at(Status)->setText(tr("Incomplete record"));
-                    entry.at(Status)->setForeground(Theme::kOrange);
                 }
 
-                QStringList detail{tr("Server: %1").arg(v.server),
-                                   tr("Computer: %1").arg(v.client.isEmpty() ? dash : v.client),
-                                   tr("Address: %1").arg(v.address.isEmpty() ? dash : v.address),
-                                   tr("Account: %1").arg(v.user.isEmpty() ? dash : v.user)};
-                if (!v.startKnown() && !dv.fromPreviousDay)
-                    detail << tr("No sign-in record: counted from %1, when it was first seen.").arg(clock(dv.start));
-                if (!v.endKnown() && !dv.intoNextDay && !dv.open)
-                    detail << tr("No sign-out record: counted until %1, when it was last seen.").arg(clock(dv.end));
+                QStringList detail{tr("Server: %1").arg(v.server)};
+                if (!v.client.isEmpty())
+                    detail << tr("Computer: %1").arg(v.client);
+                if (!v.address.isEmpty())
+                    detail << tr("IP: %1").arg(v.address);
                 for (const UsageEngine::Part &part : dv.parts) {
                     if (part.kind != UsageEngine::Kind::Afk)
                         continue;
                     detail << tr("Idle %1 – %2 (%3)")
-                                  .arg(clock(part.start), clock(part.end), duration(part.end - part.start));
+                                  .arg(clockText(part.start), clockText(part.end), durationText(part.end - part.start));
                 }
                 entry.at(Name)->setToolTip(html(detail));
                 share.at(Name)->appendRow(entry);
@@ -513,7 +629,6 @@ void UsagePage::showReport(const UsageEngine::Report &report)
         m_model->appendRow(person);
     }
 
-    // People stay closed unless the user opened them (or there is only one); servers likewise.
     for (int r = 0; r < m_model->rowCount(); ++r) {
         QStandardItem *person = m_model->item(r, 0);
         const QString key = person->data(kKeyRole).toString();
@@ -523,20 +638,85 @@ void UsagePage::showReport(const UsageEngine::Report &report)
             m_view->setExpanded(share->index(), expanded.contains(share->data(kKeyRole).toString()));
         }
     }
+    if (restoreItem) {
+        m_view->selectionModel()->setCurrentIndex(
+            restoreItem->index(), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
     m_view->verticalScrollBar()->setValue(scroll);
+    m_view->setUpdatesEnabled(true);
+    updateContactButton();
 
-    const bool empty = people.isEmpty();
-    m_metricValues[0]->setText(empty ? dash : connectedNow > 0 ? tr("%1 (%2 connected)").arg(people.size()).arg(connectedNow)
-                                                                : QString::number(people.size()));
-    m_metricValues[1]->setText(empty ? dash : minimum(sum.netMs(), incomplete));
-    m_metricValues[2]->setText(empty ? dash : duration(sum.afkMs));
-    m_metricValues[3]->setText(empty ? dash : minimum(sum.totalMs(), incomplete));
+    const bool empty = visiblePeople.isEmpty();
+    m_metricValues[0]->setText(empty ? dash : connectedNow > 0 ? tr("%1 (%2 online)").arg(visiblePeople.size()).arg(connectedNow)
+                                                               : QString::number(visiblePeople.size()));
+    m_metricValues[1]->setText(empty ? dash : durationText(sum.netMs()));
+    const QString activeStyle = QStringLiteral("color: %1;").arg(Theme::kGreen.name());
+    if (activeStyle != m_activeMetricStyle) {
+        m_activeMetricStyle = activeStyle;
+        m_metricValues[1]->setStyleSheet(activeStyle);
+    }
+    m_metricValues[2]->setText(empty ? dash : durationText(sum.afkMs));
+    const QString idleStyle = sum.afkMs >= 60000 ? QStringLiteral("color: %1;").arg(Theme::kOrange.name()) : QString();
+    if (idleStyle != m_idleMetricStyle) {
+        m_idleMetricStyle = idleStyle;
+        m_metricValues[2]->setStyleSheet(idleStyle);
+    }
+    m_metricValues[3]->setText(empty ? dash : durationText(sum.totalMs()));
 
-    QStringList warnings;
-    if (incomplete)
-        warnings << tr("Some connections are missing a start or end record. Their totals are minimums.");
-    m_warning->setText(warnings.join(QLatin1Char(' ')));
-    m_warning->setVisible(!warnings.isEmpty());
-    m_total->setText(empty ? tr("No connections recorded for this period.")
-        : tr("Calculated from remote server logs. Overlapping connections are counted once. Times use this PC’s clock."));
+    m_total->setText(empty ? tr("No records for this period.")
+                           : tr("Calculated directly from server login, disconnect and idle data."));
+}
+
+void UsagePage::updateContactButton()
+{
+    const QModelIndexList selected = m_view->selectionModel()->selectedRows(Name);
+    const QModelIndex idx = !selected.isEmpty() ? selected.first() : m_view->currentIndex();
+    const ContactTarget target = targetForIndex(idx);
+    m_addContact->setEnabled(target.valid());
+    const bool known = target.valid() && Contacts::instance().match(target.device, target.user, target.address) != nullptr;
+    m_addContact->setText(known ? tr("Edit contact…") : tr("Add to contacts…"));
+}
+
+void UsagePage::editSelectedContact()
+{
+    const QModelIndexList selected = m_view->selectionModel()->selectedRows(Name);
+    const QModelIndex idx = !selected.isEmpty() ? selected.first() : m_view->currentIndex();
+    const ContactTarget target = targetForIndex(idx);
+    if (!target.valid())
+        return;
+    ContactsDialog::editFor(target.device, target.user, this, target.address);
+}
+
+void UsagePage::showContextMenu(const QPoint &pos)
+{
+    const QModelIndex index = m_view->indexAt(pos);
+    const ContactTarget target = targetForIndex(index);
+    if (!target.valid())
+        return;
+
+    QMenu menu(this);
+    const bool known = Contacts::instance().match(target.device, target.user, target.address) != nullptr;
+    const QString primaryLabel = !target.device.isEmpty() ? target.device : target.address;
+    menu.addAction(known ? tr("Edit contact…") : tr("Add “%1” to contacts…").arg(primaryLabel), this,
+                   [this, target] { ContactsDialog::editFor(target.device, target.user, this, target.address); });
+
+    // When a computer row also has IP address(es), offer adding a specific IP directly to contacts too.
+    if (!target.device.isEmpty() && !target.addresses.isEmpty()) {
+        for (const QString &addr : target.addresses.mid(0, 4)) {
+            if (addr.isEmpty() || addr.compare(QLatin1String("LOCAL"), Qt::CaseInsensitive) == 0)
+                continue;
+            const bool addrKnown = Contacts::instance().match({}, {}, addr) != nullptr;
+            menu.addAction(addrKnown ? tr("Edit IP “%1” contact…").arg(addr)
+                                     : tr("Add IP “%1” to contacts…").arg(addr),
+                           this, [this, addr] { ContactsDialog::editFor({}, {}, this, addr); });
+        }
+    }
+
+    if (!target.addresses.isEmpty()) {
+        menu.addSeparator();
+        const QString clip = target.addresses.join(QStringLiteral(", "));
+        menu.addAction(target.addresses.size() == 1 ? tr("Copy IP address") : tr("Copy IP addresses"), this,
+                       [clip] { QApplication::clipboard()->setText(clip); });
+    }
+    menu.exec(m_view->viewport()->mapToGlobal(pos));
 }

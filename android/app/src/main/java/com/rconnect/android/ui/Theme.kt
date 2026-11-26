@@ -79,9 +79,9 @@ val DarkAppColors = AppColors(
     orange = Color(0xFFFFDF42),
     favorite = Color(0xFFFFE34D),
     red = Color(0xFFFB8393),
-    busy = Color(0xFFFB8393),
-    busyText = Color(0xFFFFA6B2),
-    busySurface = Color(0xFF291B20),
+    busy = Color(0xFF9385F7),
+    busyText = Color(0xFFC8C0FF),
+    busySurface = Color(0xFF191826),
     connectedSurface = Color(0xFF172820),
     separator = Color(0xFF222222),
 )
@@ -112,9 +112,9 @@ val LightAppColors = AppColors(
     orange = Color(0xFF795800),
     favorite = Color(0xFFE5B500),
     red = Color(0xFFBE3A54),
-    busy = Color(0xFFBE3A54),
-    busyText = Color(0xFFA62A43),
-    busySurface = Color(0xFFFBEEF0),
+    busy = Color(0xFF5D53CC),
+    busyText = Color(0xFF473EB0),
+    busySurface = Color(0xFFF3F2FC),
     connectedSurface = Color(0xFFE5F3EB),
     separator = Color(0xFFE1E7F2),
 )
@@ -204,11 +204,16 @@ val LargeTitle = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold, l
 /** Small heading above a group of rows. */
 val SectionTitle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
 
+private val DarkMaterialScheme = toMaterialScheme(DarkAppColors)
+private val LightMaterialScheme = toMaterialScheme(LightAppColors)
+
 @Composable
 fun RConnectTheme(mode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) {
-    val colors = if (mode == ThemeMode.Light) LightAppColors else DarkAppColors
+    val light = mode == ThemeMode.Light
+    val colors = if (light) LightAppColors else DarkAppColors
+    val scheme = if (light) LightMaterialScheme else DarkMaterialScheme
     CompositionLocalProvider(LocalAppColors provides colors) {
-        MaterialTheme(colorScheme = toMaterialScheme(colors), shapes = AppShapes, typography = AppTypography) {
+        MaterialTheme(colorScheme = scheme, shapes = AppShapes, typography = AppTypography) {
             Surface(color = colors.bg, contentColor = colors.text, content = content)
         }
     }

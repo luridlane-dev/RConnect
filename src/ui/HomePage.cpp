@@ -294,6 +294,10 @@ void HomePage::showSettings()
 {
     SettingsDialog dialog(m_store, window());
     connect(&dialog, &SettingsDialog::pagesChanged, this, &HomePage::applyPages);
+    connect(&dialog, &SettingsDialog::serverLayoutChanged, this, [this] {
+        m_panel->reloadLayoutSettings();
+        emit serverLayoutChanged();
+    });
     connect(&dialog, &SettingsDialog::importRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::importRequested); });
     connect(&dialog, &SettingsDialog::exportRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::exportRequested); });
     connect(&dialog, &SettingsDialog::updateCheckRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::updateCheckRequested); });

@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
@@ -45,13 +47,18 @@ fun RConnectApp(vm: AppViewModel) {
     val tab by vm.tab.collectAsStateWithLifecycle()
     val bg = appColors.bg
 
-    // Everything is re-checked every 20 seconds while the app is on screen.
+    // Re-check every 20 seconds while on screen: only poll the open server on DetailScreen,
+    // and pause full-list polling while browsing Contacts or Activity Logs.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                vm.refreshAll()
-                vm.selected.value?.let { vm.refresh(it, force = true) }
+                val sel = vm.selected.value
+                if (sel != null) {
+                    vm.refresh(sel, force = true)
+                } else if (vm.tab.value == Tab.Servers || vm.tab.value == Tab.People) {
+                    vm.refreshAll()
+                }
                 delay(REFRESH_MS)
             }
         }
@@ -84,11 +91,18 @@ fun RConnectApp(vm: AppViewModel) {
 
 @Composable
 private fun MainTabs(vm: AppViewModel, tab: Tab) {
-    val items = listOf(
-        TabItem(Icons.Default.Home, stringResource(R.string.tab_servers)),
-        TabItem(Icons.Default.Person, stringResource(R.string.tab_people)),
-        TabItem(Icons.Default.AccountCircle, stringResource(R.string.tab_contacts)),
-    )
+    val lServers = stringResource(R.string.tab_servers)
+    val lPeople = stringResource(R.string.tab_people)
+    val lLogs = stringResource(R.string.tab_logs)
+    val lContacts = stringResource(R.string.tab_contacts)
+    val items = remember(lServers, lPeople, lLogs, lContacts) {
+        listOf(
+            TabItem(Icons.Default.Home, lServers),
+            TabItem(Icons.Default.Person, lPeople),
+            TabItem(Icons.AutoMirrored.Filled.List, lLogs),
+            TabItem(Icons.Default.AccountCircle, lContacts),
+        )
+    }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             AnimatedContent(
@@ -103,6 +117,7 @@ private fun MainTabs(vm: AppViewModel, tab: Tab) {
                 when (t) {
                     Tab.Servers -> ServersScreen(vm)
                     Tab.People -> PeopleScreen(vm)
+                    Tab.Logs -> ActivityScreen(vm)
                     Tab.Contacts -> ContactsScreen(vm)
                 }
             }

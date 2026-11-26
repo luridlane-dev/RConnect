@@ -14,16 +14,18 @@
 
 namespace {
 
-constexpr int kBruteForceAttempts = 5;
+constexpr int kBruteForceAttempts = 15;
 constexpr qint64 kBruteForceWindowMs = 10 * 60 * 1000;
 constexpr int kBreakInAttempts = 3;
 constexpr qint64 kBreakInWindowMs = 60 * 60 * 1000;
 // The same address is not reported again for this long.
-constexpr qint64 kRepeatMs = 30 * 60 * 1000;
+constexpr qint64 kRepeatMs = 6 * 3600 * 1000;
 // Older events are history, not news.
 constexpr qint64 kRecentMs = 24 * 3600 * 1000;
 constexpr int kMaxUsers = 20;
 constexpr qint64 kMessageTaskWindowMs = 10 * 60 * 1000;
+constexpr qsizetype kMaxCountryCache = 8192;
+constexpr qsizetype kMaxTrackedFailures = 4096;
 
 QMutex g_mutex;
 bool g_loaded = false;
@@ -40,10 +42,47 @@ QSet<QString> g_serversWithHistory;            // servers with at least one sign
 QHash<QString, QString> g_country;             // address -> country, "" if none
 QHash<QString, qint64> g_messageTasks;         // server id|task path -> expiration time
 
-qint64 msOf(const QString &timeUtc)
+qint64 msOf(QStringView s)
 {
-    const QDateTime utc = QDateTime::fromString(timeUtc.left(23) + QLatin1Char('Z'), Qt::ISODateWithMs);
-    return utc.isValid() ? utc.toMSecsSinceEpoch() : 0;
+    if (s.size() < 19)
+        return 0;
+    const auto dig2 = [&](qsizetype i, int &out) {
+        const ushort c0 = s.at(i).unicode() - '0';
+        const ushort c1 = s.at(i + 1).unicode() - '0';
+        if (c0 > 9 || c1 > 9)
+            return false;
+        out = c0 * 10 + c1;
+        return true;
+    };
+    if (s.at(4) != QLatin1Char('-') || s.at(7) != QLatin1Char('-')
+        || (s.at(10) != QLatin1Char('T') && s.at(10) != QLatin1Char(' '))
+        || s.at(13) != QLatin1Char(':') || s.at(16) != QLatin1Char(':'))
+        return 0;
+    int yHi = 0, yLo = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    if (!dig2(0, yHi) || !dig2(2, yLo) || !dig2(5, mo) || !dig2(8, d)
+        || !dig2(11, h) || !dig2(14, mi) || !dig2(17, se))
+        return 0;
+    const int y = yHi * 100 + yLo;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59)
+        return 0;
+    int ms = 0;
+    if (s.size() > 19 && s.at(19) == QLatin1Char('.')) {
+        int mul = 100;
+        for (qsizetype i = 20; i < s.size() && mul >= 1; ++i) {
+            const ushort c = s.at(i).unicode() - '0';
+            if (c > 9)
+                break;
+            ms += int(c) * mul;
+            mul /= 10;
+        }
+    }
+    const qint64 yr = y - (mo <= 2 ? 1 : 0);
+    const qint64 era = (yr >= 0 ? yr : yr - 399) / 400;
+    const qint64 yoe = yr - era * 400;
+    const qint64 doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const qint64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const qint64 days = era * 146097 + doe - 719468;
+    return ((days * 86400 + qint64(h) * 3600 + qint64(mi) * 60 + se) * 1000) + ms;
 }
 
 QString shortName(const QString &user)
@@ -59,7 +98,7 @@ bool isSignIn(const QString &event)
 }
 
 // Caller holds the mutex.
-QString countryOf(const QString &address)
+QString countryOf(const QString &address, bool *lookedUp = nullptr)
 {
     // Only addresses: the events also say "LOCAL", which would be looked up as a host name.
     static const QRegularExpression ip(QStringLiteral("^\\d{1,3}(\\.\\d{1,3}){3}$|^[0-9a-fA-F:.]*:[0-9a-fA-F:.]*$"));
@@ -68,7 +107,12 @@ QString countryOf(const QString &address)
     const auto it = g_country.constFind(address);
     if (it != g_country.cend())
         return it.value();
-    return g_country.insert(address, GeoIp::countryOf(address)).value();
+    if (lookedUp)
+        *lookedUp = true;
+    const QString cc = GeoIp::countryOf(address);
+    if (g_country.size() >= kMaxCountryCache)
+        g_country.clear();
+    return g_country.insert(address, cc).value();
 }
 
 QString knownKey(const QString &serverId, const QString &user, const QString &country)
@@ -147,6 +191,8 @@ void Threats::expectMessageTask(const QString &serverId, const QString &taskName
 
 QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<AccessRecord> &events)
 {
+    if (events.isEmpty())
+        return {};
     QMutexLocker lock(&g_mutex);
     loadHistory();
 
@@ -155,6 +201,7 @@ QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<A
                      [](const AccessRecord &a, const AccessRecord &b) { return a.timeUtc < b.timeUtc; });
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool usedGeoIp = false;
     QList<AccessRecord> news;
     const auto raise = [&](const AccessRecord &cause, const QString &event, const QString &user, const QString &detail) {
         const AccessRecord a = alertRecord(cause, event, user, detail);
@@ -232,7 +279,7 @@ QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<A
         // is seen with only sets the baseline.
         const bool hadHistory = g_serversWithHistory.contains(server.id);
         g_serversWithHistory.insert(server.id);
-        const QString country = countryOf(r.address);
+        const QString country = countryOf(r.address, &usedGeoIp);
         if (country.isEmpty() || r.user.isEmpty())
             continue;
         const QString key = knownKey(server.id, r.user, country);
@@ -242,6 +289,16 @@ QList<AccessRecord> Threats::evaluate(const ServerProfile &server, const QList<A
         if (recent && hadHistory)
             raise(r, QStringLiteral("AlertNewCountry"), r.user, country);
     }
-    GeoIp::release();
+    if (g_failures.size() > kMaxTrackedFailures) {
+        g_failures.removeIf([now](QHash<QString, Failures>::iterator it) {
+            const qint64 latest = it->times.isEmpty() ? it->lastAlert : qMax(it->times.last(), it->lastAlert);
+            return now - latest > kRepeatMs;
+        });
+    }
+    if (g_breakInAt.size() > kMaxTrackedFailures) {
+        g_breakInAt.removeIf([now](QHash<QString, qint64>::iterator it) { return now - it.value() > kRepeatMs; });
+    }
+    if (usedGeoIp)
+        GeoIp::release();
     return news;
 }

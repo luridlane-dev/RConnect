@@ -17,7 +17,7 @@
 
 namespace {
 
-enum Column { Name, Device, User, ColumnCount };
+enum Column { Name, Device, Address, User, ColumnCount };
 
 } // namespace
 
@@ -25,17 +25,17 @@ ContactsDialog::ContactsDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Contacts"));
-    resize(640, 440);
+    resize(720, 450);
 
-    auto *intro = new QLabel(tr("Give a computer a nickname, for example LENOVO is “Elif”. The nickname is shown in the "
-                                "server list, in who is connected and in the history, whatever IP address the person "
-                                "connects from. To add someone quickly, right-click a server with a person on it."),
+    auto *intro = new QLabel(tr("Give a computer or IP address a nickname, for example LENOVO is “Elif”. The nickname is shown in the "
+                                "server list, in time on servers and in activity history. To add someone quickly, right-click a "
+                                "server, person, or IP address."),
                              this);
     intro->setObjectName(QStringLiteral("pageSubtitle"));
     intro->setWordWrap(true);
 
     m_table = new QTableWidget(0, ColumnCount, this);
-    m_table->setHorizontalHeaderLabels({tr("Nickname"), tr("Computer"), tr("Account")});
+    m_table->setHorizontalHeaderLabels({tr("Nickname"), tr("Computer"), tr("IP address"), tr("Account")});
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -97,7 +97,7 @@ void ContactsDialog::reload()
     for (const Contact &c : contacts) {
         const int row = m_table->rowCount();
         m_table->insertRow(row);
-        const QString texts[ColumnCount] = {c.name, c.device, c.user};
+        const QString texts[ColumnCount] = {c.name, c.device, c.address, c.user};
         for (int col = 0; col < ColumnCount; ++col) {
             auto *item = new QTableWidgetItem(texts[col]);
             item->setData(Qt::UserRole, c.id);
@@ -172,13 +172,15 @@ bool ContactsDialog::edit(Contact contact, QWidget *parent)
     name->setCompleter(suggestions);
     auto *device = new QLineEdit(contact.device);
     device->setPlaceholderText(tr("e.g. LENOVO"));
+    auto *address = new QLineEdit(contact.address);
+    address->setPlaceholderText(tr("e.g. 88.230.151.85 (optional)"));
     auto *user = new QLineEdit(contact.user);
     user->setPlaceholderText(tr("Optional"));
-    for (QLineEdit *e : {name, device, user})
+    for (QLineEdit *e : {name, device, address, user})
         e->setMinimumWidth(300);
 
-    auto *hint = new QLabel(tr("The computer name is enough: the nickname follows it from any IP address. Fill in the "
-                               "account only if this person signs in with their own account."));
+    auto *hint = new QLabel(tr("A computer name follows the person across IP addresses. Fill in an IP address when "
+                               "only the IP is known, and the account only if they use their own Windows account."));
     hint->setObjectName(QStringLiteral("pageSubtitle"));
     hint->setWordWrap(true);
     hint->setMaximumWidth(400);
@@ -186,6 +188,7 @@ bool ContactsDialog::edit(Contact contact, QWidget *parent)
     auto *form = new QFormLayout;
     form->addRow(tr("Nickname"), name);
     form->addRow(tr("Computer"), device);
+    form->addRow(tr("IP address"), address);
     form->addRow(tr("Account"), user);
 
     auto *buttons = new QDialogButtonBox;
@@ -194,8 +197,11 @@ bool ContactsDialog::edit(Contact contact, QWidget *parent)
     buttons->addButton(tr("Cancel"), QDialogButtonBox::RejectRole);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, [&] {
-        if (name->text().trimmed().isEmpty() || (device->text().trimmed().isEmpty() && user->text().trimmed().isEmpty())) {
-            QMessageBox::information(&dlg, dlg.windowTitle(), tr("Enter a nickname and a computer name or an account."));
+        if (name->text().trimmed().isEmpty()
+            || (device->text().trimmed().isEmpty() && address->text().trimmed().isEmpty()
+                && user->text().trimmed().isEmpty())) {
+            QMessageBox::information(&dlg, dlg.windowTitle(),
+                                     tr("Enter a nickname and a computer name, IP address, or account."));
             return;
         }
         dlg.accept();
@@ -215,18 +221,24 @@ bool ContactsDialog::edit(Contact contact, QWidget *parent)
         return false;
     contact.name = name->text().trimmed();
     contact.device = device->text().trimmed();
+    contact.address = address->text().trimmed();
     contact.user = user->text().trimmed();
     Contacts::instance().save(contact);
     return true;
 }
 
-void ContactsDialog::editFor(const QString &device, const QString &user, QWidget *parent)
+void ContactsDialog::editFor(const QString &device, const QString &user, QWidget *parent, const QString &address)
 {
-    if (const Contact *existing = Contacts::instance().match(device, user)) {
+    if (const Contact *existing = Contacts::instance().match(device, user, address)) {
         edit(*existing, parent);
         return;
     }
     Contact c;
-    c.device = device;
+    if (!device.isEmpty())
+        c.device = device;
+    else if (!address.isEmpty())
+        c.address = address;
+    else
+        c.user = user;
     edit(c, parent);
 }

@@ -7,6 +7,7 @@
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QLineEdit;
 class QListWidget;
 class QPushButton;
 class QVBoxLayout;
@@ -24,6 +25,7 @@ signals:
     void updateCheckRequested();
     void aboutRequested();
     void pagesChanged();
+    void serverLayoutChanged();
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -40,10 +42,13 @@ private:
     QStringList m_shownGroups; // what the group rows show; rebuilt only when this changes
     bool m_fitted = false;
     QVBoxLayout *m_groupRows = nullptr;
+    QLineEdit *m_newGroup = nullptr;
+    QPushButton *m_addGroup = nullptr;
     QLabel *m_groupHint = nullptr;
     QLabel *m_titles[4] = {};
     QLabel *m_pagesHeading = nullptr;
     QLabel *m_groupHeading = nullptr;
+    QLabel *m_sortingLabel = nullptr;
     QLabel *m_logHeading = nullptr;
     QLabel *m_cacheHeading = nullptr;
     QLabel *m_cacheHint = nullptr;
@@ -53,6 +58,7 @@ private:
     QComboBox *m_language = nullptr;
     QComboBox *m_theme = nullptr;
     QComboBox *m_buttons = nullptr;
+    QComboBox *m_sorting = nullptr;
     QCheckBox *m_autostart = nullptr;
     QCheckBox *m_pages[2] = {};
     QCheckBox *m_detailed = nullptr;

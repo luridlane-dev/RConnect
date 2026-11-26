@@ -1,8 +1,8 @@
 #pragma once
 #include "core/AccessLog.h"
 
-#include <QPair>
 #include <QHash>
+#include <QPair>
 #include <QStringList>
 #include <QWidget>
 
@@ -16,7 +16,7 @@ class QTableView;
 class QTimer;
 class ServerStore;
 
-// One row of the table: an entry of the file, or the failed attempts of one address in a row.
+// One row of the table: an entry of the file, or grouped failed attempts from one address.
 struct AccessLine {
     AccessRecord r;          // the newest entry
     QString firstUtc;        // the oldest, for a run of attempts
@@ -26,7 +26,7 @@ struct AccessLine {
     QStringList reasons;     // why they failed, as the server logged it
 };
 
-// Table of access-log.csv: who logged on, failed to log on, left or was watched, newest first.
+// Activity log table: sign-ins, disconnections, failed attempts, alerts, and server changes.
 class AccessLogPage : public QWidget {
     Q_OBJECT
 public:
@@ -36,7 +36,6 @@ public:
 
     static QString eventText(const QString &event);
     static QString sourceText(const QString &source);
-    // A sentence about a security alert or a change on the server; empty for other events.
     static QString alertSummary(const AccessRecord &r);
 
 signals:
@@ -74,17 +73,17 @@ private:
     QComboBox *m_category;
     QComboBox *m_server;
     QComboBox *m_period;
-    QComboBox *m_source;
+    QPushButton *m_showFailed;
     QLabel *m_count;
     QLabel *m_syncStatus;
     QTimer *m_timer;
+    QTimer *m_syncReloadTimer = nullptr;
     QPushButton *m_refresh;
     QPushButton *m_export;
-    QPushButton *m_open;
-    QPair<qint64, qint64> m_stamp; // size and modification time of the file last shown
+    QPair<qint64, qint64> m_stamp;
     bool m_loaded = false;
-    bool m_busy = false;   // a read is under way
-    bool m_again = false;  // the file changed meanwhile
+    bool m_busy = false;
+    bool m_again = false;
     QList<AccessLine> m_lines;
     QFrame *m_detail = nullptr;
     QLabel *m_detailText = nullptr;
