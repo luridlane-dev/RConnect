@@ -194,6 +194,14 @@ object Parsing {
     private val timeCreated = Regex("SystemTime=['\"]([^'\"]+)['\"]")
     private val recordId = Regex("<EventRecordID>(\\d+)</EventRecordID>")
     private val dataItem = Regex("<Data Name=['\"]([^'\"]*)['\"]>(.*?)</Data>", RegexOption.DOT_MATCHES_ALL)
+    private val wsCollapse = Regex("\\s+")
+
+    private fun taskCommand(taskXml: String): String {
+        if (taskXml.isEmpty()) return ""
+        val cmd = field(taskXml, "Command")
+        val args = field(taskXml, "Arguments")
+        return listOf(cmd, args).filter { it.isNotEmpty() }.joinToString(" ").replace(wsCollapse, " ").trim().take(240)
+    }
 
     private fun field(xml: String, name: String): String {
         val open = "<$name>"
@@ -270,18 +278,26 @@ object Parsing {
                     sessionId = 0,
                     recordId = record,
                 )
-                4720 -> AccessEvent(
-                    kind = AccessEvent.Kind.UserCreated,
+                4720, 4722, 4723, 4724, 4725, 4726, 4740 -> AccessEvent(
+                    kind = when (id) {
+                        4720 -> AccessEvent.Kind.UserCreated
+                        4722 -> AccessEvent.Kind.UserEnabled
+                        4723 -> AccessEvent.Kind.PasswordChangeAttempt
+                        4724 -> AccessEvent.Kind.PasswordResetAttempt
+                        4725 -> AccessEvent.Kind.UserDisabled
+                        4726 -> AccessEvent.Kind.UserDeleted
+                        else -> AccessEvent.Kind.AccountLocked
+                    },
                     timeUtcMs = time,
                     user = account(data["TargetDomainName"], data["TargetUserName"]),
                     address = "",
-                    client = "",
+                    client = if (id == 4740) dash(data["CallerComputerName"]) else "",
                     detail = actor(data),
                     sessionId = 0,
                     recordId = record,
                 )
-                4732 -> AccessEvent(
-                    kind = AccessEvent.Kind.GroupMemberAdded,
+                4732, 4733 -> AccessEvent(
+                    kind = if (id == 4732) AccessEvent.Kind.GroupMemberAdded else AccessEvent.Kind.GroupMemberRemoved,
                     timeUtcMs = time,
                     user = dash(data["MemberName"]).ifEmpty { dash(data["MemberSid"]) },
                     address = "",
@@ -290,16 +306,42 @@ object Parsing {
                     sessionId = 0,
                     recordId = record,
                 )
-                4698 -> AccessEvent(
-                    kind = AccessEvent.Kind.TaskCreated,
-                    timeUtcMs = time,
-                    user = actor(data),
-                    address = "",
-                    client = "",
-                    detail = dash(data["TaskName"]),
-                    sessionId = 0,
-                    recordId = record,
-                )
+                4698, 4699, 4700, 4701, 4702 -> {
+                    val taskName = dash(data["TaskName"])
+                    val cmd = taskCommand(data["TaskContentNew"] ?: data["TaskContent"].orEmpty())
+                    val detail = if (cmd.isNotEmpty() && taskName.isNotEmpty()) "$taskName: $cmd" else taskName.ifEmpty { cmd }
+                    AccessEvent(
+                        kind = when (id) {
+                            4698 -> AccessEvent.Kind.TaskCreated
+                            4699 -> AccessEvent.Kind.TaskRemoved
+                            4700 -> AccessEvent.Kind.TaskEnabled
+                            4701 -> AccessEvent.Kind.TaskDisabled
+                            else -> AccessEvent.Kind.TaskUpdated
+                        },
+                        timeUtcMs = time,
+                        user = actor(data),
+                        address = "",
+                        client = "",
+                        detail = detail,
+                        sessionId = 0,
+                        recordId = record,
+                    )
+                }
+                4719 -> {
+                    val guid = dash(data["SubcategoryGuid"])
+                    val changes = dash(data["AuditPolicyChanges"]).replace(wsCollapse, " ").trim()
+                    val detail = listOf(guid, changes).filter { it.isNotEmpty() }.joinToString(" · ")
+                    AccessEvent(
+                        kind = AccessEvent.Kind.AuditPolicyChanged,
+                        timeUtcMs = time,
+                        user = actor(data),
+                        address = "",
+                        client = "",
+                        detail = detail,
+                        sessionId = 0,
+                        recordId = record,
+                    )
+                }
                 7045 -> AccessEvent(
                     kind = AccessEvent.Kind.ServiceInstalled,
                     timeUtcMs = time,

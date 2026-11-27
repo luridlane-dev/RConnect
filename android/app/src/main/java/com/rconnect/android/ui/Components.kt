@@ -664,9 +664,21 @@ fun eventKindTitle(resources: Resources, kind: AccessEvent.Kind): String = when 
     AccessEvent.Kind.Reconnect -> resources.getString(R.string.ev_reconnect)
     AccessEvent.Kind.FailedSignIn -> resources.getString(R.string.ev_failed)
     AccessEvent.Kind.UserCreated -> resources.getString(R.string.ev_user_created)
+    AccessEvent.Kind.UserEnabled -> resources.getString(R.string.ev_user_enabled)
+    AccessEvent.Kind.PasswordChangeAttempt -> resources.getString(R.string.ev_password_changed)
+    AccessEvent.Kind.PasswordResetAttempt -> resources.getString(R.string.ev_password_reset)
+    AccessEvent.Kind.UserDisabled -> resources.getString(R.string.ev_user_disabled)
+    AccessEvent.Kind.UserDeleted -> resources.getString(R.string.ev_user_deleted)
     AccessEvent.Kind.GroupMemberAdded -> resources.getString(R.string.ev_group_added)
+    AccessEvent.Kind.GroupMemberRemoved -> resources.getString(R.string.ev_group_removed)
     AccessEvent.Kind.TaskCreated -> resources.getString(R.string.ev_task_created)
+    AccessEvent.Kind.TaskRemoved -> resources.getString(R.string.ev_task_removed)
+    AccessEvent.Kind.TaskEnabled -> resources.getString(R.string.ev_task_enabled)
+    AccessEvent.Kind.TaskDisabled -> resources.getString(R.string.ev_task_disabled)
+    AccessEvent.Kind.TaskUpdated -> resources.getString(R.string.ev_task_updated)
     AccessEvent.Kind.ServiceInstalled -> resources.getString(R.string.ev_service_installed)
+    AccessEvent.Kind.AuditPolicyChanged -> resources.getString(R.string.ev_audit_changed)
+    AccessEvent.Kind.AccountLocked -> resources.getString(R.string.ev_account_locked)
     AccessEvent.Kind.LogCleared -> resources.getString(R.string.ev_log_cleared)
 }
 
@@ -676,12 +688,25 @@ fun eventKindColor(kind: AccessEvent.Kind): Color {
     return when (kind) {
         AccessEvent.Kind.SignIn, AccessEvent.Kind.Reconnect, AccessEvent.Kind.Logon -> c.green
         AccessEvent.Kind.SignOut -> c.text3
-        AccessEvent.Kind.Disconnect -> c.orange
+        AccessEvent.Kind.Disconnect,
+        AccessEvent.Kind.UserEnabled,
+        AccessEvent.Kind.PasswordChangeAttempt,
+        AccessEvent.Kind.PasswordResetAttempt,
+        AccessEvent.Kind.UserDisabled,
+        AccessEvent.Kind.GroupMemberRemoved,
+        AccessEvent.Kind.TaskRemoved,
+        AccessEvent.Kind.TaskEnabled,
+        AccessEvent.Kind.TaskDisabled,
+        AccessEvent.Kind.TaskUpdated,
+        -> c.orange
         AccessEvent.Kind.FailedSignIn,
         AccessEvent.Kind.UserCreated,
+        AccessEvent.Kind.UserDeleted,
         AccessEvent.Kind.GroupMemberAdded,
         AccessEvent.Kind.TaskCreated,
         AccessEvent.Kind.ServiceInstalled,
+        AccessEvent.Kind.AuditPolicyChanged,
+        AccessEvent.Kind.AccountLocked,
         AccessEvent.Kind.LogCleared,
         -> c.red
     }

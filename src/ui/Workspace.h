@@ -63,7 +63,8 @@ private:
     void removeServer(const QString &id);
     void onSessionState(RdpSession::State state);
     void updateLiveSessions();
-    void explainEnd(RdpSession *s);
+    void explainEnd(RdpSession *s, int attempt = 0);
+    void notifyReplaced(RdpSession *s, const QString &serverName, const QString &detail);
     void refreshOpenMarkers();
     void recordRecentServer(const QString &serverId);
     void updateJumpList();
@@ -94,6 +95,7 @@ private:
     QList<SessionWindow *> m_windows;
     QHash<SessionWindow *, QFrame *> m_popups;
     QSystemTrayIcon *m_tray = nullptr; // created with the first alert
+    QString m_lastTrayServerId;
     QHash<QString, RdpSession *> m_sessions;
     QHash<QString, QMessageBox *> m_pendingOpens;
     QThreadPool m_connectLogPool;

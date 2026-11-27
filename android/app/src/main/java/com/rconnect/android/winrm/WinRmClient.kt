@@ -46,14 +46,19 @@ class WinRmClient(
     private var lastLatencyMs = -1
     private var lastServerNowUtcMs = 0L
 
-    /** The server's sessions, recent connection times, and (when [withEvents]) the full event log after [lookbackMs] ago. */
+    /**
+     * The server's sessions, recent connection times, and (when [withEvents]) the full event log after [lookbackMs] ago.
+     * When [withEvents] is false and [securityLookbackMs] is non-null, only lightweight security/audit change events are
+     * fetched on the same WinRM shell (used by background notifications).
+     */
     fun snapshot(
         withEvents: Boolean,
         lookbackMs: Long = DEFAULT_LOOKBACK_MS,
         includeTimes: Boolean = true,
+        securityLookbackMs: Long? = null,
     ): ServerSnapshot {
-        val text = run(sessionCommand(if (withEvents) lookbackMs else null, includeTimes))
-        return Parsing.snapshot(text, withEvents, fallbackServerNowMs = lastServerNowUtcMs)
+        val text = run(sessionCommand(if (withEvents) lookbackMs else null, includeTimes, securityLookbackMs))
+        return Parsing.snapshot(text, withEvents || securityLookbackMs != null, fallbackServerNowMs = lastServerNowUtcMs)
             .copy(latencyMs = lastLatencyMs)
     }
 
@@ -398,28 +403,47 @@ class WinRmClient(
             return -1
         }
 
-        private fun eventLog(source: String, log: String, xpath: String, lookbackMs: Long) =
-            "echo ${Parsing.LOG_MARKER}$source## & wevtutil qe $log /c:$MAX_EVENTS /rd:true /f:xml " +
+        private fun eventLog(source: String, log: String, xpath: String, lookbackMs: Long, maxEvents: Int = MAX_EVENTS) =
+            "echo ${Parsing.LOG_MARKER}$source## & wevtutil qe $log /c:$maxEvents /rd:true /f:xml " +
                 "/q:\"${xpath.replace("TIME", "timediff(@SystemTime)<=$lookbackMs")}\" 2>nul & "
+
+        private const val SECURITY_MAX_EVENTS = 40
+        private const val AUD_XPATH =
+            "*[System[TimeCreated[TIME]] and (System[(EventID>=4722 and EventID<=4726) or (EventID>=4699 and EventID<=4702) " +
+                "or EventID=4719 or EventID=4740] " +
+                "or (System[EventID=4733] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' or Data[@Name='TargetSid']='S-1-5-32-555']))]"
+        private const val SYS_XPATH =
+            "*[System[TimeCreated[TIME] and ((Provider[@Name='Service Control Manager'] and EventID=7045) " +
+                "or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=104))]]"
 
         /**
          * Session list, recent LSM connection events (for exact connection duration), and (with [lookbackMs])
-         * sign-in/out history, failed sign-ins and security changes.
+         * sign-in/out history, failed sign-ins and security/audit changes. When [lookbackMs] is null and
+         * [securityLookbackMs] is set, only lightweight security/audit change events are queried.
          */
-        fun sessionCommand(lookbackMs: Long?, includeTimes: Boolean = true): String {
-            val events = if (lookbackMs == null) "" else
-                eventLog("LSM", "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
-                    "*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25) and TimeCreated[TIME]]]", lookbackMs) +
+        fun sessionCommand(lookbackMs: Long?, includeTimes: Boolean = true, securityLookbackMs: Long? = null): String {
+            val events = when {
+                lookbackMs != null ->
+                    eventLog("LSM", "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
+                        "*[System[(EventID=21 or EventID=23 or EventID=24 or EventID=25) and TimeCreated[TIME]]]", lookbackMs) +
+                        eventLog("SEC", "Security",
+                            "*[System[TimeCreated[TIME]] and (System[EventID=4778 or EventID=4779 or EventID=4720 or EventID=4698 or EventID=1102] " +
+                                "or (System[EventID=4625] and EventData[Data[@Name='LogonType']='10' or Data[@Name='LogonType']='3']) " +
+                                "or (System[EventID=4732] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' or Data[@Name='TargetSid']='S-1-5-32-555']))]",
+                            lookbackMs) +
+                        eventLog("AUD", "Security", AUD_XPATH, lookbackMs) +
+                        eventLog("SYS", "System", SYS_XPATH, lookbackMs) +
+                        "echo ${Parsing.EVENTS_MARKER} & "
+                securityLookbackMs != null ->
                     eventLog("SEC", "Security",
-                        "*[System[TimeCreated[TIME]] and (System[EventID=4778 or EventID=4779 or EventID=4720 or EventID=4698 or EventID=1102] " +
-                            "or (System[EventID=4625] and EventData[Data[@Name='LogonType']='10' or Data[@Name='LogonType']='3']) " +
+                        "*[System[TimeCreated[TIME]] and (System[EventID=4720 or EventID=4698 or EventID=1102] " +
                             "or (System[EventID=4732] and EventData[Data[@Name='TargetSid']='S-1-5-32-544' or Data[@Name='TargetSid']='S-1-5-32-555']))]",
-                        lookbackMs) +
-                    eventLog("SYS", "System",
-                        "*[System[TimeCreated[TIME] and ((Provider[@Name='Service Control Manager'] and EventID=7045) " +
-                            "or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=104))]]",
-                        lookbackMs) +
-                    "echo ${Parsing.EVENTS_MARKER} & "
+                        securityLookbackMs, SECURITY_MAX_EVENTS) +
+                        eventLog("AUD", "Security", AUD_XPATH, securityLookbackMs, SECURITY_MAX_EVENTS) +
+                        eventLog("SYS", "System", SYS_XPATH, securityLookbackMs, SECURITY_MAX_EVENTS) +
+                        "echo ${Parsing.EVENTS_MARKER} & "
+                else -> ""
+            }
             // When lookbackMs != null, the LSM log is already queried in `events` above, so don't query it a second time.
             val connections = if (includeTimes && lookbackMs == null) {
                 "echo ${Parsing.LOG_MARKER}LSM## & wevtutil qe Microsoft-Windows-TerminalServices-LocalSessionManager/Operational " +

@@ -296,9 +296,6 @@ UsagePage::UsagePage(QWidget *parent)
     m_addContact->setCursor(Qt::PointingHandCursor);
     m_addContact->setEnabled(false);
     connect(m_addContact, &QPushButton::clicked, this, &UsagePage::editSelectedContact);
-    m_configure = new QPushButton(this);
-    m_configure->setCursor(Qt::PointingHandCursor);
-    connect(m_configure, &QPushButton::clicked, this, [this] { emit configureServersRequested(); });
 
     auto *head = new QHBoxLayout;
     head->setSpacing(8);
@@ -307,7 +304,6 @@ UsagePage::UsagePage(QWidget *parent)
     head->addWidget(m_refresh);
     head->addWidget(m_addContact);
     head->addStretch(1);
-    head->addWidget(m_configure);
 
     auto *metrics = new QHBoxLayout;
     metrics->setSpacing(12);
@@ -391,8 +387,6 @@ void UsagePage::retranslate()
     m_metricLabels[3]->setText(tr("Total"));
     m_search->setPlaceholderText(tr("Search name or server"));
     m_refresh->setText(tr("Refresh"));
-    m_configure->setText(tr("Server settings"));
-    m_configure->setToolTip(tr("Enable computer name logging and automatic idle disconnect on servers."));
     updateContactButton();
 
     const int keep = m_range->currentIndex();
@@ -419,12 +413,6 @@ void UsagePage::onServerSynced(const QString &, const QString &, bool busy, cons
 {
     if (!busy && isVisible())
         m_syncReloadTimer->start();
-}
-
-void UsagePage::setConfiguringServers(bool busy)
-{
-    m_configure->setEnabled(!busy);
-    m_configure->setText(busy ? tr("Applying…") : tr("Server settings"));
 }
 
 void UsagePage::hideEvent(QHideEvent *e)

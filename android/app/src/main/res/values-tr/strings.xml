@@ -113,9 +113,21 @@
     <string name="ev_reconnect">Yeniden bağlandı</string>
     <string name="ev_failed">Başarısız giriş</string>
     <string name="ev_user_created">Kullanıcı hesabı oluşturuldu</string>
+    <string name="ev_user_enabled">Kullanıcı hesabı etkinleştirildi</string>
+    <string name="ev_password_changed">Şifre değişikliği denendi</string>
+    <string name="ev_password_reset">Şifre sıfırlama denendi</string>
+    <string name="ev_user_disabled">Kullanıcı hesabı devre dışı bırakıldı</string>
+    <string name="ev_user_deleted">Kullanıcı hesabı silindi</string>
     <string name="ev_group_added">Yetkili gruba eklendi</string>
+    <string name="ev_group_removed">Yetkili gruptan çıkarıldı</string>
     <string name="ev_task_created">Zamanlanmış görev oluşturuldu</string>
+    <string name="ev_task_removed">Zamanlanmış görev silindi</string>
+    <string name="ev_task_enabled">Zamanlanmış görev etkinleştirildi</string>
+    <string name="ev_task_disabled">Zamanlanmış görev devre dışı bırakıldı</string>
+    <string name="ev_task_updated">Zamanlanmış görev güncellendi</string>
     <string name="ev_service_installed">Servis kuruldu</string>
+    <string name="ev_audit_changed">Denetim politikası değiştirildi</string>
+    <string name="ev_account_locked">Hesap kilitlendi</string>
     <string name="ev_log_cleared">Olay günlüğü temizlendi</string>
 
     <string name="fail_unknown_user">Bilinmeyen kullanıcı adı</string>
@@ -207,6 +219,7 @@
     <string name="notify_connect">Biri bağlandığında</string>
     <string name="notify_leave">Biri ayrıldığında</string>
     <string name="notify_problem">Bir sunucu yanıt vermeyi bıraktığında</string>
+    <string name="notify_security">Sunucuda güvenlik veya hesap değişikliği yapıldığında</string>
     <string name="notifications_help">Değişiklikler Android bildirimi olarak gelir. Arka plan kontrolü açıkken telefon 30 saniyede bir bakar ve kalıcı bir bildirim gösterir; kapalıyken yaklaşık 15 dakikada bir bakar (pil tasarrufunda daha seyrek).</string>
     <string name="notifications_denied">Android bildirimlere izin vermedi. Telefonun ayarlarından bu uygulama için izin verebilirsiniz.</string>
     <string name="open_settings">Ayarları aç</string>

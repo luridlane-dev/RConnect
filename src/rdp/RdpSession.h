@@ -37,7 +37,11 @@ public:
     // Gives the keyboard to the control's inner window; only then Win and Alt+Tab go to the server.
     void focusRemote();
     // After the connection ended: what the server said about who is connected. An empty title keeps the default.
-    void setServerView(const QString &title, const QString &message);
+    // Set `replaced` when the server check confirmed another user took over a connection that ended without a reason.
+    void setServerView(const QString &title, const QString &message, bool replaced = false);
+    void setCheckingServer(bool checking);
+    bool hasServerView() const { return m_serverViewSet; }
+    bool wasUnknownServerClose() const { return m_everConnected && m_lastReason == 0 && m_lastExtReason == 0; }
 
 signals:
     void stateChanged(RdpSession::State state);
@@ -79,6 +83,7 @@ private:
     void setState(State s);
     void log(const QString &text) const;
     void showOverlay();
+    void raiseOverlay();
     void sendFiles(const QList<QUrl> &files);
     QString describe(int reason, int extReason) const;
 
@@ -93,6 +98,8 @@ private:
     bool m_sawActive = false;
     bool m_refreshing = false;
     bool m_controlMissing = false;
+    bool m_checkingServer = false;
+    bool m_serverViewSet = false;
     int m_lastReason = 0;
     int m_lastExtReason = 0;
     QString m_noteTitle, m_noteMessage; // see setServerView()

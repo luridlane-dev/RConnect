@@ -300,6 +300,7 @@ void HomePage::showSettings()
     });
     connect(&dialog, &SettingsDialog::importRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::importRequested); });
     connect(&dialog, &SettingsDialog::exportRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::exportRequested); });
+    connect(&dialog, &SettingsDialog::configureServersRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::configureServersRequested); });
     connect(&dialog, &SettingsDialog::updateCheckRequested, this, [this] { QTimer::singleShot(0, this, &HomePage::updateCheckRequested); });
     connect(&dialog, &SettingsDialog::aboutRequested, this, &HomePage::showAbout);
     dialog.exec();

@@ -30,15 +30,46 @@ data class AccessEvent(
         FailedSignIn,
         Logon,
         UserCreated,
+        UserEnabled,
+        PasswordChangeAttempt,
+        PasswordResetAttempt,
+        UserDisabled,
+        UserDeleted,
         GroupMemberAdded,
+        GroupMemberRemoved,
         TaskCreated,
+        TaskRemoved,
+        TaskEnabled,
+        TaskDisabled,
+        TaskUpdated,
         ServiceInstalled,
+        AuditPolicyChanged,
+        AccountLocked,
         LogCleared,
     }
 
     val isSecurity: Boolean
-        get() = kind == Kind.UserCreated || kind == Kind.GroupMemberAdded ||
-            kind == Kind.TaskCreated || kind == Kind.ServiceInstalled || kind == Kind.LogCleared
+        get() = when (kind) {
+            Kind.UserCreated,
+            Kind.UserEnabled,
+            Kind.PasswordChangeAttempt,
+            Kind.PasswordResetAttempt,
+            Kind.UserDisabled,
+            Kind.UserDeleted,
+            Kind.GroupMemberAdded,
+            Kind.GroupMemberRemoved,
+            Kind.TaskCreated,
+            Kind.TaskRemoved,
+            Kind.TaskEnabled,
+            Kind.TaskDisabled,
+            Kind.TaskUpdated,
+            Kind.ServiceInstalled,
+            Kind.AuditPolicyChanged,
+            Kind.AccountLocked,
+            Kind.LogCleared,
+            -> true
+            else -> false
+        }
 }
 
 data class ServerSnapshot(

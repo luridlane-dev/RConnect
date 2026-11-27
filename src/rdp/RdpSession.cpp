@@ -62,7 +62,16 @@ constexpr int kMouseSendIntervalMs = 16;
 constexpr uint kNetworkWan = 5;
 constexpr uint kNetworkAutoDetect = 7;
 constexpr int kConnectPollMs = 150;
-constexpr int kConnectedPollMs = 4000;
+constexpr int kConnectedPollMs = 1000;
+
+void ensureClipSiblings(HWND hwnd)
+{
+    if (!hwnd)
+        return;
+    const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    if ((style & WS_CLIPSIBLINGS) == 0)
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style | WS_CLIPSIBLINGS);
+}
 
 // Newest installed control first.
 const char *const kControlClsids[] = {
@@ -94,6 +103,8 @@ public:
         m_title = new QLabel(this);
         m_title->setObjectName(QStringLiteral("overlayTitle"));
         m_title->setAlignment(Qt::AlignCenter);
+        m_title->setWordWrap(true);
+        m_title->setMaximumWidth(kTitleWidth);
         m_message = new QLabel(this);
         m_message->setObjectName(QStringLiteral("overlayMessage"));
         m_message->setAlignment(Qt::AlignCenter);
@@ -107,6 +118,7 @@ public:
         m_close->setCursor(Qt::PointingHandCursor);
         connect(m_reconnect, &QPushButton::clicked, this, &SessionOverlay::reconnectClicked);
         connect(m_close, &QPushButton::clicked, this, &SessionOverlay::closeClicked);
+        connect(Theme::notifier(), &ThemeNotifier::changed, this, qOverload<>(&QWidget::update));
         m_reconnect->setText(QCoreApplication::translate("RdpSession", "Reconnect"));
 
         auto *buttons = new QHBoxLayout;
@@ -120,7 +132,7 @@ public:
         lay->setSpacing(12);
         lay->addStretch();
         lay->addSpacing(kArtHeight); // the animation is painted here
-        lay->addWidget(m_title);
+        lay->addWidget(m_title, 0, Qt::AlignHCenter);
         lay->addWidget(m_message, 0, Qt::AlignHCenter);
         lay->addSpacing(8);
         lay->addLayout(buttons);
@@ -153,7 +165,10 @@ public:
         m_message->setText(message);
         m_message->setVisible(!message.isEmpty());
         // Word-wrapped labels report a one-line height in box layouts.
-        m_message->setFixedHeight(m_message->heightForWidth(kMessageWidth));
+        if (!message.isEmpty()) {
+            m_message->ensurePolished();
+            m_message->setFixedHeight(qMax(m_message->heightForWidth(kMessageWidth), m_message->sizeHint().height()));
+        }
         m_reconnect->setText(QCoreApplication::translate("RdpSession", "Reconnect"));
         m_reconnect->setVisible(offerReconnect);
         m_close->setText(closeText);
@@ -161,8 +176,12 @@ public:
             m_tone = tone;
             m_clock.restart();
         }
-        if (isVisible())
+        if (layout())
+            layout()->activate();
+        if (isVisible()) {
             m_frame.start();
+            update();
+        }
     }
 
 signals:
@@ -239,7 +258,8 @@ protected:
     }
 
 private:
-    static constexpr int kMessageWidth = 460;
+    static constexpr int kTitleWidth = 560;
+    static constexpr int kMessageWidth = 500;
     static constexpr int kArtHeight = 150;
     static constexpr qreal kAppearMs = 420.0;
     QLabel *m_title;
@@ -286,13 +306,17 @@ RdpSession::RdpSession(const ServerProfile &profile, QWidget *parent)
 QSize RdpSession::remoteSize() const
 {
     const qreal dpr = devicePixelRatioF();
-    return {qBound(200, int(m_ax->width() * dpr) & ~1, 8192),
-            qBound(200, int(m_ax->height() * dpr) & ~1, 8192)};
+    return {qBound(200, int(width() * dpr) & ~1, 8192),
+            qBound(200, int(height() * dpr) & ~1, 8192)};
 }
 
 void RdpSession::resizeEvent(QResizeEvent *e)
 {
     QWidget::resizeEvent(e);
+    if (m_overlay->isVisible()) {
+        m_overlay->setGeometry(rect());
+        raiseOverlay();
+    }
     if (m_state == Connected && isVisible() && !m_profile.fixedResolution().isValid())
         m_resizeTimer.start();
 }
@@ -310,6 +334,10 @@ void RdpSession::changeEvent(QEvent *e)
 void RdpSession::showEvent(QShowEvent *e)
 {
     QWidget::showEvent(e);
+    if (m_overlay->isVisible()) {
+        m_overlay->setGeometry(rect());
+        raiseOverlay();
+    }
     if (m_state == Connected && !m_profile.fixedResolution().isValid())
         m_resizeTimer.start();
     QTimer::singleShot(0, this, &RdpSession::focusRemote);
@@ -549,8 +577,11 @@ void RdpSession::replaceControl()
     m_ax = new QAxWidget(this);
     m_stack->insertWidget(0, m_ax);
     m_ax->show();
-    m_overlay->raise();
     m_stack->activate();
+    if (m_overlay->isVisible())
+        raiseOverlay();
+    else
+        m_overlay->raise();
     m_syncedSize = {};
     m_syncedScale = 0;
     log(QStringLiteral("control replaced"));
@@ -693,6 +724,8 @@ void RdpSession::start()
 {
     m_closing = false;
     m_everConnected = false;
+    m_checkingServer = false;
+    m_serverViewSet = false;
     m_noteTitle.clear();
     m_noteMessage.clear();
     m_lastReason = m_lastExtReason = 0;
@@ -711,6 +744,8 @@ void RdpSession::start()
         showOverlay();
         return;
     }
+    if (m_ax->isHidden())
+        m_ax->show();
     setState(Connecting);
     showOverlay();
     m_sawActive = false;
@@ -724,15 +759,30 @@ void RdpSession::start()
         log(QStringLiteral("calling Connect()"));
         m_ax->dynamicCall("Connect()");
         log(QStringLiteral("Connect() returned"));
+        if (m_overlay->isVisible())
+            raiseOverlay();
         m_connectCalledAt = m_connectClock.elapsed();
         m_poll.start(m_state == Connected ? kConnectedPollMs : kConnectPollMs);
     });
 }
 
-void RdpSession::setServerView(const QString &title, const QString &message)
+void RdpSession::setServerView(const QString &title, const QString &message, bool replaced)
 {
+    m_checkingServer = false;
+    m_serverViewSet = true;
     m_noteTitle = title;
     m_noteMessage = message;
+    if (replaced && m_state == Disconnected)
+        setState(Replaced);
+    if (m_state == Replaced || m_state == Disconnected || m_state == Failed)
+        showOverlay();
+}
+
+void RdpSession::setCheckingServer(bool checking)
+{
+    if (m_checkingServer == checking)
+        return;
+    m_checkingServer = checking;
     if (m_state == Replaced || m_state == Disconnected || m_state == Failed)
         showOverlay();
 }
@@ -790,6 +840,8 @@ void RdpSession::onConnecting()
 {
     log(QStringLiteral("OnConnecting"));
     setState(Connecting);
+    if (m_overlay->isVisible())
+        raiseOverlay();
 }
 
 void RdpSession::onConnected()
@@ -808,6 +860,9 @@ void RdpSession::onLoginComplete()
     log(QStringLiteral("login complete"));
     m_everConnected = true;
     m_retryAttempt = 0;
+    if (m_ax->isHidden())
+        m_ax->show();
+    m_stack->setCurrentWidget(m_ax);
     m_overlay->hide();
     m_poll.setTimerType(Qt::CoarseTimer);
     m_poll.setInterval(kConnectedPollMs);
@@ -873,8 +928,37 @@ void RdpSession::handleDisconnected(int reason)
     showOverlay();
 }
 
+void RdpSession::raiseOverlay()
+{
+    if (!m_overlay->isVisible())
+        return;
+    m_overlay->raise();
+    HWND overlayHwnd = reinterpret_cast<HWND>(m_overlay->winId());
+    if (!overlayHwnd)
+        return;
+    ensureClipSiblings(overlayHwnd);
+    SetWindowPos(overlayHwnd, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (m_ax && m_ax->isVisible()) {
+        if (HWND axHwnd = reinterpret_cast<HWND>(m_ax->winId())) {
+            ensureClipSiblings(axHwnd);
+            SetWindowPos(axHwnd, overlayHwnd, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+}
+
 void RdpSession::showOverlay()
 {
+    // A disconnected or failed ActiveX control is never reused (start() replaces it). Hiding it
+    // unmaps its Win32 child windows so mstscax's white surface can never cover the overlay.
+    const bool keepControl = !m_controlMissing && (m_state == Connecting || m_state == Connected);
+    if (!keepControl) {
+        m_innerHwnd = nullptr;
+        if (m_ax->isVisible())
+            m_ax->hide();
+    }
+
     const QString closeTab = tr("Close Tab");
     if (m_controlMissing) {
         m_overlay->setTexts(tr("RDP component not found"),
@@ -889,24 +973,46 @@ void RdpSession::showOverlay()
                             false, tr("Cancel"), SessionOverlay::Busy);
     } else if (m_state == Replaced) {
         // The server said another connection took over; once it has been asked who is connected, that answer wins.
+        QString msg;
+        if (!m_noteTitle.isEmpty()) {
+            msg = m_noteMessage;
+        } else if (m_checkingServer) {
+            msg = tr("Another computer has connected to “%1”.\n\nChecking who connected…").arg(m_profile.name);
+        } else {
+            msg = tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")
+                      .arg(m_profile.name)
+                  + (m_noteMessage.isEmpty() ? QString() : QStringLiteral("\n\n") + m_noteMessage);
+        }
         m_overlay->setTexts(m_noteTitle.isEmpty() ? tr("Another computer connected") : m_noteTitle,
-                            !m_noteTitle.isEmpty()
-                                ? m_noteMessage
-                                : tr("Another computer has connected to “%1”. Reconnecting may disconnect the other user.")
-                                          .arg(m_profile.name)
-                                      + (m_noteMessage.isEmpty() ? QString() : QStringLiteral("\n\n") + m_noteMessage),
-                            true, closeTab, SessionOverlay::Warning);
+                            msg, true, closeTab, SessionOverlay::Warning);
     } else {
         const QString text = describe(m_lastReason, m_lastExtReason);
+        const QString extra = m_checkingServer ? tr("Checking who is connected…") : m_noteMessage;
+        QString msg;
+        if (!m_noteTitle.isEmpty())
+            msg = m_noteMessage;
+        else if (extra.isEmpty())
+            msg = text;
+        else if (text.isEmpty())
+            msg = extra;
+        else
+            msg = text + QStringLiteral("\n\n") + extra;
         m_overlay->setTexts(m_noteTitle.isEmpty() ? (m_everConnected ? tr("Connection ended") : tr("Could not connect"))
                                                   : m_noteTitle,
-                            m_noteMessage.isEmpty() ? text
-                            : text.isEmpty()        ? m_noteMessage
-                                                    : text + QStringLiteral("\n\n") + m_noteMessage,
-                            true, closeTab, SessionOverlay::Error);
+                            msg, true, closeTab, SessionOverlay::Error);
     }
+    m_stack->setCurrentWidget(m_overlay);
+    if (m_overlay->geometry() != rect())
+        m_overlay->setGeometry(rect());
     m_overlay->show();
-    m_overlay->raise();
+    raiseOverlay();
+    m_overlay->update();
+    if (!keepControl && isVisible() && isActiveWindow() && !QApplication::activePopupWidget()
+        && !QApplication::activeModalWidget()) {
+        m_overlay->setFocus(Qt::OtherFocusReason);
+        if (HWND overlayHwnd = reinterpret_cast<HWND>(m_overlay->winId()); overlayHwnd && GetFocus() != overlayHwnd)
+            SetFocus(overlayHwnd);
+    }
 }
 
 QString RdpSession::describe(int reason, int ext) const

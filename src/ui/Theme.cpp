@@ -30,7 +30,9 @@ QToolButton#barButton { padding: 0 12px; }
 QToolButton#menuButton:hover, QToolButton#homeTab:hover, QToolButton#barButton:hover {
     background: @hover@; color: @text@;
 }
-QToolButton#homeTab:checked { background: @tabActive@; color: @text@; }
+QToolButton#homeTab:checked {
+    background: @tabActive@; border-bottom: 2px solid @tabActiveAccent@; color: @tabActiveText@;
+}
 QToolButton#homeTab:checked:hover { background: @hover@; }
 QToolButton#winButton, QToolButton#winClose {
     background: transparent; border: none; border-radius: 0px; color: @text2@; padding: 0; font-size: 14px;
@@ -236,11 +238,11 @@ Scheme darkScheme()
     c.hoverSoft = QColor(255, 255, 255, 14);
     c.rowHover = QColor("#17171b");
     c.press = QColor("#28282e");
-    c.tabActive = QColor("#18181b");
-    c.tabActiveBorder = QColor("#28282d");
-    c.tabActiveAccent = QColor("#0a84ff");
-    c.tabActiveText = QColor("#f4f4f6");
-    c.tabInactiveText = QColor("#8a8a93");
+    c.tabActive = QColor("#242936");
+    c.tabActiveBorder = QColor("#3e475c");
+    c.tabActiveAccent = QColor("#2e96ff");
+    c.tabActiveText = QColor("#ffffff");
+    c.tabInactiveText = QColor("#7c808c");
     c.scroll = QColor("#2d2d33");
     c.scrollHover = QColor("#45454e");
     c.accent = QColor("#0a84ff");
@@ -291,10 +293,10 @@ Scheme lightScheme()
     c.hoverSoft = QColor(15, 23, 42, 10);
     c.rowHover = QColor("#eef0f5");
     c.press = QColor("#dcdce4");
-    c.tabActive = QColor("#e8e8ee");
-    c.tabActiveBorder = QColor("#d0d0d8");
+    c.tabActive = QColor("#e3edfc");
+    c.tabActiveBorder = QColor("#b7cff5");
     c.tabActiveAccent = QColor("#007aff");
-    c.tabActiveText = QColor("#161922");
+    c.tabActiveText = QColor("#0f172a");
     c.tabInactiveText = QColor("#636b7b");
     c.scroll = QColor("#c6c6ce");
     c.scrollHover = QColor("#9898a2");

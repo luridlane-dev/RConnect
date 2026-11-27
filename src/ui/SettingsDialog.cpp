@@ -212,6 +212,23 @@ SettingsDialog::SettingsDialog(ServerStore *store, QWidget *parent)
             rebuildGroups();
     });
 
+    sectionLabel(serversPage, m_adminHeading);
+    QFrame *admin = block(serversPage);
+    m_adminHint = new QLabel(admin);
+    m_adminHint->setObjectName(QStringLiteral("fieldHint"));
+    m_adminHint->setWordWrap(true);
+    admin->layout()->addWidget(m_adminHint);
+    auto *adminButtons = new QHBoxLayout;
+    m_configureServers = new QPushButton(admin);
+    m_configureServers->setAutoDefault(false);
+    connect(m_configureServers, &QPushButton::clicked, this, [this] {
+        accept();
+        emit configureServersRequested();
+    });
+    adminButtons->addWidget(m_configureServers);
+    adminButtons->addStretch(1);
+    static_cast<QVBoxLayout *>(admin->layout())->addLayout(adminButtons);
+
     // Pages
     sectionLabel(monitoringPage, m_pagesHeading);
     QFrame *pages = block(monitoringPage);
@@ -352,6 +369,9 @@ void SettingsDialog::retranslate()
     m_contacts->setText(tr("Contacts…"));
     m_import->setText(tr("Import servers…"));
     m_export->setText(tr("Export servers…"));
+    m_adminHeading->setText(tr("Server administration"));
+    m_adminHint->setText(tr("Configure Windows logging, security auditing and Remote Desktop smoothness on selected servers with live verification."));
+    m_configureServers->setText(tr("Configure servers…"));
     m_autoUpdate->setText(tr("Check for updates automatically"));
     m_check->setText(tr("Check for updates…"));
     m_about->setText(tr("About RConnect"));

@@ -16,6 +16,9 @@ import com.rconnect.android.MainActivity
 import com.rconnect.android.R
 import com.rconnect.android.data.Contact
 import com.rconnect.android.data.ContactIndex
+import com.rconnect.android.data.EventStore
+import com.rconnect.android.ui.eventKindTitle
+import com.rconnect.android.winrm.AccessEvent
 import com.rconnect.android.winrm.RemoteSession
 import org.json.JSONArray
 import org.json.JSONObject
@@ -44,18 +47,22 @@ class NotificationPrefs(context: Context) {
     var onStranger: Boolean
         get() = prefs.getBoolean("stranger", true)
         set(v) = prefs.edit { putBoolean("stranger", v) }
+    var onSecurityChange: Boolean
+        get() = prefs.getBoolean("security", true)
+        set(v) = prefs.edit { putBoolean("security", v) }
 
     fun wants(change: Change) = enabled && when (change.kind) {
         Change.Kind.Connected -> onConnect
         Change.Kind.Stranger -> onStranger
         Change.Kind.Left -> onLeave
         Change.Kind.Problem, Change.Kind.Recovered -> onProblem
+        Change.Kind.SecurityChange -> onSecurityChange
     }
 }
 
 /** Something that changed on a server since the last check. */
 data class Change(val kind: Kind, val serverId: String, val server: String, val who: String = "") {
-    enum class Kind { Connected, Stranger, Left, Problem, Recovered }
+    enum class Kind { Connected, Stranger, Left, Problem, Recovered, SecurityChange }
 }
 
 /**
@@ -131,11 +138,82 @@ class ChangeDetector(context: Context) {
     // "id|user|signInTime" of an earlier version becomes "id|user".
     private fun normalize(key: String) = key.split('|').let { if (it.size > 2) it[0] + "|" + it[1].lowercase(Locale.ROOT) else key.lowercase(Locale.ROOT) }
 
-    fun forget(serverId: String) = synchronized(lock) { prefs.edit { remove(serverId) } }
+    fun shouldCheckSecurity(serverId: String, nowMs: Long = System.currentTimeMillis(), intervalMs: Long = SECURITY_CHECK_INTERVAL_MS): Boolean =
+        synchronized(lock) {
+            val last = prefs.getLong("sec_checked_$serverId", 0L)
+            last <= 0L || nowMs - last >= intervalMs
+        }
 
-    private companion object {
-        const val MISSES_BEFORE_LEFT = 2
-        val lock = Any()
+    fun markSecurityChecked(serverId: String, nowMs: Long = System.currentTimeMillis()) =
+        synchronized(lock) { prefs.edit { putLong("sec_checked_$serverId", nowMs) } }
+
+    /**
+     * Compares incoming security/audit events against the keys previously seen for this server.
+     * The first scan establishes the baseline without notifying for historical events.
+     */
+    fun detectSecurityChanges(
+        context: Context,
+        serverId: String,
+        title: String,
+        events: List<AccessEvent>,
+    ): List<Change> = synchronized(lock) {
+        val initKey = "sec_init_$serverId"
+        val seenKey = "sec_seen_$serverId"
+        val initialized = prefs.getBoolean(initKey, false)
+        val seen = LinkedHashSet<String>()
+        prefs.getString(seenKey, null)?.let { raw ->
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) seen.add(arr.getString(i))
+            }
+        }
+        val securityEvents = events.filter { it.isSecurity }
+        val now = System.currentTimeMillis()
+        val changes = ArrayList<Change>()
+        var dirty = !initialized
+        for (e in securityEvents) {
+            val key = EventStore.dedupeKey(serverId, e)
+            if (seen.add(key)) {
+                dirty = true
+                if (initialized && (e.timeUtcMs <= 0L || now - e.timeUtcMs <= SECURITY_RECENT_MS)) {
+                    val kindTitle = eventKindTitle(context.resources, e.kind)
+                    val subject = listOf(e.user.substringAfter('\\'), e.detail)
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(" · ")
+                    val summary = if (subject.isNotEmpty()) "$kindTitle · $subject" else kindTitle
+                    changes += Change(Change.Kind.SecurityChange, serverId, title, summary)
+                }
+            }
+        }
+        if (dirty) {
+            val trimmed = if (seen.size > MAX_SEEN_SECURITY) {
+                seen.toList().takeLast(MAX_SEEN_SECURITY)
+            } else seen.toList()
+            prefs.edit {
+                putBoolean(initKey, true)
+                putString(seenKey, JSONArray(trimmed).toString())
+            }
+        }
+        changes
+    }
+
+    fun forget(serverId: String) = synchronized(lock) {
+        prefs.edit {
+            remove(serverId)
+            remove("sec_init_$serverId")
+            remove("sec_seen_$serverId")
+            remove("sec_checked_$serverId")
+        }
+    }
+
+    companion object {
+        const val SECURITY_CHECK_INTERVAL_MS = 2 * 60_000L
+        const val SECURITY_LOOKBACK_MS = 2 * 3600_000L
+        private const val SECURITY_RECENT_MS = 24 * 3600_000L
+        private const val MAX_SEEN_SECURITY = 200
+        private const val MISSES_BEFORE_LEFT = 2
+        private val lock = Any()
     }
 
     // A session that left: the computer it was connected from, as remembered; the account only if that was never known.
@@ -168,6 +246,7 @@ object Notifier {
         Change.Kind.Left -> context.getString(R.string.note_left, c.who)
         Change.Kind.Problem -> context.getString(R.string.note_problem)
         Change.Kind.Recovered -> context.getString(R.string.note_recovered)
+        Change.Kind.SecurityChange -> c.who
     }
 
     fun post(context: Context, c: Change) {
@@ -178,7 +257,7 @@ object Notifier {
             Intent(context, MainActivity::class.java).putExtra(EXTRA_SERVER, c.serverId).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val problem = c.kind == Change.Kind.Problem || c.kind == Change.Kind.Stranger
+        val problem = c.kind == Change.Kind.Problem || c.kind == Change.Kind.Stranger || c.kind == Change.Kind.SecurityChange
         val n = NotificationCompat.Builder(context, if (problem) CHANNEL_PROBLEMS else CHANNEL_ACTIVITY)
             .setSmallIcon(R.drawable.ic_stat_rconnect)
             .setContentTitle(c.server)

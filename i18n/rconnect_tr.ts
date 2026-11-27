@@ -1170,6 +1170,18 @@
         <translation>Sunucuları dışa aktar…</translation>
     </message>
     <message>
+        <source>Server administration</source>
+        <translation>Sunucu yönetimi</translation>
+    </message>
+    <message>
+        <source>Configure Windows logging, security auditing and Remote Desktop smoothness on selected servers with live verification.</source>
+        <translation>Seçili Windows sunucularında kayıt, güvenlik ve uzak bağlantı akıcılık ayarlarını canlı doğrulayarak yapılandırın.</translation>
+    </message>
+    <message>
+        <source>Configure servers…</source>
+        <translation>Sunucuları yapılandır…</translation>
+    </message>
+    <message>
         <source>Developed by Lurid Lane</source>
         <translation>Lurid Lane tarafından geliştirildi</translation>
     </message>
@@ -1211,6 +1223,18 @@
     <message>
         <source>Another computer has connected to “%1”. Reconnecting may disconnect the other user.</source>
         <translation>“%1” sunucusuna başka bir bilgisayar bağlandı. Yeniden bağlanırsanız diğer kullanıcının bağlantısı kesilebilir.</translation>
+    </message>
+    <message>
+        <source>Another computer has connected to “%1”.
+
+Checking who connected…</source>
+        <translation>“%1” sunucusuna başka bir bilgisayar bağlandı.
+
+Kimin bağlandığı kontrol ediliyor…</translation>
+    </message>
+    <message>
+        <source>Checking who is connected…</source>
+        <translation>Kimin bağlı olduğu kontrol ediliyor…</translation>
     </message>
     <message>
         <source>Connection ended</source>
@@ -2743,6 +2767,554 @@ Giriş sayısı: %3</translation>
         <translation>%2 sunucudan %1 tanesi hazırlandı.</translation>
     </message>
     <message>
+        <source>Safe administrator tool: only adjusts built-in Windows logging and RDP smoothness settings on the servers you choose. Nothing is installed, TCP RDP access is never touched, and every performance tweak can be reverted to Windows defaults from this screen.</source>
+        <translation>Güvenli yönetici aracı: Yalnızca seçtiğiniz sunucularda Windows&apos;un kendi kayıt ve uzak bağlantı akıcılık ayarlarını düzenler. Hiçbir program kurulmaz, TCP RDP erişimine dokunulmaz ve tüm performans ayarları bu ekrandan tek tıkla Windows varsayılanına geri alınabilir.</translation>
+    </message>
+    <message>
+        <source>Computer name</source>
+        <translation>Bilgisayar adı</translation>
+    </message>
+    <message>
+        <source>Sign-ins</source>
+        <translation>Girişler</translation>
+    </message>
+    <message>
+        <source>Lockouts</source>
+        <translation>Hesap kilidi</translation>
+    </message>
+    <message>
+        <source>Accounts/passwords</source>
+        <translation>Hesap/şifre</translation>
+    </message>
+    <message>
+        <source>Admin groups</source>
+        <translation>Yetkili grup</translation>
+    </message>
+    <message>
+        <source>Audit policy</source>
+        <translation>Denetim</translation>
+    </message>
+    <message>
+        <source>Background tasks</source>
+        <translation>Arka plan görevleri</translation>
+    </message>
+    <message>
+        <source>Activity &amp; security logging</source>
+        <translation>Kayıt ve güvenlik</translation>
+    </message>
+    <message>
+        <source>Record connecting computer name</source>
+        <translation>Bağlanan bilgisayarın adını kaydet</translation>
+    </message>
+    <message>
+        <source>Shows which PC connected even when users share the same IP address.</source>
+        <translation>Ortak IP kullanılsa bile hangi bilgisayarın bağlandığını gösterir.</translation>
+    </message>
+    <message>
+        <source>Record sign-in attempts and account lockouts</source>
+        <translation>Giriş denemelerini ve hesap kilitlerini kaydet</translation>
+    </message>
+    <message>
+        <source>Logs failed password attempts and locked accounts.</source>
+        <translation>Yanlış şifre saldırılarını ve kilitlenen hesapları kaydeder.</translation>
+    </message>
+    <message>
+        <source>Record user, password and admin group changes</source>
+        <translation>Kullanıcı, şifre ve yetki değişikliklerini kaydet</translation>
+    </message>
+    <message>
+        <source>Logs account creation/deletion, password changes, and admin permission edits.</source>
+        <translation>Hesap açma/silme, şifre değiştirme ve yönetici grubu işlemlerini kaydeder.</translation>
+    </message>
+    <message>
+        <source>Record new or edited background tasks</source>
+        <translation>Yeni veya değiştirilen arka plan görevlerini kaydet</translation>
+    </message>
+    <message>
+        <source>Logs when a Windows scheduled task is created, edited, or removed.</source>
+        <translation>Zamanlanmış görev eklendiğinde, değiştirildiğinde veya silindiğinde kaydeder.</translation>
+    </message>
+    <message>
+        <source>Remote desktop performance (reversible)</source>
+        <translation>Uzak bağlantı performansı (geri alınabilir)</translation>
+    </message>
+    <message>
+        <source>Display smoothness:</source>
+        <translation>Görüntü akıcılığı:</translation>
+    </message>
+    <message>
+        <source>Raises RDP from 30 FPS to 60 FPS. Best for low-latency servers with enough CPU; revert anytime.</source>
+        <translation>Uzak masaüstü görüntüsünü 30 FPS&apos;den 60 FPS&apos;e çıkarır. Düşük gecikmeli ve yeterli CPU&apos;lu sunucularda önerilir; istenirse geri alınabilir.</translation>
+    </message>
+    <message>
+        <source>Enable 60 FPS (smoother)</source>
+        <translation>60 FPS aç (daha akıcı)</translation>
+    </message>
+    <message>
+        <source>Revert to default (30 FPS)</source>
+        <translation>Varsayılana dön (30 FPS)</translation>
+    </message>
+    <message>
+        <source>Smooth video encoding (H.264):</source>
+        <translation>Akıcı görüntü sıkıştırma (H.264):</translation>
+    </message>
+    <message>
+        <source>Uses H.264 / AVC 444 for sharper, lower-bandwidth scrolling and browsing. Safe to revert anytime.</source>
+        <translation>Tarayıcı ve kaydırmada daha net görüntü ve daha az internet kullanımı sağlar. İstenirse varsayılana dönülebilir.</translation>
+    </message>
+    <message>
+        <source>Enable (less traffic, smoother)</source>
+        <translation>Aç (daha az veri, daha akıcı)</translation>
+    </message>
+    <message>
+        <source>Revert to default</source>
+        <translation>Varsayılana dön</translation>
+    </message>
+    <message>
+        <source>Fast UDP transport:</source>
+        <translation>Hızlı bağlantı (UDP):</translation>
+    </message>
+    <message>
+        <source>Allows UDP on the server&apos;s RDP port in Windows Firewall for smoother high-latency links. Never alters TCP.</source>
+        <translation>Gecikmeli hatlarda akıcılık için Windows Güvenlik Duvarı&apos;nda sunucunun RDP portuna UDP izni ekler. TCP erişimine dokunmaz.</translation>
+    </message>
+    <message>
+        <source>Allow UDP on RDP port</source>
+        <translation>Aç (gecikmeli hatlarda akıcı)</translation>
+    </message>
+    <message>
+        <source>Remove RConnect UDP rule</source>
+        <translation>RConnect kuralını kaldır</translation>
+    </message>
+    <message>
+        <source>Server power plan:</source>
+        <translation>Sunucu güç modu:</translation>
+    </message>
+    <message>
+        <source>Prevents CPU frequency drops on Windows servers. Skipped automatically if unsupported on a VM.</source>
+        <translation>İşlemcinin düşük hızda beklemesini engeller. Sanal sunucu desteklemiyorsa otomatik atlanır.</translation>
+    </message>
+    <message>
+        <source>High Performance</source>
+        <translation>Yüksek Performans</translation>
+    </message>
+    <message>
+        <source>Balanced (default)</source>
+        <translation>Dengeli (varsayılan)</translation>
+    </message>
+    <message>
+        <source>Changes take effect on the next reconnect. Low-CPU or 130–200 ms servers benefit most from UDP and H.264; keep 60 FPS for stronger servers.</source>
+        <translation>Değişiklikler sonraki bağlantıda devreye girer. 130–200 ms veya düşük CPU&apos;lu sunucularda UDP ve H.264 en iyi sonucu verir; 60 FPS&apos;i güçlü sunucularda kullanın.</translation>
+    </message>
+    <message>
+        <source>60 FPS</source>
+        <translation>60 FPS</translation>
+    </message>
+    <message>
+        <source>60 FPS on</source>
+        <translation>60 FPS aç</translation>
+    </message>
+    <message>
+        <source>30 FPS default</source>
+        <translation>30 FPS varsayılan</translation>
+    </message>
+    <message>
+        <source>60 FPS→30 FPS</source>
+        <translation>60 FPS→30 FPS</translation>
+    </message>
+    <message>
+        <source>H.264</source>
+        <translation>H.264</translation>
+    </message>
+    <message>
+        <source>H.264 on</source>
+        <translation>H.264 aç</translation>
+    </message>
+    <message>
+        <source>H.264 default</source>
+        <translation>H.264 varsayılan</translation>
+    </message>
+    <message>
+        <source>H.264→default</source>
+        <translation>H.264→varsayılan</translation>
+    </message>
+    <message>
+        <source>UDP %1</source>
+        <translation>UDP %1</translation>
+    </message>
+    <message>
+        <source>UDP %1 on</source>
+        <translation>UDP %1 aç</translation>
+    </message>
+    <message>
+        <source>No UDP rule</source>
+        <translation>UDP kuralı yok</translation>
+    </message>
+    <message>
+        <source>Remove UDP %1 rule</source>
+        <translation>UDP %1 kuralını kaldır</translation>
+    </message>
+    <message>
+        <source>High Performance unavailable on this VM</source>
+        <translation>Bu sunucuda Yüksek Performans planı yok</translation>
+    </message>
+    <message>
+        <source>Balanced</source>
+        <translation>Dengeli</translation>
+    </message>
+    <message>
+        <source>Balanced plan unavailable on this VM</source>
+        <translation>Bu sunucuda Dengeli plan yok</translation>
+    </message>
+    <message>
+        <source>Balanced power</source>
+        <translation>Dengeli güç modu</translation>
+    </message>
+    <message>
+        <source>Target servers</source>
+        <translation>Hedef sunucular</translation>
+    </message>
+    <message>
+        <source>Filter servers…</source>
+        <translation>Sunucu filtrele…</translation>
+    </message>
+    <message>
+        <source>Server configuration</source>
+        <translation>Sunucu yapılandırması</translation>
+    </message>
+    <message>
+        <source>Adjusts built-in Windows logging and Remote Desktop smoothness only on checked servers. Nothing is installed and TCP RDP access is never altered.</source>
+        <translation>Yalnızca işaretli sunucularda Windows&apos;un kendi kayıt ve uzak bağlantı akıcılık ayarlarını düzenler. Hiçbir program kurulmaz ve TCP RDP erişimine dokunulmaz.</translation>
+    </message>
+    <message>
+        <source>Logging &amp; security</source>
+        <translation>Kayıt ve güvenlik</translation>
+    </message>
+    <message>
+        <source>Connection smoothness</source>
+        <translation>Bağlantı performansı</translation>
+    </message>
+    <message>
+        <source>Live verification</source>
+        <translation>Canlı doğrulama</translation>
+    </message>
+    <message>
+        <source>Live verification (%1)</source>
+        <translation>Canlı doğrulama (%1)</translation>
+    </message>
+    <message>
+        <source>Disconnect idle sessions</source>
+        <translation>Boşta kalan oturumu kapat</translation>
+    </message>
+    <message>
+        <source>Ends unattended RDP sessions automatically after inactivity; open apps keep running.</source>
+        <translation>Hareketsiz kalan RDP oturumunu kendiliğinden keser; açık programlar kapanmaz.</translation>
+    </message>
+    <message>
+        <source>Display smoothness (FPS)</source>
+        <translation>Görüntü akıcılığı (FPS)</translation>
+    </message>
+    <message>
+        <source>Raises RDP from 30 FPS to 60 FPS. Best for low-latency servers with enough CPU.</source>
+        <translation>Uzak masaüstünü 30 FPS&apos;den 60 FPS&apos;e çıkarır. Düşük gecikmeli ve yeterli CPU&apos;lu sunucularda önerilir.</translation>
+    </message>
+    <message>
+        <source>Enable 60 FPS</source>
+        <translation>60 FPS aç</translation>
+    </message>
+    <message>
+        <source>Revert to 30 FPS</source>
+        <translation>Varsayılana dön (30 FPS)</translation>
+    </message>
+    <message>
+        <source>Smooth video encoding (H.264)</source>
+        <translation>Akıcı görüntü sıkıştırma (H.264)</translation>
+    </message>
+    <message>
+        <source>Uses H.264 / AVC 444 for sharper scrolling and lower bandwidth usage.</source>
+        <translation>Kaydırmada daha net görüntü ve daha az internet kullanımı sağlar.</translation>
+    </message>
+    <message>
+        <source>Enable H.264</source>
+        <translation>H.264 aç</translation>
+    </message>
+    <message>
+        <source>Fast UDP transport</source>
+        <translation>Hızlı bağlantı (UDP)</translation>
+    </message>
+    <message>
+        <source>Allows UDP on the server&apos;s RDP port in Windows Firewall for smoother high-latency links.</source>
+        <translation>Gecikmeli hatlarda akıcılık için sunucunun RDP portuna UDP izni ekler.</translation>
+    </message>
+    <message>
+        <source>Remove RConnect rule</source>
+        <translation>RConnect kuralını kaldır</translation>
+    </message>
+    <message>
+        <source>Server power plan</source>
+        <translation>Sunucu güç modu</translation>
+    </message>
+    <message>
+        <source>Prevents CPU frequency drops. Skipped automatically if unsupported on a VM.</source>
+        <translation>İşlemcinin düşük hızda beklemesini engeller. Sanal sunucu desteklemiyorsa atlanır.</translation>
+    </message>
+    <message>
+        <source>Changes take effect on the next reconnect. Every option above can be reverted to stock Windows defaults from this same screen.</source>
+        <translation>Değişiklikler sonraki bağlantıda devreye girer. Yukarıdaki her ayar bu ekrandan tek tıkla Windows varsayılanına döndürülebilir.</translation>
+    </message>
+    <message>
+        <source>Verify live</source>
+        <translation>Canlı doğrula</translation>
+    </message>
+    <message>
+        <source>Apply…</source>
+        <translation>Uygula…</translation>
+    </message>
+    <message>
+        <source>Select one or more servers from the list on the left to begin.</source>
+        <translation>Başlamak için soldaki listeden bir veya daha fazla sunucu seçin.</translation>
+    </message>
+    <message>
+        <source>Choose at least one option under Logging or Connection smoothness, then click “Verify live”.</source>
+        <translation>Kayıt ve güvenlik veya Bağlantı performansı sekmesinden en az bir ayar seçin, ardından “Canlı doğrula”ya basın.</translation>
+    </message>
+    <message>
+        <source>Applying…</source>
+        <translation>Uygulanıyor…</translation>
+    </message>
+    <message>
+        <source>Sending verified changes to server…</source>
+        <translation>Doğrulanan değişiklikler sunucuya uygulanıyor…</translation>
+    </message>
+    <message>
+        <source>Applied</source>
+        <translation>Uygulandı</translation>
+    </message>
+    <message>
+        <source>Apply failed</source>
+        <translation>Uygulanamadı</translation>
+    </message>
+    <message>
+        <source>Click “Verify live” to inspect this server.</source>
+        <translation>Bu sunucuyu kontrol etmek için “Canlı doğrula”ya basın.</translation>
+    </message>
+    <message>
+        <source>Select servers and options, then click “Verify live”.</source>
+        <translation>Sunucu ve ayarları seçip “Canlı doğrula”ya basın.</translation>
+    </message>
+    <message>
+        <source>Applying verified changes…</source>
+        <translation>Doğrulanan değişiklikler uygulanıyor…</translation>
+    </message>
+    <message>
+        <source>Verifying %1 server(s) live (read-only)…</source>
+        <translation>%1 sunucu canlı doğrulanıyor (salt okunur)…</translation>
+    </message>
+    <message>
+        <source>%1 server(s) need live verification before Apply unlocks.</source>
+        <translation>Uygula açılmadan önce %1 sunucunun canlı doğrulanması gerekiyor.</translation>
+    </message>
+    <message>
+        <source>Nothing to apply: %1 up to date, %2 blocked/unreachable.</source>
+        <translation>Uygulanacak değişiklik yok: %1 güncel, %2 yetkisiz veya erişilemedi.</translation>
+    </message>
+    <message>
+        <source>Ready: %1 server(s) will be updated (%2 already up to date, %3 skipped).</source>
+        <translation>Hazır: %1 sunucu güncellenecek (%2 zaten güncel, %3 atlandı).</translation>
+    </message>
+    <message>
+        <source>Apply verified Windows settings on %1 server(s)? Servers that are already up to date or lack permission are skipped automatically:</source>
+        <translation>Doğrulanan %1 sunucuda Windows ayarları uygulansın mı? Zaten güncel veya yetkisiz sunucular otomatik atlanır:</translation>
+    </message>
+    <message>
+        <source>Command failed.</source>
+        <translation>Komut başarısız oldu.</translation>
+    </message>
+    <message>
+        <source>1. Select target servers:</source>
+        <translation>1. Hedef sunucuları seçin:</translation>
+    </message>
+    <message>
+        <source>Select all</source>
+        <translation>Tümünü seç</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Temizle</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>Sunucu</translation>
+    </message>
+    <message>
+        <source>Live status</source>
+        <translation>Canlı durum</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Ayrıntı</translation>
+    </message>
+    <message>
+        <source>Not verified</source>
+        <translation>Doğrulanmadı</translation>
+    </message>
+    <message>
+        <source>2. Select changes to verify and apply:</source>
+        <translation>2. Doğrulanacak ve uygulanacak değişiklikleri seçin:</translation>
+    </message>
+    <message>
+        <source>Client computer name logging (Event 4778/4779 — Other Logon/Logoff Events)</source>
+        <translation>İstemci bilgisayar adı kaydı (Olay 4778/4779 — Diğer Oturum Açma/Kapatma)</translation>
+    </message>
+    <message>
+        <source>Sign-in &amp; account lockout logging (Event 4624/4625/4740 — Logon &amp; Account Lockout)</source>
+        <translation>Giriş ve hesap kilidi kaydı (Olay 4624/4625/4740 — Oturum Açma ve Hesap Kilidi)</translation>
+    </message>
+    <message>
+        <source>Account, privileged group &amp; audit policy changes (Event 4720–4726, 4732/4733, 4719)</source>
+        <translation>Hesap, yetkili grup ve denetim politikası değişiklikleri (Olay 4720–4726, 4732/4733, 4719)</translation>
+    </message>
+    <message>
+        <source>Scheduled task changes (Event 4698–4702 — Other Object Access Events)</source>
+        <translation>Zamanlanmış görev değişiklikleri (Olay 4698–4702 — Diğer Nesne Erişim Olayları)</translation>
+    </message>
+    <message>
+        <source>Verify live on selected</source>
+        <translation>Seçililerde canlı doğrula</translation>
+    </message>
+    <message>
+        <source>Apply to verified servers…</source>
+        <translation>Doğrulanan sunuculara uygula…</translation>
+    </message>
+    <message>
+        <source>Unreachable</source>
+        <translation>Erişilemedi</translation>
+    </message>
+    <message>
+        <source>Could not reach server over WinRM.</source>
+        <translation>Sunucuya WinRM üzerinden ulaşılamadı.</translation>
+    </message>
+    <message>
+        <source>No permission</source>
+        <translation>İzin yok</translation>
+    </message>
+    <message>
+        <source>Account lacks elevated Administrator permission on this server.</source>
+        <translation>Hesabın bu sunucuda yükseltilmiş Yönetici (Administrator) yetkisi yok.</translation>
+    </message>
+    <message>
+        <source>Account is not allowed to query/modify Windows audit policy (auditpol).</source>
+        <translation>Hesap Windows denetim politikasını (auditpol) sorgulama/değiştirme yetkisine sahip değil.</translation>
+    </message>
+    <message>
+        <source>Idle %1 min</source>
+        <translation>Boşta sınırı %1 dk</translation>
+    </message>
+    <message>
+        <source>Idle %1→%2 min</source>
+        <translation>Boşta sınırı %1→%2 dk</translation>
+    </message>
+    <message>
+        <source>Idle off→%1 min</source>
+        <translation>Boşta sınırı kapalı→%1 dk</translation>
+    </message>
+    <message>
+        <source>Idle off</source>
+        <translation>Boşta sınırı kapalı</translation>
+    </message>
+    <message>
+        <source>Idle %1 min→off</source>
+        <translation>Boşta sınırı %1 dk→kapalı</translation>
+    </message>
+    <message>
+        <source>No change needed</source>
+        <translation>Gerek yok</translation>
+    </message>
+    <message>
+        <source>Already configured (%1)</source>
+        <translation>Zaten açık/ayarlı (%1)</translation>
+    </message>
+    <message>
+        <source>Needs update</source>
+        <translation>Değişiklik gerekiyor</translation>
+    </message>
+    <message>
+        <source>Will enable/update: %1</source>
+        <translation>Açılacak/güncellenecek: %1</translation>
+    </message>
+    <message>
+        <source> · Already on: %1</source>
+        <translation> · Zaten açık: %1</translation>
+    </message>
+    <message>
+        <source>(%1 of %2 selected)</source>
+        <translation>(%2 sunucudan %1 seçili)</translation>
+    </message>
+    <message>
+        <source>Not selected</source>
+        <translation>Seçili değil</translation>
+    </message>
+    <message>
+        <source>Select changes</source>
+        <translation>Değişiklik seçin</translation>
+    </message>
+    <message>
+        <source>Verifying…</source>
+        <translation>Doğrulanıyor…</translation>
+    </message>
+    <message>
+        <source>Needs verification</source>
+        <translation>Doğrulama gerekli</translation>
+    </message>
+    <message>
+        <source>Checking live state &amp; permissions…</source>
+        <translation>Canlı durum ve yetkiler kontrol ediliyor…</translation>
+    </message>
+    <message>
+        <source>Click “Verify live on selected” first.</source>
+        <translation>Önce “Seçililerde canlı doğrula” düğmesine basın.</translation>
+    </message>
+    <message>
+        <source>Choose at least one server and at least one setting, then run live verification.</source>
+        <translation>En az bir sunucu ve en az bir ayar seçin, ardından canlı doğrulamayı çalıştırın.</translation>
+    </message>
+    <message>
+        <source>Verifying selected servers live (read-only)…</source>
+        <translation>Seçili sunucular canlı olarak doğrulanıyor (salt okunur)…</translation>
+    </message>
+    <message>
+        <source>%1 selected server(s) have not been verified live yet. Apply stays locked until verification completes.</source>
+        <translation>%1 seçili sunucu henüz canlı doğrulanmadı. Doğrulama tamamlanana kadar Uygula kilitlidir.</translation>
+    </message>
+    <message>
+        <source>Nothing to apply: %1 already up to date, %2 blocked/unreachable.</source>
+        <translation>Uygulanacak değişiklik yok: %1 zaten güncel, %2 erişilemez veya yetkisiz.</translation>
+    </message>
+    <message>
+        <source>Ready: %1 server(s) need changes (%2 already up to date, %3 skipped due to error/permission).</source>
+        <translation>Hazır: %1 sunucuda değişiklik gerekiyor (%2 zaten güncel, %3 yetki/hata nedeniyle atlandı).</translation>
+    </message>
+    <message>
+        <source>Confirm server changes</source>
+        <translation>Sunucu değişikliklerini onayla</translation>
+    </message>
+    <message>
+        <source>You are about to modify Windows settings on %1 verified server(s). Servers that are already configured or lack permission will not be touched:</source>
+        <translation>Doğrulanan %1 sunucuda Windows ayarlarını değiştirmek üzeresiniz. Zaten ayarlı veya yetkisiz sunuculara dokunulmaz:</translation>
+    </message>
+    <message>
+        <source>APPLY</source>
+        <translation>UYGULA</translation>
+    </message>
+    <message>
+        <source>Type “%1” to confirm:</source>
+        <translation>Onaylamak için “%1” yazın:</translation>
+    </message>
+    <message>
+        <source>Apply now</source>
+        <translation>Şimdi uygula</translation>
+    </message>
+    <message>
         <source>Checking who is connected…</source>
         <translation>Kimin bağlı olduğu kontrol ediliyor…</translation>
     </message>
@@ -2895,8 +3467,58 @@ Giriş sayısı: %3</translation>
         <translation>%1 sunucu içe aktarıldı, %2 zaten listede ya da adresi yok.</translation>
     </message>
     <message>
-        <source>Checked just now. Connected: %1</source>
-        <translation>Az önce kontrol edildi. Bağlı olan: %1</translation>
+        <source>Another computer connected to this server.</source>
+        <translation>Bu sunucuya başka bir bilgisayar bağlandı.</translation>
+    </message>
+    <message>
+        <source>%1 · user %2 · %3</source>
+        <translation>%1 · kullanıcı %2 · %3</translation>
+    </message>
+    <message>
+        <source>%1 connected</source>
+        <translation>%1 bağlandı</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more connected</source>
+        <translation>%1 ve %2 kişi daha bağlandı</translation>
+    </message>
+    <message>
+        <source>Your connection to “%1” ended because another user connected:
+
+%2
+
+Reconnecting may disconnect them.</source>
+        <translation>“%1” sunucusundaki bağlantınız başka bir kullanıcı bağlandığı için sona erdi:
+
+%2
+
+Yeniden bağlanırsanız diğer kullanıcının bağlantısı kesilebilir.</translation>
+    </message>
+    <message>
+        <source>%1 connected to this server.</source>
+        <translation>%1 bu sunucuya bağlandı.</translation>
+    </message>
+    <message>
+        <source>Connected right now:
+%1</source>
+        <translation>Şu an bağlı:
+%1</translation>
+    </message>
+    <message>
+        <source>Connected from another window on this PC</source>
+        <translation>Bu bilgisayardaki başka bir pencereden bağlanıldı</translation>
+    </message>
+    <message>
+        <source>Another Remote Desktop connection from this computer took over “%1”.</source>
+        <translation>Bu bilgisayardaki başka bir Uzak Masaüstü bağlantısı “%1” oturumunu devraldı.</translation>
+    </message>
+    <message>
+        <source>Disconnected by the server.</source>
+        <translation>Bağlantı sunucu tarafından sonlandırıldı.</translation>
+    </message>
+    <message>
+        <source>%1 — disconnected</source>
+        <translation>%1 — bağlantı kesildi</translation>
     </message>
     <message>
         <source>Disconnected by the server</source>
@@ -3388,6 +4010,18 @@ Giriş sayısı: %3</translation>
     <message>
         <source>Export servers…</source>
         <translation>Sunucuları dışa aktar…</translation>
+    </message>
+    <message>
+        <source>Server administration</source>
+        <translation>Sunucu yönetimi</translation>
+    </message>
+    <message>
+        <source>Configure Windows logging, security auditing and Remote Desktop smoothness on selected servers with live verification.</source>
+        <translation>Seçili Windows sunucularında kayıt, güvenlik ve uzak bağlantı akıcılık ayarlarını canlı doğrulayarak yapılandırın.</translation>
+    </message>
+    <message>
+        <source>Configure servers…</source>
+        <translation>Sunucuları yapılandır…</translation>
     </message>
     <message>
         <source>Check for updates automatically</source>

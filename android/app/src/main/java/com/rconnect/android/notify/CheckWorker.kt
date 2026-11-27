@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.rconnect.android.data.ContactStore
+import com.rconnect.android.data.EventStore
 import com.rconnect.android.data.ServerStore
 import com.rconnect.android.winrm.WinRmClient
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.TimeUnit
 
@@ -59,10 +61,14 @@ object ServerCheck {
             if (servers.isEmpty()) return
             val contacts = ContactStore(context).load()
             val detector = ChangeDetector(context)
+            val eventStore = EventStore(context)
+            val eventStoreLock = Mutex()
             val parallel = Semaphore(4)
+            val now = System.currentTimeMillis()
             coroutineScope {
                 servers.map { server ->
                     async(Dispatchers.IO) {
+                        val checkSecurity = prefs.onSecurityChange && detector.shouldCheckSecurity(server.id, now)
                         val snapshot = parallel.withPermit {
                             runCatching {
                                 WinRmClient(
@@ -71,10 +77,27 @@ object ServerCheck {
                                     password = server.password,
                                     timeoutMs = 15000,
                                     rdpPort = server.port,
-                                ).snapshot(withEvents = false, includeTimes = false)
+                                ).snapshot(
+                                    withEvents = false,
+                                    includeTimes = false,
+                                    securityLookbackMs = if (checkSecurity) ChangeDetector.SECURITY_LOOKBACK_MS else null,
+                                )
                             }
                         }
-                        val changes = detector.detect(server.id, server.title, snapshot.isSuccess, snapshot.getOrNull()?.sessions, contacts)
+                        val snap = snapshot.getOrNull()
+                        val changes = ArrayList<Change>()
+                        changes += detector.detect(server.id, server.title, snap != null, snap?.sessions, contacts)
+                        if (snap != null && checkSecurity) {
+                            detector.markSecurityChecked(server.id, System.currentTimeMillis())
+                            val secEvents = snap.events.filter { it.isSecurity }
+                            changes += detector.detectSecurityChanges(context, server.id, server.title, secEvents)
+                            if (secEvents.isNotEmpty()) {
+                                eventStoreLock.withLock {
+                                    val merged = EventStore.merge(eventStore.load(), server.id, server.title, secEvents)
+                                    eventStore.save(merged)
+                                }
+                            }
+                        }
                         // The app may have been opened meanwhile; it then reports the changes itself.
                         if (!AppVisibility.inFront) for (c in changes) if (prefs.wants(c)) Notifier.post(context, c)
                     }

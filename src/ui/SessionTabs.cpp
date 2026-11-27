@@ -82,6 +82,7 @@ AnimatedTabBar::AnimatedTabBar(QWidget *parent)
         }
     });
     connect(this, &QTabBar::currentChanged, this, &AnimatedTabBar::slideTo);
+    connect(Theme::notifier(), &ThemeNotifier::changed, this, qOverload<>(&QWidget::update));
     placeAddButton();
 }
 
@@ -164,22 +165,49 @@ void AnimatedTabBar::slideTo(int index)
 
 void AnimatedTabBar::paintEvent(QPaintEvent *e)
 {
-    // The selection follows the current tab.
     const int idx = currentIndex();
-    if (idx >= 0 && m_selectionVisible) {
-        const QRectF target = tabRect(idx);
-        const qreal t = m_anim.state() == QAbstractAnimation::Running ? m_anim.currentValue().toReal() : 1.0;
-        const QRectF from = m_from.isEmpty() ? target : m_from;
-        m_current = QRectF(from.x() + (target.x() - from.x()) * t,
-                           from.y(),
-                           from.width() + (target.width() - from.width()) * t,
-                           target.height());
+    {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, false);
-        const QRectF pill = m_current.adjusted(2.0, 4.0, -2.0, -4.0);
-        p.setPen(Qt::NoPen);
-        p.setBrush(Theme::kTabActive);
-        p.drawRect(pill);
+
+        // Subtle dividers between inactive tabs so tabs stay visually distinct.
+        for (int i = 0; i < count() - 1; ++i) {
+            if (m_selectionVisible && (i == idx || i + 1 == idx))
+                continue;
+            const int x = tabRect(i).right();
+            p.fillRect(QRect(x, 10, 1, height() - 20), Theme::kSeparatorStrong);
+        }
+
+        // The active tab stands out with a lifted surface, crisp frame and bright sliding accent bar.
+        if (idx >= 0 && m_selectionVisible) {
+            const QRectF target = tabRect(idx);
+            const qreal t = m_anim.state() == QAbstractAnimation::Running ? m_anim.currentValue().toReal() : 1.0;
+            const QRectF from = m_from.isEmpty() ? target : m_from;
+            m_current = QRectF(from.x() + (target.x() - from.x()) * t,
+                               from.y(),
+                               from.width() + (target.width() - from.width()) * t,
+                               target.height());
+
+            const QRectF box = m_current.adjusted(2.0, 3.0, -2.0, 0.0);
+            p.setPen(Qt::NoPen);
+            p.setBrush(Theme::kTabActive);
+            p.drawRect(box);
+
+            // Crisp 1px top/left/right border framing the active tab.
+            p.setPen(QPen(Theme::kTabActiveBorder, 1.0));
+            const qreal left = box.left() + 0.5;
+            const qreal right = box.right() - 0.5;
+            const qreal top = box.top() + 0.5;
+            const qreal bottom = box.bottom();
+            p.drawLine(QPointF(left, bottom), QPointF(left, top));
+            p.drawLine(QPointF(left, top), QPointF(right, top));
+            p.drawLine(QPointF(right, top), QPointF(right, bottom));
+
+            // Bright bottom accent bar connecting the active tab to the session below it.
+            constexpr qreal kAccentHeight = 3.0;
+            p.fillRect(QRectF(box.left(), box.bottom() - kAccentHeight, box.width(), kAccentHeight),
+                       Theme::kTabActiveAccent);
+        }
     }
 
     QTabBar::paintEvent(e);

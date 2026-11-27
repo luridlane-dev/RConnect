@@ -382,6 +382,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         if (snap != null) {
                             failureStreak.remove(server.id)
                             recordEventsAsync(server.id, server.title, snap.events)
+                            viewModelScope.launch(Dispatchers.IO) {
+                                detector.markSecurityChecked(server.id)
+                                for (c in detector.detectSecurityChanges(getApplication(), server.id, server.title, snap.events)) {
+                                    if (notificationPrefs.wants(c)) Notifier.post(getApplication(), c)
+                                }
+                            }
                             setState(server.id) {
                                 ServerState(
                                     sessions = snap.sessions,
@@ -428,6 +434,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             current == null || current.sessions == null ||
                 current.connected.any { it.connectedUtcMs <= 0L }
             )
+        val checkSecurity = !withEvents && notificationPrefs.enabled && notificationPrefs.onSecurityChange &&
+            detector.shouldCheckSecurity(id, now)
         setState(id) { it.copy(checking = true) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -440,7 +448,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             timeoutMs = if (withEvents) 30000 else 18000,
                             rdpPort = server.port,
                         )
-                        val raw = client.snapshot(withEvents = withEvents, includeTimes = needTimes)
+                        val raw = client.snapshot(
+                            withEvents = withEvents,
+                            includeTimes = needTimes,
+                            securityLookbackMs = if (checkSecurity) ChangeDetector.SECURITY_LOOKBACK_MS else null,
+                        )
                         Result.success(withNames(id, raw))
                     } catch (e: Exception) {
                         Result.failure(e)
@@ -452,10 +464,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch(Dispatchers.IO) {
                 for (c in detector.detect(id, server.title, snapshot != null, snapshot?.sessions, _contacts.value))
                     if (notificationPrefs.wants(c)) Notifier.post(getApplication(), c)
+                if (snapshot != null && (withEvents || checkSecurity)) {
+                    detector.markSecurityChecked(id)
+                    for (c in detector.detectSecurityChanges(getApplication(), id, server.title, snapshot.events))
+                        if (notificationPrefs.wants(c)) Notifier.post(getApplication(), c)
+                }
             }
             if (snapshot != null) {
                 failureStreak.remove(id)
-                if (withEvents && snapshot.events.isNotEmpty()) {
+                if ((withEvents || checkSecurity) && snapshot.events.isNotEmpty()) {
                     recordEventsAsync(id, server.title, snapshot.events)
                 }
                 var missingConnectTime = false

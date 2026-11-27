@@ -28,6 +28,7 @@ signals:
     void updateCheckRequested();
     void importRequested();
     void exportRequested();
+    void configureServersRequested();
     void serverLayoutChanged();
 
 protected:

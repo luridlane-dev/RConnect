@@ -113,9 +113,21 @@
     <string name="ev_reconnect">Reconnected</string>
     <string name="ev_failed">Failed sign-in</string>
     <string name="ev_user_created">User account created</string>
+    <string name="ev_user_enabled">User account enabled</string>
+    <string name="ev_password_changed">Password change attempted</string>
+    <string name="ev_password_reset">Password reset attempted</string>
+    <string name="ev_user_disabled">User account disabled</string>
+    <string name="ev_user_deleted">User account deleted</string>
     <string name="ev_group_added">Added to privileged group</string>
+    <string name="ev_group_removed">Removed from privileged group</string>
     <string name="ev_task_created">Scheduled task created</string>
+    <string name="ev_task_removed">Scheduled task deleted</string>
+    <string name="ev_task_enabled">Scheduled task enabled</string>
+    <string name="ev_task_disabled">Scheduled task disabled</string>
+    <string name="ev_task_updated">Scheduled task updated</string>
     <string name="ev_service_installed">Service installed</string>
+    <string name="ev_audit_changed">Audit policy changed</string>
+    <string name="ev_account_locked">Account locked out</string>
     <string name="ev_log_cleared">Event log cleared</string>
 
     <string name="fail_unknown_user">Unknown user name</string>
@@ -207,6 +219,7 @@
     <string name="watch_text">Tap to open RConnect</string>
     <string name="channel_watch">Background watching</string>
     <string name="notify_problem">A server stops answering</string>
+    <string name="notify_security">Security or account change on a server</string>
     <string name="notifications_help">Changes arrive as Android notifications. With background checking on, the phone looks every 30 seconds and shows a permanent notification; without it, about every 15 minutes (less often when saving battery).</string>
     <string name="notifications_denied">Android did not allow notifications. You can allow them in the phone\'s settings for this app.</string>
     <string name="open_settings">Open settings</string>

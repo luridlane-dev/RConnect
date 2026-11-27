@@ -21,11 +21,9 @@ public:
 public slots:
     void onServerSynced(const QString &serverId, const QString &serverName, bool busy,
                         const QStringList &failedSources, const QString &error);
-    void setConfiguringServers(bool busy);
 
 signals:
     void syncRequested(const QString &serverId);
-    void configureServersRequested();
 
 protected:
     void showEvent(QShowEvent *e) override;
@@ -52,7 +50,6 @@ private:
     QLineEdit *m_search = nullptr;
     QPushButton *m_refresh = nullptr;
     QPushButton *m_addContact = nullptr;
-    QPushButton *m_configure = nullptr;
     QTimer *m_timer = nullptr;
     QTimer *m_searchTimer = nullptr;
     QTimer *m_syncReloadTimer = nullptr;

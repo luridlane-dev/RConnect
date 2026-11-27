@@ -22,6 +22,7 @@ public:
 signals:
     void importRequested();
     void exportRequested();
+    void configureServersRequested();
     void updateCheckRequested();
     void aboutRequested();
     void pagesChanged();
@@ -48,6 +49,8 @@ private:
     QLabel *m_titles[4] = {};
     QLabel *m_pagesHeading = nullptr;
     QLabel *m_groupHeading = nullptr;
+    QLabel *m_adminHeading = nullptr;
+    QLabel *m_adminHint = nullptr;
     QLabel *m_sortingLabel = nullptr;
     QLabel *m_logHeading = nullptr;
     QLabel *m_cacheHeading = nullptr;
@@ -69,6 +72,7 @@ private:
     QPushButton *m_contacts = nullptr;
     QPushButton *m_import = nullptr;
     QPushButton *m_export = nullptr;
+    QPushButton *m_configureServers = nullptr;
     QPushButton *m_check = nullptr;
     QPushButton *m_about = nullptr;
     QPushButton *m_close = nullptr;
