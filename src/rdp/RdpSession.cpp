@@ -104,7 +104,7 @@ public:
         m_title->setObjectName(QStringLiteral("overlayTitle"));
         m_title->setAlignment(Qt::AlignCenter);
         m_title->setWordWrap(true);
-        m_title->setMaximumWidth(kTitleWidth);
+        m_title->setFixedWidth(kTitleWidth);
         m_message = new QLabel(this);
         m_message->setObjectName(QStringLiteral("overlayMessage"));
         m_message->setAlignment(Qt::AlignCenter);
@@ -118,7 +118,10 @@ public:
         m_close->setCursor(Qt::PointingHandCursor);
         connect(m_reconnect, &QPushButton::clicked, this, &SessionOverlay::reconnectClicked);
         connect(m_close, &QPushButton::clicked, this, &SessionOverlay::closeClicked);
-        connect(Theme::notifier(), &ThemeNotifier::changed, this, qOverload<>(&QWidget::update));
+        connect(Theme::notifier(), &ThemeNotifier::changed, this, [this] {
+            updateLabelSizes();
+            update();
+        });
         m_reconnect->setText(QCoreApplication::translate("RdpSession", "Reconnect"));
 
         auto *buttons = new QHBoxLayout;
@@ -164,11 +167,7 @@ public:
         m_title->setText(title);
         m_message->setText(message);
         m_message->setVisible(!message.isEmpty());
-        // Word-wrapped labels report a one-line height in box layouts.
-        if (!message.isEmpty()) {
-            m_message->ensurePolished();
-            m_message->setFixedHeight(qMax(m_message->heightForWidth(kMessageWidth), m_message->sizeHint().height()));
-        }
+        updateLabelSizes();
         m_reconnect->setText(QCoreApplication::translate("RdpSession", "Reconnect"));
         m_reconnect->setVisible(offerReconnect);
         m_close->setText(closeText);
@@ -192,8 +191,15 @@ protected:
     void showEvent(QShowEvent *e) override
     {
         QWidget::showEvent(e);
+        updateLabelSizes();
         m_clock.restart();
         m_frame.start();
+    }
+
+    void resizeEvent(QResizeEvent *e) override
+    {
+        QWidget::resizeEvent(e);
+        updateLabelSizes();
     }
 
     void hideEvent(QHideEvent *e) override
@@ -258,6 +264,26 @@ protected:
     }
 
 private:
+    void updateLabelSizes()
+    {
+        const int avail = width() > 0 ? qMax(160, width() - 48) : kTitleWidth;
+        const int titleW = qMin(kTitleWidth, avail);
+        const int msgW = qMin(kMessageWidth, avail);
+
+        // Word-wrapped labels report a one-line height in box layouts.
+        m_title->setFixedWidth(titleW);
+        m_title->ensurePolished();
+        m_title->setFixedHeight(qMax(m_title->heightForWidth(titleW), m_title->sizeHint().height()));
+
+        if (!m_message->text().isEmpty()) {
+            m_message->setFixedWidth(msgW);
+            m_message->ensurePolished();
+            m_message->setFixedHeight(qMax(m_message->heightForWidth(msgW), m_message->sizeHint().height()));
+        }
+        if (layout())
+            layout()->activate();
+    }
+
     static constexpr int kTitleWidth = 560;
     static constexpr int kMessageWidth = 500;
     static constexpr int kArtHeight = 150;
